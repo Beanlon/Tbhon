@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const COUGH_TOTAL = 3;
 
@@ -13,6 +14,7 @@ function pad2(n: number) {
 
 export default function RecordingScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [coughIndex, setCoughIndex] = useState(1);
   const [phase, setPhase] = useState<Phase>("ready");
   const [countdown, setCountdown] = useState(3);
@@ -126,7 +128,7 @@ export default function RecordingScreen() {
       {/* Header */}
       <View
         style={{
-          paddingTop: 54,
+          paddingTop: Math.max(insets.top, 16) + 8,
           paddingHorizontal: 18,
           paddingBottom: 14,
           flexDirection: "row",

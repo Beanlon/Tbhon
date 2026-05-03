@@ -5,11 +5,13 @@ import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Mode = "camera" | "preview";
 
 export default function PhlegmCaptureScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const cameraRef = useRef<CameraView | null>(null);
   const [mode, setMode] = useState<Mode>("camera");
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -78,7 +80,7 @@ export default function PhlegmCaptureScreen() {
       {/* Header */}
       <View
         style={{
-          paddingTop: 54,
+          paddingTop: Math.max(insets.top, 16) + 8,
           paddingHorizontal: 18,
           paddingBottom: 14,
           flexDirection: "row",
