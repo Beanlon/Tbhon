@@ -29,12 +29,12 @@ export default function LandingPage() {
         </View>
 
         {/* Welcome Text */}
-        <Text style={{ fontSize: 28, fontWeight: '800', color: '#000000', textAlign: 'left', marginBottom: '4%' }}>
+        <Text style={{ fontSize: 40, fontWeight: '800', color: '#000000', textAlign: 'left', marginBottom: '10%' }}>
           Welcome
         </Text>
 
         {/* Description */}
-        <Text style={{ fontSize: 15, lineHeight: 22, color: '#2F2F2F', textAlign: 'left', marginBottom: '8%' }}>
+        <Text style={{ fontSize: 17, lineHeight: 22, color: '#2F2F2F', textAlign: 'left', marginBottom: '10%' }}>
           Tbhon helps you take the first step toward better lung health with early tuberculosis detection powered by smart technology. Quick, accessible, and reliable monitor your symptoms anytime, anywhere.
         </Text>
 

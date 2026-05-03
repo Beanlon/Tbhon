@@ -38,7 +38,7 @@ export default function Login() {
           </View>
 
         {/* Title */}
-        <Text style={{fontSize: 28,fontWeight: '700',color: '#111111',marginBottom: '7%',textAlign: 'left',}}>
+        <Text style={{fontSize: 28,fontWeight: '700',color: '#111111',marginBottom: '7%',textAlign: 'center',}}>
           Login to your account
         </Text>
 

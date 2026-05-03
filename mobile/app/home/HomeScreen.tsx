@@ -195,10 +195,11 @@ export default function HomeScreen() {
                   paddingHorizontal: '4%',
                   borderRadius: 6,
                   alignSelf: "flex-start",
-                  marginBottom: '3%',
+                  marginVertical: '3%',
+
                 }}
               >
-                <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Get Checked Now</Text>
+                <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700" }}>Get Checked Now</Text>
               </TouchableOpacity>
               <Text style={{ fontSize: 11, color: "#0066cc" }}>Learn More →</Text>
             </View>

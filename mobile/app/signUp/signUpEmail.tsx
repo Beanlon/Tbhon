@@ -50,7 +50,7 @@ export default function SignUpEmail() {
             fontWeight: '700',
             color: '#111111',
             marginBottom: '7%',
-            textAlign: 'left',
+            textAlign: 'center',
           }}>
             Create your account
         </Text>

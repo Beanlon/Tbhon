@@ -39,14 +39,14 @@ export default function AccountOptions() {
             fontWeight: '700',
             color: '#111111',
             textAlign: 'center',
-            marginBottom: '6%',
+            marginBottom: '10%',
           }}
         >
           Start with your account
         </Text>
 
         {/* Cards */}
-        <View style={{ gap: '5%' }}>
+        <View style={{ gap: '6%' }}>
           <Pressable
             style={{
               backgroundColor: '#FFFFFF',

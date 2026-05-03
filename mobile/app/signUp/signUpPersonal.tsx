@@ -26,7 +26,7 @@ export default function SignUpPersonal() {
         </View>
 
         <Text 
-          style={{fontSize: 28, fontWeight: '700', color: '#111111', marginBottom: '7%', textAlign: 'left',}}>
+          style={{fontSize: 28, fontWeight: '700', color: '#111111', marginBottom: '7%', textAlign: 'center',}}>
           Create your account
         </Text>
 
