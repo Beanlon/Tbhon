@@ -4,10 +4,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+// Configuration
 const COUGH_TOTAL = 3;
 
+// Type definitions
 type Phase = "ready" | "countdown" | "recording" | "done";
 
+// Utility function
 function pad2(n: number) {
   return String(Math.max(0, Math.floor(n))).padStart(2, "0");
 }
@@ -21,15 +24,18 @@ export default function RecordingScreen() {
   const [seconds, setSeconds] = useState(0);
   const [durations, setDurations] = useState<(number | null)[]>(() => Array.from({ length: COUGH_TOTAL }, () => null));
 
+  // Refs for interval management
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Computed values
   const timeLabel = useMemo(() => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${pad2(m)}:${pad2(s)}`;
   }, [seconds]);
 
+  // Timer management
   const clearTimers = () => {
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);

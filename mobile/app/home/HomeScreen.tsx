@@ -1,9 +1,10 @@
 import { View, Text, ScrollView, TextInput, TouchableOpacity, Image } from "react-native";
 import { useState } from "react";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import InstructionsScreen from "../screening/InstructionsScreen";
-import HistoryScreen from "../history/HistoryScreen";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LearnContent } from "../learn/LearnContent";
+import BottomNav, { BottomNavTab } from "../components/BottomNav";
 
 /* ─── Gauge (proper semicircle speedometer) ─────────────────── */
 const GaugeChart = () => {
@@ -214,51 +215,82 @@ const DotsGrid = () => (
 
 /* ─── Main screen ──────────────────────────────────────────── */
 export default function HomeScreen() {
+  const router = useRouter();
   const [showInstructions, setShowInstructions] = useState(false);
-  const [activeTab, setActiveTab] = useState(0);
-  const insets = useSafeAreaInsets();
+  const [activeTab, setActiveTab] = useState<BottomNavTab>("home");
+
+  const handleTabPress = (tab: BottomNavTab) => {
+    if (tab === "home") {
+      setActiveTab("home");
+      return;
+    }
+
+    if (tab === "screening") {
+      setShowInstructions(true);
+      return;
+    }
+
+    if (tab === "learn") {
+      setActiveTab("learn");
+      return;
+    }
+    if (tab === "profile") {
+      router.push("/acountOptions/accountOptions");
+      return;
+    }
+
+    if (tab === "history") {
+      return;
+    }
+  };
 
   if (showInstructions) {
     return <InstructionsScreen onClose={() => setShowInstructions(false)} />;
   }
 
-  if (activeTab === 1) {
+  if (activeTab === "learn") {
     return (
-      <HistoryScreen onTabChange={(idx) => setActiveTab(idx)} />
+      <View style={{ flex: 1, backgroundColor: "#fff" }}>
+        <View style={{ flex: 1 }}>
+          <LearnContent />
+        </View>
+
+        <BottomNav activeTab="learn" onTabPress={handleTabPress} />
+      </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
-
-        {/* ── Header ── */}
-        <View
-          style={{
-            paddingHorizontal: 20,
-            paddingTop: Math.max(insets.top, 16) + 16,
-            paddingBottom: 20,
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <View>
-            <Text style={{ fontSize: 15, color: "#666666", marginBottom: 2 }}>👋 Hello!</Text>
-            <Text style={{ fontSize: 30, fontWeight: "900", color: "#0B1530" }}>Martin Shah</Text>
+    <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={{ paddingHorizontal: '5.5%', paddingTop: '15%', paddingBottom: '7%' }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <View>
+              <Text style={{ fontSize: 14, color: "#666", marginBottom: 4 }}>👋 Hello!</Text>
+              <Text style={{ fontSize: 28, fontWeight: "800", color: "#000" }}>Martin Shah</Text>
+            </View>
+            <View
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: 30,
+                backgroundColor: "#d8d8d8",
+              }}
+            />
           </View>
           <BrandMark />
         </View>
 
-        {/* ── Search ── */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 22 }}>
+        {/* Search Bar */}
+        <View style={{ paddingHorizontal: '5.5%', marginBottom: '7%' }}>
           <View
             style={{
               flexDirection: "row",
               alignItems: "center",
               backgroundColor: "#F8F8F8",
               borderRadius: 14,
-              paddingHorizontal: 14,
+              paddingHorizontal: '4%',
               height: 50,
               borderWidth: 1,
               borderColor: "#EDEDED",
@@ -273,13 +305,13 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ── Health Card ── */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
+        {/* Health Card */}
+        <View style={{ paddingHorizontal: '5.5%', marginBottom: '8%' }}>
           <View
             style={{
-              backgroundColor: "#FFFFFF",
-              borderRadius: 18,
-              padding: 18,
+              backgroundColor: "#fff",
+              borderRadius: 16,
+              padding: '5%',
               flexDirection: "row",
               alignItems: "center",
               borderWidth: 1,
@@ -291,36 +323,44 @@ export default function HomeScreen() {
               elevation: 3,
             }}
           >
-            {/* Left */}
-            <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={{ fontSize: 13, color: "#333", lineHeight: 18, marginBottom: 14 }}>
+            <View style={{ flex: 1, marginRight: '4%' }}>
+              <Text style={{ fontSize: 13, color: "#333", marginBottom: '3%', lineHeight: 18 }}>
                 Maintain lung health to support overall well-being.
               </Text>
               <TouchableOpacity
                 onPress={() => setShowInstructions(true)}
                 style={{
-                  backgroundColor: "#0B1530",
-                  paddingVertical: 10,
-                  paddingHorizontal: 16,
-                  borderRadius: 10,
+                  backgroundColor: "#1a1a2e",
+                  paddingVertical: '2.5%',
+                  paddingHorizontal: '4%',
+                  borderRadius: 6,
                   alignSelf: "flex-start",
-                  marginBottom: 10,
+                  marginVertical: '3%',
+
                 }}
               >
-                <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}>Get Checked Now</Text>
+                <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700" }}>Get Checked Now</Text>
               </TouchableOpacity>
-              <Text style={{ fontSize: 12, color: "#0066CC", fontWeight: "500" }}>Learn More →</Text>
+              <Text style={{ fontSize: 11, color: "#0066cc" }}>Learn More →</Text>
+            </View>
+            <View
+              style={{
+                width: 100,
+                height: 100,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <LungIllustration />
             </View>
             {/* Right illustration */}
             <LungIllustration />
           </View>
         </View>
 
-        {/* ── Offered Services ── */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
-          <Text style={{ fontSize: 17, fontWeight: "800", color: "#0B1530", marginBottom: 14 }}>
-            Offered Services
-          </Text>
+        {/* Offered Services */}
+        <View style={{ paddingHorizontal: '5.5%', marginBottom: '8%' }}>
+          <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: '4%', color: "#000" }}>Offered Services</Text>
           <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
             {[
               { icon: "mic-outline",          iconLib: "ion",  label: "Record Cough" },
@@ -331,6 +371,10 @@ export default function HomeScreen() {
                 key={idx}
                 onPress={() => idx === 0 && setShowInstructions(true)}
                 style={{
+                  backgroundColor: "#fafafa",
+                  borderRadius: 12,
+                  padding: '4%',
+                  alignItems: "center",
                   width: "31%",
                   backgroundColor: "#FFFFFF",
                   borderRadius: 16,
@@ -347,16 +391,38 @@ export default function HomeScreen() {
                   elevation: 2,
                 }}
               >
-                <DotsGrid />
-                {/* Icon box */}
                 <View
                   style={{
-                    width: 52,
-                    height: 52,
-                    backgroundColor: "#F8F8F8",
-                    borderRadius: 12,
-                    alignItems: "center",
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
+                    width: 40,
+                    height: 40,
+                    opacity: 0.15,
+                  }}
+                >
+                  {[...Array(6)].map((_, i) => (
+                    <View
+                      key={i}
+                      style={{
+                        width: 2,
+                        height: 2,
+                        backgroundColor: "#999",
+                        borderRadius: 1,
+                        margin: '1%',
+                      }}
+                    />
+                  ))}
+                </View>
+                <View
+                  style={{
+                    width: 48,
+                    height: 48,
+                    backgroundColor: "#f0f0f0",
+                    borderRadius: 8,
                     justifyContent: "center",
+                    alignItems: "center",
+                    marginBottom: '2%',
                     borderWidth: 1,
                     borderColor: "#EEEEEE",
                     marginBottom: 10,
@@ -368,7 +434,7 @@ export default function HomeScreen() {
                     <MaterialCommunityIcons name={item.icon as any} size={24} color="#222" />
                   )}
                 </View>
-                <Text style={{ fontSize: 12, fontWeight: "600", color: "#111", textAlign: "center" }}>
+                <Text style={{ fontSize: 12, fontWeight: "600", textAlign: "center", color: "#000" }}>
                   {item.label}
                 </Text>
               </TouchableOpacity>
@@ -376,21 +442,17 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ── Quick Result Preview ── */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
-          <Text style={{ fontSize: 17, fontWeight: "800", color: "#0B1530", marginBottom: 6 }}>
-            Quick Result Preview
-          </Text>
-          {/* Date right-aligned above card */}
-          <Text style={{ fontSize: 12, color: "#888", textAlign: "right", marginBottom: 8 }}>
-            5/3/2026 - 1:00 AM
-          </Text>
+        {/* Quick Result Preview */}
+        <View style={{ paddingHorizontal: '5.5%', marginBottom: '8%' }}>
+          <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: '4%', color: "#000" }}>Quick Result Preview</Text>
           <View
             style={{
-              backgroundColor: "#FFFFFF",
-              borderRadius: 16,
-              paddingVertical: 18,
-              paddingHorizontal: 20,
+              backgroundColor: "#fff",
+              borderRadius: 12,
+              padding: '4.5%',
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
               borderWidth: 1,
               borderColor: "#E8E8E8",
               shadowColor: "#000",
@@ -402,92 +464,36 @@ export default function HomeScreen() {
               alignItems: "center",
             }}
           >
-            {/* Left: text */}
-            <View style={{ flex: 1, paddingRight: 8 }}>
-              <Text style={{ fontSize: 17, fontWeight: "900", color: "#111", marginBottom: 6, lineHeight: 24 }}>
-                Low TB Risk – Monitor{"\n"}symptoms.
+            <View>
+              <Text style={{ fontSize: 13, fontWeight: "700", marginBottom: 6, color: "#000" }}>
+                Low TB Risk - Monitor symptoms.
               </Text>
-              <Text style={{ fontSize: 12, color: "#888", fontStyle: "italic" }}>
-                "This is not a medical diagnosis"
+              <Text style={{ fontSize: 11, color: "#999", marginBottom: 8 }}>
+                This is not a medical diagnosis
               </Text>
+              <Text style={{ fontSize: 9, color: "#bbb" }}>5/2/2026 · 1:00 AM</Text>
+            </View>
+            <View
+              style={{
+                width: 95,
+                height: 95,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <GaugeChart />
             </View>
             {/* Right: gauge */}
             <GaugeChart />
           </View>
         </View>
 
+        <View style={{ height: '5%' }} />
       </ScrollView>
 
-      {/* ── Bottom Navigation ── */}
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-around",
-          alignItems: "flex-end",
-          backgroundColor: "#FFFFFF",
-          borderTopWidth: 1,
-          borderTopColor: "#E0E0E0",
-          paddingBottom: Math.max(insets.bottom, 12) + 4,
-          overflow: "visible",
-        }}
-      >
-        {([
-          { icon: "home-outline",          label: "Home"      },
-          { icon: "time-outline",          label: "History"   },
-          { icon: "scan-outline",          label: "Screening" },
-          { icon: "reader-outline",        label: "Learn"     },
-          { icon: "person-circle-outline", label: "Profile"   },
-        ] as const).map((item, idx) => (
-          <TouchableOpacity
-            key={idx}
-            onPress={() => {
-              if (idx === 2) { setShowInstructions(true); return; }
-              setActiveTab(idx);
-            }}
-            style={{ flex: 1, alignItems: "center", justifyContent: "flex-end", paddingTop: 10 }}
-          >
-            {idx === 2 ? (
-              /* Center screening button — elevated above the bar */
-              <View
-                style={{
-                  width: 68,
-                  height: 68,
-                  borderRadius: 34,
-                  backgroundColor: "#0B1530",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginTop: -28,
-                  marginBottom: 4,
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 6 },
-                  shadowOpacity: 0.2,
-                  shadowRadius: 14,
-                  elevation: 8,
-                }}
-              >
-                <Ionicons name="scan-outline" size={32} color="#FFFFFF" />
-              </View>
-            ) : (
-              <Ionicons
-                name={item.icon}
-                size={28}
-                color={activeTab === idx ? "#0B1530" : "#AAAAAA"}
-                style={{ marginBottom: 3 }}
-              />
-            )}
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: activeTab === idx || idx === 2 ? "800" : "500",
-                color: activeTab === idx || idx === 2 ? "#0B1530" : "#AAAAAA",
-                marginBottom: 2,
-              }}
-            >
-              {item.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
     </View>
   );
 }
+
+

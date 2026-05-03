@@ -1,42 +1,79 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  SafeAreaView,
-  Pressable,
-  TextInput,
-} from 'react-native';
+import {View, Text, SafeAreaView, Pressable, TextInput} from 'react-native';
 import CachedImage from '../components/CachedImage';
-import GlobalStyles from '../../assets/styles/componentStyles';
-import { Typography } from '../../assets/fonts/fonts';
-import LogoStyles from '../../assets/logo/logoStyles';
+import { useRouter } from 'expo-router';
+
 
 export default function SignUpEmail() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // Navigation handler
   const handleSignUp = () => {
-    // Add sign up logic here
     console.log('Sign up:', email, password);
+    router.push('/home/HomeScreen');
   };
 
   return (
-    <SafeAreaView style={GlobalStyles.container}>
-      <View style={GlobalStyles.content}>
-          <View style={LogoStyles.logoContainer}>
-            <CachedImage
-              source={require('../../assets/images/Tbhon assets/Tbhon Logo.png')}
-              style={LogoStyles.logo}
-              resizeMode="contain"
-            />
-          </View>
+    <SafeAreaView style={{
+          flex: 1,
+          backgroundColor: '#FFFFFF',
+        }}>
+      <View style={{
+          flex: 1,
+          paddingHorizontal: '7%',
+          paddingTop: '7%',
+          paddingBottom: '8%',
+          justifyContent: 'space-between',
+        }}>
+        {/* Logo */}
+        <View style={{
+            alignItems: 'center',
+            marginTop: '2%',
+            marginBottom: '3%',
+          }}>
+          <CachedImage
+            source={require('../../assets/images/Tbhon assets/Tbhon Logo.png')}
+            style={{ width: '75%',
+              height: undefined,
+              aspectRatio: 1,
+            }}
+            resizeMode="contain"
+          />
+        </View>
 
-          <Text style={Typography.titleMedium}>Create your account</Text>
+        {/* Title */}
+        <Text style={{
+            fontSize: 28,
+            fontWeight: '700',
+            color: '#111111',
+            marginBottom: '7%',
+            textAlign: 'center',
+          }}>
+            Create your account
+        </Text>
 
-          <View style={GlobalStyles.formContainer}>
+        {/* Form */}
+        <View style={{
+                flex: 1,
+                justifyContent: 'flex-start',
+              }}>
             <TextInput
-              style={GlobalStyles.input}
+              style={{
+                backgroundColor: '#f8f8f8',
+                borderRadius: 14,
+                paddingHorizontal: 15,
+                paddingVertical: '4.5%',
+                marginBottom: '6%',
+                fontSize: 15,
+                color: '#111111',
+                fontWeight: '500',
+                borderWidth: 1,
+                borderColor: '#e8e8e8',
+                height: '13%',
+              }}
               placeholder="Email"
               placeholderTextColor="#999999"
               keyboardType="email-address"
@@ -45,7 +82,19 @@ export default function SignUpEmail() {
             />
 
             <TextInput
-              style={GlobalStyles.input}
+              style={{
+                backgroundColor: '#f8f8f8',
+                borderRadius: 14,
+                paddingHorizontal: 15,
+                paddingVertical: '4.5%',
+                marginBottom: '6%',
+                fontSize: 15,
+                color: '#111111',
+                fontWeight: '500',
+                borderWidth: 1,
+                borderColor: '#e8e8e8',
+                height: '13%',
+              }}
               placeholder="Password"
               placeholderTextColor="#999999"
               secureTextEntry
@@ -54,7 +103,19 @@ export default function SignUpEmail() {
             />
 
             <TextInput
-              style={GlobalStyles.input}
+              style={{
+                backgroundColor: '#f8f8f8',
+                borderRadius: 14,
+                paddingHorizontal: 15,
+                paddingVertical: '4.5%',
+                marginBottom: '6%',
+                fontSize: 15,
+                color: '#111111',
+                fontWeight: '500',
+                borderWidth: 1,
+                borderColor: '#e8e8e8',
+                height: '13%',
+              }}
               placeholder="Confirm Password"
               placeholderTextColor="#999999"
               secureTextEntry
@@ -62,10 +123,22 @@ export default function SignUpEmail() {
               onChangeText={setConfirmPassword}
             />
 
-            <Pressable style={GlobalStyles.primaryButton} onPress={handleSignUp}>
-              <Text style={Typography.buttonText}>SIGN UP</Text>
-            </Pressable>
-          </View>
+          <Pressable style={{  
+              backgroundColor: '#1a1a4d',
+              borderRadius: 12,
+              paddingVertical: '5%',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginTop: '6%',
+              marginBottom: '6%',
+            }} 
+            onPress={handleSignUp}
+          >
+            <Text style={{fontSize: 16,fontWeight: '700',color: '#FFFFFF',letterSpacing: 0.5,}}>
+              SIGN UP
+            </Text>
+          </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   );

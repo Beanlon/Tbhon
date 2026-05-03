@@ -7,6 +7,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 
+// Type definitions
 type Mode = "camera" | "preview";
 
 export default function PhlegmCaptureScreen() {
@@ -18,10 +19,11 @@ export default function PhlegmCaptureScreen() {
   const [mode, setMode] = useState<Mode>("camera");
   const [photoUri, setPhotoUri] = useState<string | null>(null);
 
+  // Camera permissions
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-
   const hasCameraPermission = cameraPermission?.granted === true;
 
+  // Request camera permission on mount
   useEffect(() => {
     // Kick off permission prompt on first load for smoother UX.
     if (cameraPermission && !cameraPermission.granted && cameraPermission.canAskAgain) {
@@ -30,6 +32,7 @@ export default function PhlegmCaptureScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Computed values
   const canShowCamera = hasCameraPermission && mode === "camera";
 
   const headerTitle = mode === "preview" ? "Preview" : "Capture phlegm";
