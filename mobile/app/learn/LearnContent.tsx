@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -284,7 +284,13 @@ export function LearnContent() {
 
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: '2%' }}>
-      <View style={{ paddingHorizontal: '5.5%', paddingTop: '18%', paddingBottom: '3%' }}>
+      <View
+        style={{
+          paddingHorizontal: '5.5%',
+          paddingTop:"3%",
+          paddingBottom: '3%',
+        }}
+      >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4%' }}>
           <View>
             <Text style={{ fontSize: 14, color: '#666', marginBottom: 4 }}>📚 Learn</Text>
