@@ -16,13 +16,13 @@ export const Typography = StyleSheet.create({
     marginTop: '2%',
     marginBottom: '3%'
   },
-  titleMedium: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111111',
-    marginBottom: '7%',
-    textAlign: 'left',
-  },
+    titleMedium: {
+      fontSize: 28,
+      fontWeight: '700',
+      color: '#111111',
+      marginBottom: '7%',
+      textAlign: 'left',
+    },
   description: {
     fontSize: 16,
     lineHeight: 24,
@@ -57,6 +57,11 @@ export const Typography = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.5,
+  },
+  inputText: {
+    fontSize: 15,
+    color: '#333',
+    fontWeight: '400',
   },
   link: {
     fontSize: 14,

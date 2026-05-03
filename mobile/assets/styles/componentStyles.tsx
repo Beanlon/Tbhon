@@ -27,14 +27,17 @@ export const GlobalStyles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   input: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    paddingHorizontal: '8%',
-    paddingVertical: '5%',
+    backgroundColor: '#f8f8f8',
+    borderRadius: 14,
+    paddingHorizontal: 15,
+    paddingVertical: '4.5%',
     marginBottom: '6%',
-    fontSize: 17,
+    fontSize: 15,
     color: '#111111',
     fontWeight: '500',
+    borderWidth: 1,
+    borderColor: '#e8e8e8',
+    height: '13%',
   },
   primaryButton: {
     backgroundColor: '#1a1a4d',
@@ -54,7 +57,7 @@ export const GlobalStyles = StyleSheet.create({
     marginTop: '6%',
   },
   cardsContainer: {
-    gap: '6%',
+
   },
   card: {
     backgroundColor: '#FFFFFF',

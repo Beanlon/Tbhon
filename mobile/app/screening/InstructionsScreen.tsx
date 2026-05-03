@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 export default function InstructionsScreen({ onClose }: { onClose: () => void }) {
   const router = useRouter();
 
+  // Instructions data
   const instructions = [
     "Find a quiet environment",
     "You will record 3 separate coughs, one at a time",
