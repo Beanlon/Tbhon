@@ -44,7 +44,7 @@ export default function CachedImage({ source, style, ...rest }: Props) {
   const handleOnLoad = () => {
     Animated.timing(opacity, {
       toValue: 1,
-      duration: 100,
+      duration: 0.001,
       useNativeDriver: true,
     }).start();
   };

@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TextInput, TouchableOpacity, Image, Platform } from "react-native";
+import { View, Text, ScrollView, TextInput, TouchableOpacity, Platform } from "react-native";
 import { useState } from "react";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import InstructionsScreen from "../screening/InstructionsScreen";
 import { LearnContent } from "../learn/LearnContent";
 import BottomNav, { BottomNavTab } from "../components/BottomNav";
+import CachedImage from "../components/CachedImage";
 
 /* ─── Gauge (proper semicircle speedometer) ─────────────────── */
 const GaugeChart = ({ size = 150 }: { size?: number }) => {
@@ -42,19 +43,30 @@ const GaugeChart = ({ size = 150 }: { size?: number }) => {
         }} />
       </View>
 
-      {/* Needle — thin diagonal line from center dot */}
+      {/* Needle — pivots on hub (center of dot); outer end sweeps the arc */}
       <View
         style={{
           position: "absolute",
-          left: S / 2 - needleL / 2,
-          bottom: 21 * scale - needleTh / 2, // center of the dot
-          width: needleL,
-          height: needleTh,
-          backgroundColor: "#1E293B",
-          borderRadius: needleTh / 2,
-          transform: [{ translateX: -needleL / 2 }, { rotate: "-35deg" }, { translateX: needleL / 2 }],
+          left: S / 2,
+          bottom: 21 * scale,
+          width: 0,
+          height: 0,
         }}
-      />
+      >
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            top: -needleTh / 2,
+            width: needleL,
+            height: needleTh,
+            backgroundColor: "#1E293B",
+            borderRadius: needleTh / 2,
+            transform: [{ rotate: "-35deg" }],
+            transformOrigin: "left center",
+          }}
+        />
+      </View>
       {/* Center dot */}
       <View style={{
         position: "absolute",
@@ -189,7 +201,7 @@ const LungIllustration = ({ width = 160 }: { width?: number }) => {
 
 /* ─── TBHON brand mark — uses the real logo asset ─────────────── */
 const BrandMark = () => (
-  <Image
+  <CachedImage
     source={require("../../assets/images/Tbhon assets/TBhon icon.png")}
     style={{ width: 50, height: 50 }}
     resizeMode="contain"
