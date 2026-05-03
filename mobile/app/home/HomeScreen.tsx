@@ -1,20 +1,23 @@
-import { View, Text, ScrollView, TextInput, TouchableOpacity, Image } from "react-native";
+import { View, Text, ScrollView, TextInput, TouchableOpacity, Platform } from "react-native";
 import { useState } from "react";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import InstructionsScreen from "../screening/InstructionsScreen";
 import { LearnContent } from "../learn/LearnContent";
 import BottomNav, { BottomNavTab } from "../components/BottomNav";
+import CachedImage from "../components/CachedImage";
 
 /* ─── Gauge (proper semicircle speedometer) ─────────────────── */
-const GaugeChart = () => {
-  const S = 150;   // diameter
-  const T = 26;    // ring thickness
-  const needleL = 64;
-  const needleTh = 5;
+const GaugeChart = ({ size = 150 }: { size?: number }) => {
+  const S = size; // diameter
+  const scale = S / 150;
+  const T = 26 * scale; // ring thickness
+  const needleL = 64 * scale;
+  const needleTh = 5 * scale;
 
   return (
-    <View style={{ width: S, height: S / 2 + 22, alignItems: "center" }}>
+    <View style={{ width: S, height: S / 2 + 22 * scale, alignItems: "center" }}>
       {/* Semicircle ring — clipped to top half */}
       <View style={{ width: S, height: S / 2, overflow: "hidden" }}>
         {/* Base: RED (rightmost) */}
@@ -40,27 +43,38 @@ const GaugeChart = () => {
         }} />
       </View>
 
-      {/* Needle — thin diagonal line from center dot */}
+      {/* Needle — pivots on hub (center of dot); outer end sweeps the arc */}
       <View
         style={{
           position: "absolute",
-          left: S / 2 - needleL / 2,
-          bottom: 21 - needleTh / 2, // center of the dot (bottom 13 + radius 8)
-          width: needleL,
-          height: needleTh,
-          backgroundColor: "#1E293B",
-          borderRadius: needleTh / 2,
-          transform: [{ translateX: -needleL / 2 }, { rotate: "-35deg" }, { translateX: needleL / 2 }],
+          left: S / 2,
+          bottom: 21 * scale,
+          width: 0,
+          height: 0,
         }}
-      />
+      >
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            top: -needleTh / 2,
+            width: needleL,
+            height: needleTh,
+            backgroundColor: "#1E293B",
+            borderRadius: needleTh / 2,
+            transform: [{ rotate: "-35deg" }],
+            transformOrigin: "left center",
+          }}
+        />
+      </View>
       {/* Center dot */}
       <View style={{
         position: "absolute",
-        bottom: 13,
-        left: S / 2 - 8,
-        width: 16,
-        height: 16,
-        borderRadius: 8,
+        bottom: 13 * scale,
+        left: S / 2 - 8 * scale,
+        width: 16 * scale,
+        height: 16 * scale,
+        borderRadius: 8 * scale,
         backgroundColor: "#1E293B",
       }} />
     </View>
@@ -70,33 +84,37 @@ const GaugeChart = () => {
 /* ─── Lung illustration ────────────────────────────────────────
    Two rounded-rect lung shapes, sky-blue top + green field bottom,
    a small tree trunk in the middle, a leaf on the right.          */
-const LungIllustration = () => (
-  <View style={{ width: 160, height: 96, alignItems: "center", justifyContent: "center" }}>
+const LungIllustration = ({ width = 160 }: { width?: number }) => {
+  const scale = width / 160;
+  const H = 96 * scale;
+
+  return (
+  <View style={{ width, height: H, alignItems: "center", justifyContent: "center" }}>
     {/* Left lung */}
     <View
       style={{
         position: "absolute",
         left: 0,
-        width: 70,
-        height: 90,
-        borderRadius: 20,
-        borderWidth: 2,
+        width: 70 * scale,
+        height: 90 * scale,
+        borderRadius: 20 * scale,
+        borderWidth: 2 * scale,
         borderColor: "#3A5FA0",
         overflow: "hidden",
         backgroundColor: "#C6E2F5",
       }}
     >
       <View style={{ flex: 1, backgroundColor: "#BFD8F0" }} />
-      <View style={{ height: 40, backgroundColor: "#8DC86A" }} />
+      <View style={{ height: 40 * scale, backgroundColor: "#8DC86A" }} />
       {/* Lighter hill */}
       <View
         style={{
           position: "absolute",
-          bottom: 14,
-          left: 6,
-          width: 56,
-          height: 28,
-          borderRadius: 14,
+          bottom: 14 * scale,
+          left: 6 * scale,
+          width: 56 * scale,
+          height: 28 * scale,
+          borderRadius: 14 * scale,
           backgroundColor: "#A8D875",
         }}
       />
@@ -107,25 +125,25 @@ const LungIllustration = () => (
       style={{
         position: "absolute",
         right: 0,
-        width: 70,
-        height: 90,
-        borderRadius: 20,
-        borderWidth: 2,
+        width: 70 * scale,
+        height: 90 * scale,
+        borderRadius: 20 * scale,
+        borderWidth: 2 * scale,
         borderColor: "#3A5FA0",
         overflow: "hidden",
         backgroundColor: "#C6E2F5",
       }}
     >
       <View style={{ flex: 1, backgroundColor: "#BFD8F0" }} />
-      <View style={{ height: 40, backgroundColor: "#8DC86A" }} />
+      <View style={{ height: 40 * scale, backgroundColor: "#8DC86A" }} />
       <View
         style={{
           position: "absolute",
-          bottom: 14,
-          left: 6,
-          width: 56,
-          height: 28,
-          borderRadius: 14,
+          bottom: 14 * scale,
+          left: 6 * scale,
+          width: 56 * scale,
+          height: 28 * scale,
+          borderRadius: 14 * scale,
           backgroundColor: "#A8D875",
         }}
       />
@@ -133,11 +151,11 @@ const LungIllustration = () => (
       <View
         style={{
           position: "absolute",
-          top: 12,
-          right: 8,
-          width: 18,
-          height: 26,
-          borderRadius: 10,
+          top: 12 * scale,
+          right: 8 * scale,
+          width: 18 * scale,
+          height: 26 * scale,
+          borderRadius: 10 * scale,
           backgroundColor: "#6BBF59",
           transform: [{ rotate: "20deg" }],
         }}
@@ -148,11 +166,11 @@ const LungIllustration = () => (
     <View
       style={{
         position: "absolute",
-        top: 36,
-        width: 44,
-        height: 14,
-        borderRadius: 7,
-        borderWidth: 2,
+        top: 36 * scale,
+        width: 44 * scale,
+        height: 14 * scale,
+        borderRadius: 7 * scale,
+        borderWidth: 2 * scale,
         borderColor: "#3A5FA0",
         backgroundColor: "#FFFFFF",
       }}
@@ -161,11 +179,11 @@ const LungIllustration = () => (
     <View
       style={{
         position: "absolute",
-        top: 2,
-        width: 14,
-        height: 40,
-        borderRadius: 7,
-        borderWidth: 2,
+        top: 2 * scale,
+        width: 14 * scale,
+        height: 40 * scale,
+        borderRadius: 7 * scale,
+        borderWidth: 2 * scale,
         borderColor: "#3A5FA0",
         backgroundColor: "#FFFFFF",
       }}
@@ -173,18 +191,19 @@ const LungIllustration = () => (
     {/* Leaf on top-right of right lung */}
     <Ionicons
       name="leaf"
-      size={16}
+      size={16 * scale}
       color="#6BBF59"
-      style={{ position: "absolute", right: 8, top: 16 }}
+      style={{ position: "absolute", right: 8 * scale, top: 16 * scale }}
     />
   </View>
-);
+  );
+};
 
 /* ─── TBHON brand mark — uses the real logo asset ─────────────── */
 const BrandMark = () => (
-  <Image
-    source={require("../../assets/images/Tbhon assets/Tbhon Logo.png")}
-    style={{ width: 110, height: 90 }}
+  <CachedImage
+    source={require("../../assets/images/Tbhon assets/TBhon icon.png")}
+    style={{ width: 50, height: 50 }}
     resizeMode="contain"
   />
 );
@@ -250,40 +269,38 @@ export default function HomeScreen() {
 
   if (activeTab === "learn") {
     return (
-      <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }} edges={["top", "left", "right"]}>
         <View style={{ flex: 1 }}>
           <LearnContent />
         </View>
 
         <BottomNav activeTab="learn" onTabPress={handleTabPress} />
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#fff" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }} edges={["top", "left", "right"]}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Header */}
-        <View style={{ paddingHorizontal: '5.5%', paddingTop: '15%', paddingBottom: '7%' }}>
+        <View
+          style={{
+            paddingHorizontal: "5.5%",
+            paddingTop: Platform.select({ ios: 12, android: 10, default: 10 }),
+            paddingBottom: 20,
+          }}
+        >
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <View>
-              <Text style={{ fontSize: 14, color: "#666", marginBottom: 4 }}>👋 Hello!</Text>
-              <Text style={{ fontSize: 28, fontWeight: "800", color: "#000" }}>Martin Shah</Text>
+              <Text style={{ fontSize: 14, color: "#666", marginBottom: 4, lineHeight: 18 }}>👋 Hello!</Text>
+              <Text style={{ fontSize: 28, fontWeight: "800", color: "#000", lineHeight: 34 }}>Martin Shah</Text>
             </View>
-            <View
-              style={{
-                width: 60,
-                height: 60,
-                borderRadius: 30,
-                backgroundColor: "#d8d8d8",
-              }}
-            />
+            <BrandMark />
           </View>
-          <BrandMark />
         </View>
 
         {/* Search Bar */}
-        <View style={{ paddingHorizontal: '5.5%', marginBottom: '7%' }}>
+        <View style={{ paddingHorizontal: "5.5%", marginBottom: 24 }}>
           <View
             style={{
               flexDirection: "row",
@@ -306,7 +323,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Health Card */}
-        <View style={{ paddingHorizontal: '5.5%', marginBottom: '8%' }}>
+        <View style={{ paddingHorizontal: "5.5%", marginBottom: 26 }}>
           <View
             style={{
               backgroundColor: "#fff",
@@ -324,7 +341,7 @@ export default function HomeScreen() {
             }}
           >
             <View style={{ flex: 1, marginRight: '4%' }}>
-              <Text style={{ fontSize: 13, color: "#333", marginBottom: '3%', lineHeight: 18 }}>
+              <Text style={{ fontSize: 13, color: "#333", marginBottom: 8, lineHeight: 18 }}>
                 Maintain lung health to support overall well-being.
               </Text>
               <TouchableOpacity
@@ -335,7 +352,7 @@ export default function HomeScreen() {
                   paddingHorizontal: '4%',
                   borderRadius: 6,
                   alignSelf: "flex-start",
-                  marginVertical: '3%',
+                  marginVertical: 8,
 
                 }}
               >
@@ -345,22 +362,21 @@ export default function HomeScreen() {
             </View>
             <View
               style={{
-                width: 100,
-                height: 100,
+                width: 120,
+                height: 78,
                 justifyContent: "center",
                 alignItems: "center",
+                overflow: "hidden",
               }}
             >
-              <LungIllustration />
+              <LungIllustration width={120} />
             </View>
-            {/* Right illustration */}
-            <LungIllustration />
           </View>
         </View>
 
         {/* Offered Services */}
-        <View style={{ paddingHorizontal: '5.5%', marginBottom: '8%' }}>
-          <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: '4%', color: "#000" }}>Offered Services</Text>
+        <View style={{ paddingHorizontal: "5.5%", marginBottom: 26 }}>
+          <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: 14, color: "#000", lineHeight: 22 }}>Offered Services</Text>
           <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
             {[
               { icon: "mic-outline",          iconLib: "ion",  label: "Record Cough" },
@@ -371,10 +387,7 @@ export default function HomeScreen() {
                 key={idx}
                 onPress={() => idx === 0 && setShowInstructions(true)}
                 style={{
-                  backgroundColor: "#fafafa",
-                  borderRadius: 12,
                   padding: '4%',
-                  alignItems: "center",
                   width: "31%",
                   backgroundColor: "#FFFFFF",
                   borderRadius: 16,
@@ -422,7 +435,6 @@ export default function HomeScreen() {
                     borderRadius: 8,
                     justifyContent: "center",
                     alignItems: "center",
-                    marginBottom: '2%',
                     borderWidth: 1,
                     borderColor: "#EEEEEE",
                     marginBottom: 10,
@@ -443,8 +455,8 @@ export default function HomeScreen() {
         </View>
 
         {/* Quick Result Preview */}
-        <View style={{ paddingHorizontal: '5.5%', marginBottom: '8%' }}>
-          <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: '4%', color: "#000" }}>Quick Result Preview</Text>
+        <View style={{ paddingHorizontal: "5.5%", marginBottom: 26 }}>
+          <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: 14, color: "#000", lineHeight: 22 }}>Quick Result Preview</Text>
           <View
             style={{
               backgroundColor: "#fff",
@@ -460,8 +472,6 @@ export default function HomeScreen() {
               shadowOpacity: 0.07,
               shadowRadius: 14,
               elevation: 3,
-              flexDirection: "row",
-              alignItems: "center",
             }}
           >
             <View>
@@ -476,23 +486,22 @@ export default function HomeScreen() {
             <View
               style={{
                 width: 95,
-                height: 95,
+                height: 64,
                 justifyContent: "center",
                 alignItems: "center",
+                overflow: "hidden",
               }}
             >
-              <GaugeChart />
+              <GaugeChart size={95} />
             </View>
-            {/* Right: gauge */}
-            <GaugeChart />
           </View>
         </View>
 
-        <View style={{ height: '5%' }} />
+        <View style={{ height: 20 }} />
       </ScrollView>
 
       <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
-    </View>
+    </SafeAreaView>
   );
 }
 
