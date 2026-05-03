@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  SafeAreaView,
   Pressable,
   TextInput,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import CachedImage from '../components/CachedImage';
 import { useRouter } from 'expo-router';
 
@@ -126,7 +129,21 @@ export default function Login() {
             </View>
           </View>
       </View>
+    </ScrollView>
+  );
+
+  return (
+    <SafeAreaView style={GlobalStyles.container} edges={['top', 'bottom']}>
+      {Platform.OS === 'web' ? (
+        scroll
+      ) : (
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          {scroll}
+        </KeyboardAvoidingView>
+      )}
     </SafeAreaView>
   );
 }
-

@@ -22,7 +22,17 @@ export default function CachedImage({ source, style, ...rest }: Props) {
       } catch (e) {
         // ignore
       } finally {
-        if (mounted) setIsReady(true);
+        if (mounted) {
+          setIsReady(true);
+          // Local assets sometimes resolve before onLoad runs; avoid stuck opacity 0
+          if (typeof source === 'number') {
+            Animated.timing(opacity, {
+              toValue: 1,
+              duration: 120,
+              useNativeDriver: true,
+            }).start();
+          }
+        }
       }
     };
     load();
@@ -44,6 +54,7 @@ export default function CachedImage({ source, style, ...rest }: Props) {
       {...rest}
       source={source}
       onLoad={handleOnLoad}
+      onLoadEnd={handleOnLoad}
       style={[{ opacity }, style]}
     />
   );

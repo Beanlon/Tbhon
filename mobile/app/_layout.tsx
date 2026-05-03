@@ -1,6 +1,8 @@
 import { Stack } from "expo-router";
 import React, { useEffect } from 'react';
 import { Asset } from 'expo-asset';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 
 export default function RootLayout() {
   useEffect(() => {

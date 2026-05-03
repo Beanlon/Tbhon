@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Configuration
 const COUGH_TOTAL = 3;
@@ -16,8 +17,7 @@ function pad2(n: number) {
 
 export default function RecordingScreen() {
   const router = useRouter();
-
-  // State management
+  const insets = useSafeAreaInsets();
   const [coughIndex, setCoughIndex] = useState(1);
   const [phase, setPhase] = useState<Phase>("ready");
   const [countdown, setCountdown] = useState(3);
@@ -134,7 +134,7 @@ export default function RecordingScreen() {
       {/* Header */}
       <View
         style={{
-          paddingTop: 54,
+          paddingTop: Math.max(insets.top, 16) + 8,
           paddingHorizontal: 18,
           paddingBottom: 14,
           flexDirection: "row",
@@ -356,7 +356,13 @@ export default function RecordingScreen() {
       </View>
 
       {/* Bottom actions */}
-      <View style={{ paddingHorizontal: 18, paddingBottom: 22, paddingTop: 12 }}>
+      <View
+        style={{
+          paddingHorizontal: 18,
+          paddingTop: 12,
+          paddingBottom: Math.max(insets.bottom, 38) + 42,
+        }}
+      >
         {phase === "ready" && (
           <Pressable
             onPress={startCountdown}
@@ -477,7 +483,7 @@ export default function RecordingScreen() {
             <Pressable
               onPress={() => {
                 resetSession();
-                router.push({ pathname: "/screening/phlegm" as any });
+                router.push({ pathname: "/screening/phlegm", params: { audioDone: "1" } } as any);
               }}
               style={({ pressed }) => ({
                 flex: 1,

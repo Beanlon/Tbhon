@@ -2,8 +2,12 @@ import { View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
-export default function InstructionsScreen({ onClose }: { onClose: () => void }) {
+export default function InstructionsScreen({ onClose }: { onClose?: () => void }) {
   const router = useRouter();
+  const handleClose = () => {
+    if (onClose) onClose();
+    else router.back();
+  };
 
   // Instructions data
   const instructions = [
@@ -18,7 +22,7 @@ export default function InstructionsScreen({ onClose }: { onClose: () => void })
         {/* Header */}
         <View style={{ paddingHorizontal: 20, paddingTop: 50, paddingBottom: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <Text style={{ fontSize: 24, fontWeight: "800", color: "#000" }}>Instructions</Text>
-          <TouchableOpacity onPress={onClose}>
+          <TouchableOpacity onPress={handleClose}>
             <Ionicons name="close" size={28} color="#333" />
           </TouchableOpacity>
         </View>
@@ -75,7 +79,7 @@ export default function InstructionsScreen({ onClose }: { onClose: () => void })
         <View style={{ paddingHorizontal: 20, marginTop: 40, marginBottom: 40 }}>
           <TouchableOpacity
             onPress={() => {
-              onClose();
+              if (onClose) onClose();
               router.push({ pathname: "/screening/recording" as any });
             }}
             style={{
