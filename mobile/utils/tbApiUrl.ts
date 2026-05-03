@@ -1,0 +1,116 @@
+import { Platform } from "react-native";
+import Constants from "expo-constants";
+
+/**
+ * Metro / dev server host from Expo (e.g. "192.168.1.9:8081").
+ * Same machine as your ML API when you run both on the PC — use for phone + Expo Go on LAN.
+ */
+function devPackagerLanHost(): string | null {
+  const uri = Constants.expoConfig?.hostUri;
+  if (!uri || typeof uri !== "string") return null;
+  const host = uri.split(":")[0]?.trim();
+  if (!host) return null;
+  if (host === "localhost" || host === "127.0.0.1") return null;
+  const lower = host.toLowerCase();
+  if (lower.includes("exp.direct") || lower.includes("expo.dev")) return null;
+  return host;
+}
+
+/**
+ * Base URL for the TB cough inference API (no trailing slash).
+ * 1) EXPO_PUBLIC_TB_API_URL or app.json extra.tbApiUrl
+ * 2) Expo dev hostUri → http://<same-host>:8000 (fixes phone + Expo Go using 127.0.0.1)
+ * 3) Android emulator → 10.0.2.2
+ * 4) 127.0.0.1 (simulator / web on same PC)
+ */
+export function resolveTbApiBaseUrl(): string {
+  const fromEnv =
+    (typeof process !== "undefined" && (process.env.EXPO_PUBLIC_TB_API_URL as string | undefined)) ||
+    ((Constants.expoConfig as any)?.extra?.tbApiUrl as string | undefined);
+  if (fromEnv && String(fromEnv).trim().length > 0) {
+    return String(fromEnv).replace(/\/$/, "");
+  }
+  const lan = devPackagerLanHost();
+  if (lan) {
+    return `http://${lan}:8000`;
+  }
+  if (Platform.OS === "android" && Constants.isDevice === false) {
+    return "http://10.0.2.2:8000";
+  }
+  if (Constants.isDevice && __DEV__) {
+    console.warn(
+      "[TB API] Using http://127.0.0.1:8000 on a physical device — connection will fail unless the API runs ON the phone. Set EXPO_PUBLIC_TB_API_URL=http://<PC_LAN_IP>:8000 or open Expo in LAN mode (not tunnel)."
+    );
+  }
+  return "http://127.0.0.1:8000";
+}
+
+const LOOPBACK_API = "http://127.0.0.1:8000";
+
+/** Metro host from Expo config (host only, no port). */
+function devMetroHost(): string | null {
+  if (!__DEV__) return null;
+  const uri = Constants.expoConfig?.hostUri;
+  if (!uri || typeof uri !== "string") return null;
+  const [host] = uri.split(":").map((s) => s.trim());
+  if (!host) return null;
+  const lower = host.toLowerCase();
+  if (lower.includes("exp.direct") || lower.includes("expo.dev")) return null;
+  return host;
+}
+
+/**
+ * Candidate Metro proxy bases.
+ * Expo may bump ports (8081 -> 8082, etc.) when one is busy, so we try common dev ports.
+ */
+function devMetroTbProxyBases(): string[] {
+  if (!__DEV__) return [];
+  const uri = Constants.expoConfig?.hostUri;
+  const host = devMetroHost();
+  if (!uri || typeof uri !== "string" || !host) return [];
+  const [, uriPort = "8081"] = uri.split(":").map((s) => s.trim());
+  const ports = [uriPort, "8081", "8082", "8083"];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of ports) {
+    const port = String(p || "").trim();
+    if (!port || seen.has(port)) continue;
+    seen.add(port);
+    out.push(`http://${host}:${port}/_tb_infer`);
+  }
+  return out;
+}
+
+/**
+ * Ordered list of base URLs to try for /predict and /check-quality.
+ * 1) Metro `/_tb_infer` proxy (same port as Expo — usually not firewall-blocked)
+ * 2) Direct :8000 from resolveTbApiBaseUrl()
+ * 3) On physical Android, http://127.0.0.1:8000 (adb reverse tcp:8000 tcp:8000)
+ */
+export function resolveTbApiBaseUrls(): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (u: string) => {
+    const x = u.replace(/\/$/, "");
+    if (!seen.has(x)) {
+      seen.add(x);
+      out.push(x);
+    }
+  };
+
+  const fromEnv =
+    (typeof process !== "undefined" && (process.env.EXPO_PUBLIC_TB_API_URL as string | undefined)) ||
+    ((Constants.expoConfig as any)?.extra?.tbApiUrl as string | undefined);
+  // In dev, always include Metro proxy candidates even when an explicit URL exists.
+  // This avoids hard failures when direct :8000 is blocked but Expo's port is reachable.
+  for (const proxy of devMetroTbProxyBases()) add(proxy);
+  if (fromEnv && String(fromEnv).trim().length > 0) {
+    add(String(fromEnv));
+  } else {
+    add(resolveTbApiBaseUrl());
+  }
+  if (Platform.OS === "android" && Constants.isDevice === true) {
+    add(LOOPBACK_API);
+  }
+  return out;
+}

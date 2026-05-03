@@ -11,7 +11,7 @@ type Mode = "camera" | "preview";
 
 export default function PhlegmCaptureScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ audioDone?: string }>();
+  const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string }>();
   const insets = useSafeAreaInsets();
   const cameraRef = useRef<CameraView | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -45,6 +45,7 @@ export default function PhlegmCaptureScreen() {
       pathname: "/screening/review",
       params: {
         audioDone: params.audioDone ?? "0",
+        audioUris: params.audioUris ?? "[]",
         imageUri,
       },
     } as any);

@@ -8,11 +8,12 @@ import { Image } from "expo-image";
 export default function ReviewInputsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ audioDone?: string; imageUri?: string }>();
+  const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string; imageUri?: string }>();
 
   const audioDone = params.audioDone === "1";
   const imageDone = typeof params.imageUri === "string" && params.imageUri.length > 0;
   const imageUri = imageDone ? (params.imageUri as string) : null;
+  const audioUris = typeof params.audioUris === "string" ? params.audioUris : "[]";
 
   const [audioOpen, setAudioOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
@@ -199,7 +200,7 @@ export default function ReviewInputsScreen() {
           onPress={() => {
             router.push({
               pathname: "/screening/processing",
-              params: { audioDone: audioDone ? "1" : "0", imageUri: imageUri ?? "" },
+                params: { audioDone: audioDone ? "1" : "0", audioUris, imageUri: imageUri ?? "" },
             } as any);
           }}
           disabled={!audioDone || !imageDone}

@@ -408,7 +408,7 @@ export default function HomeScreen() {
                 Low TB Risk – Monitor{"\n"}symptoms.
               </Text>
               <Text style={{ fontSize: 12, color: "#888", fontStyle: "italic" }}>
-                "This is not a medical diagnosis"
+                {"“This is not a medical diagnosis”"}
               </Text>
             </View>
             {/* Right: gauge */}

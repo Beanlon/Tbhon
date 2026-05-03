@@ -3,13 +3,186 @@ import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Audio } from "expo-av";
+import * as FileSystem from "expo-file-system/legacy";
+import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
 
 const COUGH_TOTAL = 3;
+const MIN_RECORD_SECONDS = 3;
+const MAX_RECORD_SECONDS = 10;
+
+type QualityStatus = "checking" | "ok" | "bad" | "skipped";
+type QualityLabel = "silence" | "speech" | "replay" | "noise" | "invalid" | "";
+
+const QUALITY_LABEL_MSG: Record<string, string> = {
+  silence: "Too quiet — cough louder",
+  speech: "Sounds like speech, not a cough",
+  replay: "Sounds like a recording/replay",
+  noise: "Too much background noise",
+  invalid: "Could not validate recording",
+};
 
 type Phase = "ready" | "countdown" | "recording" | "done";
 
 function pad2(n: number) {
   return String(Math.max(0, Math.floor(n))).padStart(2, "0");
+}
+
+function normalizeFileUri(uri: string): string {
+  const trimmed = String(uri || "").trim();
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
+  return hasScheme ? trimmed : `file://${trimmed}`;
+}
+
+function pickMimeAndName(uri: string): { name: string; mimeType: string } {
+  const lower = uri.toLowerCase();
+  if (lower.endsWith(".m4a") || lower.endsWith(".mp4") || lower.endsWith(".aac")) {
+    return { name: "cough.m4a", mimeType: "audio/mp4" };
+  }
+  if (lower.endsWith(".3gp") || lower.endsWith(".3gpp")) {
+    return { name: "cough.3gp", mimeType: "audio/3gpp" };
+  }
+  if (lower.endsWith(".caf")) {
+    return { name: "cough.caf", mimeType: "audio/x-caf" };
+  }
+  if (lower.endsWith(".ogg") || lower.endsWith(".oga") || lower.endsWith(".opus")) {
+    return { name: "cough.ogg", mimeType: "audio/ogg" };
+  }
+  return { name: "cough.wav", mimeType: "audio/wav" };
+}
+
+async function uploadAudioForCheck(base: string, uri: string): Promise<any | null> {
+  const fileUri = normalizeFileUri(uri);
+  const { name, mimeType } = pickMimeAndName(fileUri);
+  const url = `${base.replace(/\/$/, "")}/check-quality`;
+  const result = await FileSystem.uploadAsync(url, fileUri, {
+    httpMethod: "POST",
+    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+    fieldName: "file",
+    mimeType,
+    parameters: { filename: name },
+  });
+  if (result.status < 200 || result.status >= 300) return null;
+  try {
+    return JSON.parse(result.body || "{}");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Copy a freshly recorded audio file out of Expo Go's volatile cache into the
+ * app's persistent documentDirectory so it survives navigation/reloads and
+ * is reachable from later screens (e.g. Processing/Predict).
+ */
+async function persistRecordingToDocs(srcUri: string, coughIndex: number): Promise<string> {
+  const src = normalizeFileUri(srcUri);
+  const docs = FileSystem.documentDirectory ?? "";
+  if (!docs) return src;
+  const dirUri = `${docs}coughs`;
+  try {
+    const info = await FileSystem.getInfoAsync(dirUri);
+    if (!info.exists) {
+      await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
+    }
+  } catch {
+    // best-effort; if mkdir fails fall back to docs root
+  }
+  const lower = src.toLowerCase();
+  const ext = lower.endsWith(".m4a")
+    ? ".m4a"
+    : lower.endsWith(".3gp")
+      ? ".3gp"
+      : lower.endsWith(".caf")
+        ? ".caf"
+        : lower.endsWith(".ogg")
+          ? ".ogg"
+          : ".wav";
+  const ts = Date.now();
+  const dest = `${dirUri}/cough_${coughIndex}_${ts}${ext}`;
+  try {
+    await FileSystem.copyAsync({ from: src, to: dest });
+    return dest;
+  } catch (e) {
+    console.log("[Recording] persistRecording copy failed:", String((e as any)?.message ?? e));
+    return src;
+  }
+}
+
+function QualityBadge({ status, label }: { status: QualityStatus; label: QualityLabel }) {
+  if (status === "skipped") return null;
+
+  if (status === "checking") {
+    return (
+      <View
+        style={{
+          marginTop: 14,
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          borderRadius: 12,
+          backgroundColor: "rgba(255,255,255,0.08)",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <Ionicons name="sync-outline" size={18} color="rgba(232,238,255,0.7)" />
+        <Text style={{ color: "rgba(232,238,255,0.7)", fontSize: 13, fontWeight: "600" }}>
+          Checking recording quality…
+        </Text>
+      </View>
+    );
+  }
+
+  if (status === "ok") {
+    return (
+      <View
+        style={{
+          marginTop: 14,
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          borderRadius: 12,
+          backgroundColor: "rgba(52,211,153,0.15)",
+          borderWidth: 1,
+          borderColor: "rgba(52,211,153,0.35)",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <Ionicons name="checkmark-circle" size={18} color="#34D399" />
+        <Text style={{ color: "#34D399", fontSize: 13, fontWeight: "700" }}>
+          Good take — cough detected
+        </Text>
+      </View>
+    );
+  }
+
+  const msg = QUALITY_LABEL_MSG[label] ?? "Recording may not be a clear cough";
+  return (
+    <View
+      style={{
+        marginTop: 14,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        backgroundColor: "rgba(251,191,36,0.12)",
+        borderWidth: 1,
+        borderColor: "rgba(251,191,36,0.35)",
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 8,
+      }}
+    >
+      <Ionicons name="warning-outline" size={18} color="#FBBf24" style={{ marginTop: 1 }} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: "#FBBf24", fontSize: 13, fontWeight: "700", marginBottom: 2 }}>
+          Poor quality — redo recommended
+        </Text>
+        <Text style={{ color: "rgba(251,191,36,0.85)", fontSize: 12 }}>{msg}</Text>
+      </View>
+    </View>
+  );
 }
 
 export default function RecordingScreen() {
@@ -20,9 +193,17 @@ export default function RecordingScreen() {
   const [countdown, setCountdown] = useState(3);
   const [seconds, setSeconds] = useState(0);
   const [durations, setDurations] = useState<(number | null)[]>(() => Array.from({ length: COUGH_TOTAL }, () => null));
+  const [audioUris, setAudioUris] = useState<(string | null)[]>(() => Array.from({ length: COUGH_TOTAL }, () => null));
+  const [micReady, setMicReady] = useState(false);
+  const [levels, setLevels] = useState<number[]>(() => Array.from({ length: 26 }, () => 0.15));
+  const [qualityStatus, setQualityStatus] = useState<QualityStatus>("skipped");
+  const [qualityLabel, setQualityLabel] = useState<QualityLabel>("");
 
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const meterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingRef = useRef<any>(null);
+  const stoppingRef = useRef(false);
 
   const timeLabel = useMemo(() => {
     const m = Math.floor(seconds / 60);
@@ -33,17 +214,95 @@ export default function RecordingScreen() {
   const clearTimers = () => {
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);
+    if (meterIntervalRef.current) clearInterval(meterIntervalRef.current);
     countdownIntervalRef.current = null;
     recordIntervalRef.current = null;
+    meterIntervalRef.current = null;
   };
 
   useEffect(() => {
-    return () => clearTimers();
+    let mounted = true;
+    (async () => {
+      try {
+        const perm = await Audio.requestPermissionsAsync();
+        if (!mounted) return;
+        setMicReady(perm.granted === true);
+        if (perm.granted) {
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: true,
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: false,
+            shouldDuckAndroid: true,
+            playThroughEarpieceAndroid: false,
+          });
+        }
+      } catch {
+        if (mounted) setMicReady(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      clearTimers();
+      // best-effort cleanup
+      void recordingRef.current?.stopAndUnloadAsync().catch(() => undefined);
+      recordingRef.current = null;
+    };
   }, []);
 
-  const startRecording = () => {
+  const startRecording = async () => {
+    stoppingRef.current = false;
     setPhase("recording");
-    recordIntervalRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+    setLevels(Array.from({ length: 26 }, () => 0.15));
+    setQualityStatus("skipped");
+    setQualityLabel("");
+    recordIntervalRef.current = setInterval(() => {
+      setSeconds((s) => {
+        const next = s + 1;
+        if (next >= MAX_RECORD_SECONDS && !stoppingRef.current) {
+          stoppingRef.current = true;
+          void stopRecording();
+        }
+        return next;
+      });
+    }, 1000);
+
+    // Start real audio recording (best effort).
+    if (!micReady) return;
+    try {
+      const rec = new Audio.Recording();
+      const opts: any = Audio.RecordingOptionsPresets.HIGH_QUALITY;
+      // Enable metering if supported so the waveform matches real mic input.
+      if (opts?.ios) opts.ios.isMeteringEnabled = true;
+      if (opts?.android) opts.android.isMeteringEnabled = true;
+      await rec.prepareToRecordAsync(opts);
+      await rec.startAsync();
+      recordingRef.current = rec;
+
+      // Poll metering frequently for a responsive waveform.
+      meterIntervalRef.current = setInterval(async () => {
+        try {
+          const r = recordingRef.current;
+          if (!r) return;
+          const st = await r.getStatusAsync();
+          const db = typeof st?.metering === "number" ? st.metering : -160;
+          // metering is typically in dBFS (negative). Map [-60..0] -> [0..1].
+          const clamped = Math.max(-60, Math.min(0, db));
+          const norm = (clamped + 60) / 60;
+          const v = 0.12 + norm * 0.88;
+          setLevels((prev) => {
+            const next = prev.slice(1);
+            next.push(v);
+            return next;
+          });
+        } catch {
+          // ignore polling errors
+        }
+      }, 90);
+    } catch {
+      // keep UX running; file uri will stay null
+      recordingRef.current = null;
+    }
   };
 
   const startCountdown = () => {
@@ -58,7 +317,7 @@ export default function RecordingScreen() {
         if (c <= 1) {
           if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
           countdownIntervalRef.current = null;
-          startRecording();
+          void startRecording();
           return 0;
         }
         return c - 1;
@@ -66,14 +325,76 @@ export default function RecordingScreen() {
     }, 850);
   };
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
+    if (stoppingRef.current) {
+      // allow the first stop call to proceed; guard against double-taps
+    } else {
+      stoppingRef.current = true;
+    }
     clearTimers();
+
+    let uri: string | null = null;
+    try {
+      const rec = recordingRef.current;
+      if (rec) {
+        await rec.stopAndUnloadAsync();
+        uri = rec.getURI() ?? null;
+      }
+    } catch {
+      uri = null;
+    } finally {
+      recordingRef.current = null;
+    }
+
+    if (uri) {
+      try {
+        uri = await persistRecordingToDocs(uri, coughIndex);
+      } catch (e) {
+        console.log("[Recording] persistRecording threw:", String((e as any)?.message ?? e));
+      }
+    }
+
     setDurations((prev) => {
       const next = [...prev];
       next[coughIndex - 1] = seconds;
       return next;
     });
+    setAudioUris((prev) => {
+      const next = [...prev];
+      next[coughIndex - 1] = uri;
+      return next;
+    });
     setPhase("done");
+
+    if (uri) {
+      setQualityStatus("checking");
+      setQualityLabel("");
+      const apiBases = resolveTbApiBaseUrls();
+      try {
+        let data: any = null;
+        for (const base of apiBases) {
+          try {
+            const result = await uploadAudioForCheck(base, uri);
+            if (result) {
+              data = result;
+              break;
+            }
+          } catch (e) {
+            console.log(`[Recording] check-quality failed at ${base}:`, String((e as any)?.message ?? e));
+          }
+        }
+        if (!data) {
+          setQualityStatus("skipped");
+          return;
+        }
+        setQualityStatus(data?.ok === true ? "ok" : "bad");
+        setQualityLabel((data?.label ?? "") as QualityLabel);
+      } catch {
+        setQualityStatus("skipped");
+      }
+    } else {
+      setQualityStatus("skipped");
+    }
   };
 
   const clearDurationForCurrentCough = () => {
@@ -87,6 +408,7 @@ export default function RecordingScreen() {
   /** Same cough again (ready state, same index). */
   const redoCurrentCough = () => {
     clearTimers();
+    stoppingRef.current = false;
     setSeconds(0);
     setCountdown(3);
     setPhase("ready");
@@ -95,6 +417,7 @@ export default function RecordingScreen() {
   /** After a successful take, move to the next cough or stay on last for final review. */
   const goToNextCough = () => {
     clearTimers();
+    stoppingRef.current = false;
     setSeconds(0);
     setCountdown(3);
     setPhase("ready");
@@ -104,11 +427,13 @@ export default function RecordingScreen() {
   /** Full reset (e.g. leave screen). */
   const resetSession = () => {
     clearTimers();
+    stoppingRef.current = false;
     setCoughIndex(1);
     setSeconds(0);
     setCountdown(3);
     setPhase("ready");
     setDurations(Array.from({ length: COUGH_TOTAL }, () => null));
+    setAudioUris(Array.from({ length: COUGH_TOTAL }, () => null));
   };
 
   const isLastCough = coughIndex === COUGH_TOTAL;
@@ -302,15 +627,13 @@ export default function RecordingScreen() {
                 overflow: "hidden",
               }}
             >
-              {Array.from({ length: 22 }).map((_, i) => {
-                const base = (i % 6) + 2;
-                const anim = phase === "recording" ? (seconds % 4) * 2 : 0;
-                const h = 10 + base * 6 + ((i + seconds) % 5) * 3 + anim;
+              {levels.map((lvl, i) => {
+                const h = 8 + lvl * 44;
                 return (
                   <View
                     key={i}
                     style={{
-                      width: 6,
+                      width: 5,
                       height: Math.min(52, h),
                       borderRadius: 4,
                       backgroundColor: "rgba(232,238,255,0.70)",
@@ -334,6 +657,7 @@ export default function RecordingScreen() {
             <Text style={{ color: "rgba(232,238,255,0.75)", fontSize: 13, textAlign: "center", lineHeight: 18 }}>
               Duration {timeLabel}. Next: cough {coughIndex + 1} of {COUGH_TOTAL}.
             </Text>
+            <QualityBadge status={qualityStatus} label={qualityLabel} />
           </>
         )}
 
@@ -345,6 +669,7 @@ export default function RecordingScreen() {
             <Text style={{ color: "rgba(232,238,255,0.75)", fontSize: 13, textAlign: "center", lineHeight: 18 }}>
               Last clip: {timeLabel}. You can redo the last cough if needed.
             </Text>
+            <QualityBadge status={qualityStatus} label={qualityLabel} />
           </>
         )}
       </View>
@@ -399,10 +724,16 @@ export default function RecordingScreen() {
         {phase === "recording" && (
           <View style={{ flexDirection: "row", gap: 12 }}>
             <Pressable
-              onPress={stopRecording}
+              onPress={() => void stopRecording()}
+              disabled={seconds < MIN_RECORD_SECONDS}
               style={({ pressed }) => ({
                 flex: 1,
-                backgroundColor: pressed ? "rgba(255,90,90,0.95)" : "#FF5A5A",
+                backgroundColor:
+                  seconds < MIN_RECORD_SECONDS
+                    ? "rgba(255,90,90,0.35)"
+                    : pressed
+                      ? "rgba(255,90,90,0.95)"
+                      : "#FF5A5A",
                 borderRadius: 14,
                 paddingVertical: 16,
                 alignItems: "center",
@@ -410,89 +741,141 @@ export default function RecordingScreen() {
               })}
               accessibilityRole="button"
             >
-              <Text style={{ color: "#081126", fontWeight: "900", fontSize: 14 }}>Stop</Text>
+              <Text style={{ color: "#081126", fontWeight: "900", fontSize: 14 }}>
+                {seconds < MIN_RECORD_SECONDS ? `Hold… (${MIN_RECORD_SECONDS - seconds}s)` : "Stop"}
+              </Text>
             </Pressable>
           </View>
         )}
 
-        {phase === "done" && !allDone && (
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <Pressable
-              onPress={() => {
-                clearDurationForCurrentCough();
-                redoCurrentCough();
-              }}
-              style={({ pressed }) => ({
-                flex: 1,
-                backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-                borderRadius: 14,
-                paddingVertical: 16,
-                alignItems: "center",
-                justifyContent: "center",
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.10)",
-              })}
-              accessibilityRole="button"
-            >
-              <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 14 }}>Redo</Text>
-            </Pressable>
-            <Pressable
-              onPress={goToNextCough}
-              style={({ pressed }) => ({
-                flex: 1,
-                backgroundColor: pressed ? "rgba(255,255,255,0.92)" : "#FFFFFF",
-                borderRadius: 14,
-                paddingVertical: 16,
-                alignItems: "center",
-                justifyContent: "center",
-              })}
-              accessibilityRole="button"
-            >
-              <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 14 }}>Next cough</Text>
-            </Pressable>
-          </View>
-        )}
+        {phase === "done" && !allDone && (() => {
+          const advanceDisabled = qualityStatus !== "ok";
+          const advanceLabel =
+            qualityStatus === "checking"
+              ? "Checking…"
+              : qualityStatus === "ok"
+                ? "Next cough"
+                : "Redo to continue";
+          return (
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <Pressable
+                onPress={() => {
+                  clearDurationForCurrentCough();
+                  redoCurrentCough();
+                }}
+                style={({ pressed }) => ({
+                  flex: 1,
+                  backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+                  borderRadius: 14,
+                  paddingVertical: 16,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.10)",
+                })}
+                accessibilityRole="button"
+              >
+                <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 14 }}>Redo</Text>
+              </Pressable>
+              <Pressable
+                onPress={goToNextCough}
+                disabled={advanceDisabled}
+                style={({ pressed }) => ({
+                  flex: 1,
+                  backgroundColor: advanceDisabled
+                    ? "rgba(255,255,255,0.18)"
+                    : pressed
+                      ? "rgba(255,255,255,0.92)"
+                      : "#FFFFFF",
+                  borderRadius: 14,
+                  paddingVertical: 16,
+                  alignItems: "center",
+                  justifyContent: "center",
+                })}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: advanceDisabled }}
+              >
+                <Text
+                  style={{
+                    color: advanceDisabled ? "rgba(232,238,255,0.55)" : "#0B1530",
+                    fontWeight: "900",
+                    fontSize: 14,
+                  }}
+                >
+                  {advanceLabel}
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })()}
 
-        {phase === "done" && allDone && (
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <Pressable
-              onPress={() => {
-                clearDurationForCurrentCough();
-                redoCurrentCough();
-              }}
-              style={({ pressed }) => ({
-                flex: 1,
-                backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-                borderRadius: 14,
-                paddingVertical: 16,
-                alignItems: "center",
-                justifyContent: "center",
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.10)",
-              })}
-              accessibilityRole="button"
-            >
-              <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 14 }}>Redo last</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                resetSession();
-                router.push({ pathname: "/screening/phlegm", params: { audioDone: "1" } } as any);
-              }}
-              style={({ pressed }) => ({
-                flex: 1,
-                backgroundColor: pressed ? "rgba(255,255,255,0.92)" : "#FFFFFF",
-                borderRadius: 14,
-                paddingVertical: 16,
-                alignItems: "center",
-                justifyContent: "center",
-              })}
-              accessibilityRole="button"
-            >
-              <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 14 }}>Continue</Text>
-            </Pressable>
-          </View>
-        )}
+        {phase === "done" && allDone && (() => {
+          const allOk = qualityStatus === "ok";
+          const continueDisabled = !allOk;
+          const continueLabel = qualityStatus === "checking" ? "Checking…" : allOk ? "Continue" : "Redo to continue";
+          return (
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <Pressable
+                onPress={() => {
+                  clearDurationForCurrentCough();
+                  redoCurrentCough();
+                }}
+                style={({ pressed }) => ({
+                  flex: 1,
+                  backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+                  borderRadius: 14,
+                  paddingVertical: 16,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.10)",
+                })}
+                accessibilityRole="button"
+              >
+                <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 14 }}>Redo last</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (continueDisabled) return;
+                  resetSession();
+                  const recordedUris = audioUris.filter((u) => typeof u === "string" && u.length > 0) as string[];
+                  router.push({
+                    pathname: "/screening/phlegm",
+                    params: {
+                      audioDone: recordedUris.length === COUGH_TOTAL ? "1" : "0",
+                      audioUris: JSON.stringify(recordedUris),
+                    },
+                  } as any);
+                }}
+                disabled={continueDisabled}
+                style={({ pressed }) => ({
+                  flex: 1,
+                  backgroundColor: continueDisabled
+                    ? "rgba(255,255,255,0.18)"
+                    : pressed
+                      ? "rgba(255,255,255,0.92)"
+                      : "#FFFFFF",
+                  borderRadius: 14,
+                  paddingVertical: 16,
+                  alignItems: "center",
+                  justifyContent: "center",
+                })}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: continueDisabled }}
+              >
+                <Text
+                  style={{
+                    color: continueDisabled ? "rgba(232,238,255,0.55)" : "#0B1530",
+                    fontWeight: "900",
+                    fontSize: 14,
+                  }}
+                >
+                  {continueLabel}
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })()}
       </View>
     </View>
   );
