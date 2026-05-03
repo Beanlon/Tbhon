@@ -13,7 +13,13 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <Stack>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            header: () => null,
+            headerShadowVisible: false,
+          }}
+        >
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="landingpage/landingpage" options={{ headerShown: false }} />
           <Stack.Screen name="acountOptions/accountOptions" options={{ headerShown: false }} />

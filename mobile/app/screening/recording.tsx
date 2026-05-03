@@ -350,7 +350,13 @@ export default function RecordingScreen() {
       </View>
 
       {/* Bottom actions */}
-      <View style={{ paddingHorizontal: 18, paddingBottom: 22, paddingTop: 12 }}>
+      <View
+        style={{
+          paddingHorizontal: 18,
+          paddingTop: 12,
+          paddingBottom: Math.max(insets.bottom, 38) + 42,
+        }}
+      >
         {phase === "ready" && (
           <Pressable
             onPress={startCountdown}
@@ -471,7 +477,7 @@ export default function RecordingScreen() {
             <Pressable
               onPress={() => {
                 resetSession();
-                router.push({ pathname: "/screening/phlegm" as any });
+                router.push({ pathname: "/screening/phlegm", params: { audioDone: "1" } } as any);
               }}
               style={({ pressed }) => ({
                 flex: 1,
