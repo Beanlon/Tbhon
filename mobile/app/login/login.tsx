@@ -112,7 +112,7 @@ export default function Login() {
                 color: '#666666',
                 fontWeight: '400',
               }}>
-                Don't have an account? 
+                {"Don't have an account? "}
               </Text>
               <Pressable onPress={handleSignUp}>
                 <Text style={{
