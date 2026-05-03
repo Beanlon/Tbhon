@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
-import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Image } from "expo-image";
 
 type Mode = "camera" | "preview";
 
 export default function PhlegmCaptureScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ audioDone?: string }>();
   const insets = useSafeAreaInsets();
   const cameraRef = useRef<CameraView | null>(null);
+  const [errorText, setErrorText] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("camera");
   const [photoUri, setPhotoUri] = useState<string | null>(null);
 
@@ -30,13 +32,34 @@ export default function PhlegmCaptureScreen() {
 
   const canShowCamera = hasCameraPermission && mode === "camera";
 
-  const headerTitle = mode === "preview" ? "Review photo" : "Capture phlegm";
+  const headerTitle = mode === "preview" ? "Preview" : "Capture phlegm";
 
   const helperText = useMemo(() => {
     if (!hasCameraPermission) return "We need camera access to take a photo.";
-    if (mode === "preview") return "Make sure the sample is well-lit and in focus.";
     return "Use good lighting. Keep the container centered in the frame.";
-  }, [hasCameraPermission, mode]);
+  }, [hasCameraPermission]);
+
+  const goToReview = (imageUri: string) => {
+    setErrorText(null);
+    router.replace({
+      pathname: "/screening/review",
+      params: {
+        audioDone: params.audioDone ?? "0",
+        imageUri,
+      },
+    } as any);
+  };
+
+  const showPreview = (uri: string) => {
+    setErrorText(null);
+    setPhotoUri(uri);
+    setMode("preview");
+  };
+
+  const retake = () => {
+    setPhotoUri(null);
+    setMode("camera");
+  };
 
   const pickFromLibrary = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -51,10 +74,11 @@ export default function PhlegmCaptureScreen() {
 
     if (result.canceled) return;
     const uri = result.assets?.[0]?.uri;
-    if (!uri) return;
-
-    setPhotoUri(uri);
-    setMode("preview");
+    if (!uri) {
+      setErrorText("No image selected. Please try again.");
+      return;
+    }
+    showPreview(uri);
   };
 
   const takePhoto = async () => {
@@ -65,14 +89,11 @@ export default function PhlegmCaptureScreen() {
       skipProcessing: false,
     });
 
-    if (!photo?.uri) return;
-    setPhotoUri(photo.uri);
-    setMode("preview");
-  };
-
-  const retake = () => {
-    setPhotoUri(null);
-    setMode("camera");
+    if (!photo?.uri) {
+      setErrorText("Couldn’t capture a photo. Try Upload instead.");
+      return;
+    }
+    showPreview(photo.uri);
   };
 
   return (
@@ -138,7 +159,13 @@ export default function PhlegmCaptureScreen() {
           {mode === "preview" && photoUri ? (
             <Image source={{ uri: photoUri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
           ) : canShowCamera ? (
-            <CameraView ref={(r) => (cameraRef.current = r)} style={{ width: "100%", height: "100%" }} facing="back" />
+            <CameraView
+              ref={(r) => {
+                cameraRef.current = r;
+              }}
+              style={{ width: "100%", height: "100%" }}
+              facing="back"
+            />
           ) : (
             <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 20 }}>
               <Ionicons name="camera" size={36} color="rgba(232,238,255,0.8)" />
@@ -181,10 +208,21 @@ export default function PhlegmCaptureScreen() {
         <Text style={{ marginTop: 12, color: "rgba(232,238,255,0.75)", fontSize: 13, textAlign: "center", lineHeight: 18 }}>
           {helperText}
         </Text>
+        {!!errorText && (
+          <Text style={{ marginTop: 8, color: "rgba(255,120,120,0.95)", fontSize: 12, textAlign: "center", fontWeight: "700" }}>
+            {errorText}
+          </Text>
+        )}
       </View>
 
       {/* Bottom actions */}
-      <View style={{ paddingHorizontal: 18, paddingBottom: 22, paddingTop: 10 }}>
+      <View
+        style={{
+          paddingHorizontal: 18,
+          paddingTop: 10,
+          paddingBottom: Math.max(insets.bottom, 16) + 18,
+        }}
+      >
         {mode === "preview" ? (
           <View style={{ flexDirection: "row", gap: 12 }}>
             <Pressable
@@ -204,7 +242,10 @@ export default function PhlegmCaptureScreen() {
               <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 14 }}>Retake</Text>
             </Pressable>
             <Pressable
-              onPress={() => router.back()}
+              onPress={() => {
+                if (!photoUri) return;
+                goToReview(photoUri);
+              }}
               style={({ pressed }) => ({
                 flex: 1,
                 backgroundColor: pressed ? "rgba(255,255,255,0.92)" : "#FFFFFF",
