@@ -11,24 +11,15 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            header: () => null,
-            headerShadowVisible: false,
-          }}
-        >
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="landingpage/landingpage" options={{ headerShown: false }} />
-          <Stack.Screen name="acountOptions/accountOptions" options={{ headerShown: false }} />
-          <Stack.Screen name="login/login" options={{ headerShown: false }} />
-          <Stack.Screen name="signUp/signUpPersonal" options={{ headerShown: false }} />
-          <Stack.Screen name="signUp/signUpEmail" options={{ headerShown: false }} />
-          <Stack.Screen name="home/HomeScreen" options={{ headerShown: false }} />
-        </Stack>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <Stack>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="home/HomeScreen" options={{ headerShown: false }} />
+      <Stack.Screen name="learn/learn" options={{ headerShown: false }} />
+      <Stack.Screen name="landingpage/landingpage" options={{ headerShown: false }} />
+      <Stack.Screen name="acountOptions/accountOptions" options={{ headerShown: false }} />
+      <Stack.Screen name="login/login" options={{ headerShown: false }} />
+      <Stack.Screen name="signUp/signUpPersonal" options={{ headerShown: false }} />
+      <Stack.Screen name="signUp/signUpEmail" options={{ headerShown: false }} />
+    </Stack>
   );
 }

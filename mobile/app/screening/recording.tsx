@@ -7,6 +7,7 @@ import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
 
+// Configuration
 const COUGH_TOTAL = 3;
 const MIN_RECORD_SECONDS = 3;
 const MAX_RECORD_SECONDS = 10;
@@ -22,8 +23,10 @@ const QUALITY_LABEL_MSG: Record<string, string> = {
   invalid: "Could not validate recording",
 };
 
+// Type definitions
 type Phase = "ready" | "countdown" | "recording" | "done";
 
+// Utility function
 function pad2(n: number) {
   return String(Math.max(0, Math.floor(n))).padStart(2, "0");
 }
@@ -199,18 +202,21 @@ export default function RecordingScreen() {
   const [qualityStatus, setQualityStatus] = useState<QualityStatus>("skipped");
   const [qualityLabel, setQualityLabel] = useState<QualityLabel>("");
 
+  // Refs for interval management
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const meterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingRef = useRef<any>(null);
   const stoppingRef = useRef(false);
 
+  // Computed values
   const timeLabel = useMemo(() => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${pad2(m)}:${pad2(s)}`;
   }, [seconds]);
 
+  // Timer management
   const clearTimers = () => {
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);

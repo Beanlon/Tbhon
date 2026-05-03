@@ -9,6 +9,7 @@ export default function InstructionsScreen({ onClose }: { onClose?: () => void }
     else router.back();
   };
 
+  // Instructions data
   const instructions = [
     "Find a quiet environment",
     "You will record 3 separate coughs, one at a time",
