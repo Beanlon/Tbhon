@@ -478,8 +478,8 @@ export default function HomeScreen() {
               <Text style={{ fontSize: 13, fontWeight: "700", marginBottom: 6, color: "#000" }}>
                 Low TB Risk - Monitor symptoms.
               </Text>
-              <Text style={{ fontSize: 11, color: "#999", marginBottom: 8 }}>
-                This is not a medical diagnosis
+              <Text style={{ fontSize: 12, color: "#888", fontStyle: "italic" }}>
+                {"“This is not a medical diagnosis”"}
               </Text>
               <Text style={{ fontSize: 9, color: "#bbb" }}>5/2/2026 · 1:00 AM</Text>
             </View>

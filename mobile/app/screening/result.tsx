@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -52,7 +52,18 @@ const RISK_CONFIG: Record<
 export default function ResultScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ risk?: string }>();
+  const params = useLocalSearchParams<{
+    risk?: string;
+    probTb?: string;
+    audioUris?: string;
+    imageUri?: string;
+    invalidAudio?: string;
+    invalidLabel?: string;
+    invalidReasons?: string;
+    uploadError?: string;
+    apiAttempt?: string;
+    wifiRequired?: string;
+  }>();
 
   const risk: RiskLevel =
     params.risk === "moderate" || params.risk === "high"
@@ -60,6 +71,12 @@ export default function ResultScreen() {
       : "low";
 
   const cfg = RISK_CONFIG[risk];
+  const probTb = typeof params.probTb === "string" ? Number(params.probTb) : null;
+  const invalidAudio = params.invalidAudio === "1";
+  const invalidLabel = typeof params.invalidLabel === "string" ? params.invalidLabel : "";
+  const uploadError = params.uploadError === "1";
+  const apiAttempt = typeof params.apiAttempt === "string" ? params.apiAttempt : "";
+  const wifiRequired = params.wifiRequired === "1";
 
   return (
     <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
@@ -101,6 +118,123 @@ export default function ResultScreen() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 32, paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
+        {uploadError && (
+          <View
+            style={{
+              backgroundColor: "#FEF2F2",
+              borderRadius: 14,
+              padding: 14,
+              borderWidth: 1,
+              borderColor: "#FECACA",
+              marginBottom: 16,
+            }}
+          >
+            {wifiRequired ? (
+              <View
+                style={{
+                  backgroundColor: "#FFFBEB",
+                  borderRadius: 12,
+                  padding: 12,
+                  borderWidth: 1,
+                  borderColor: "#FCD34D",
+                  marginBottom: 12,
+                }}
+              >
+                <Text style={{ color: "#92400E", fontWeight: "900", fontSize: 13, marginBottom: 6 }}>
+                  Phone is on mobile data (4G/5G)
+                </Text>
+                <Text style={{ color: "#78350F", fontSize: 12, lineHeight: 18 }}>
+                  Addresses like <Text style={{ fontWeight: "800" }}>192.168.x.x</Text> only work on the same{" "}
+                  <Text style={{ fontWeight: "800" }}>Wi‑Fi</Text> as your PC. Turn on Wi‑Fi, join the same network as the computer running{" "}
+                  <Text style={{ fontWeight: "800" }}>Expo</Text> and <Text style={{ fontWeight: "800" }}>infer_api.py</Text>, then run screening again.
+                </Text>
+              </View>
+            ) : null}
+            <Text style={{ color: "#991B1B", fontWeight: "900", fontSize: 13, marginBottom: 6 }}>
+              Could not reach the analysis server
+            </Text>
+            {!wifiRequired ? (
+            <Text style={{ color: "#7F1D1D", fontSize: 12, lineHeight: 18 }}>
+              The app tries <Text style={{ fontWeight: "800" }}>http://YOUR_IP:8081/_tb_infer</Text> first (Metro proxies to port 8000).{" "}
+              <Text style={{ fontWeight: "800" }}>Restart Expo</Text> after updating the project so Metro loads the proxy. If it still fails, Windows may be blocking port{" "}
+              <Text style={{ fontWeight: "800" }}>8000</Text> (direct URL) — use one of these:
+            </Text>
+            ) : (
+            <Text style={{ color: "#7F1D1D", fontSize: 12, lineHeight: 18 }}>
+              After you are on Wi‑Fi, if it still fails, check Windows Firewall for port <Text style={{ fontWeight: "800" }}>8000</Text> or use:
+            </Text>
+            )}
+            <Text style={{ color: "#7F1D1D", fontSize: 12, lineHeight: 18, marginTop: 10 }}>
+              1) Open <Text style={{ fontWeight: "800" }}>PowerShell as Administrator</Text> and run (then retry):
+            </Text>
+            <Text
+              style={{
+                color: "#450A0A",
+                fontSize: 11,
+                marginTop: 6,
+                fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+              }}
+              selectable
+            >
+              netsh advfirewall firewall add rule name=&quot;TBhon API 8000&quot; dir=in action=allow protocol=TCP localport=8000 profile=private
+            </Text>
+            <Text style={{ color: "#7F1D1D", fontSize: 12, lineHeight: 18, marginTop: 10 }}>
+              2) <Text style={{ fontWeight: "800" }}>Android + USB:</Text> run{" "}
+              <Text style={{ fontWeight: "800" }}>adb reverse tcp:8000 tcp:8000</Text> — the app will retry via{" "}
+              <Text style={{ fontWeight: "800" }}>127.0.0.1:8000</Text> automatically.
+            </Text>
+            <Text style={{ color: "#7F1D1D", fontSize: 12, lineHeight: 18, marginTop: 8 }}>
+              Keep <Text style={{ fontWeight: "800" }}>python infer_api.py</Text> running in the <Text style={{ fontWeight: "800" }}>ml</Text> folder.
+            </Text>
+            {apiAttempt.length > 0 ? (
+              <Text
+                style={{
+                  color: "#991B1B",
+                  fontSize: 11,
+                  marginTop: 10,
+                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                }}
+                selectable
+              >
+                Tried: {apiAttempt}
+              </Text>
+            ) : null}
+          </View>
+        )}
+        {invalidAudio && (
+          <View
+            style={{
+              backgroundColor: "#FFFBEB",
+              borderRadius: 14,
+              padding: 14,
+              borderWidth: 1,
+              borderColor: "#FCD34D",
+              marginBottom: 16,
+            }}
+          >
+            <Text style={{ color: "#92400E", fontWeight: "900", fontSize: 13, marginBottom: 6 }}>
+              Recording quality issue detected
+            </Text>
+            <Text style={{ color: "#92400E", fontSize: 12, lineHeight: 17 }}>
+              {invalidLabel === "silence"
+                ? "The recording was too quiet / silent. Please cough once clearly within 3–10 seconds."
+                : invalidLabel === "speech"
+                  ? "This sounded more like speech/throat-clearing than a cough. Please record a single clear cough."
+                  : invalidLabel === "replay"
+                    ? "This may be playback/replay audio. Please record directly from the phone microphone."
+                    : invalidLabel === "noise"
+                      ? "This sounded like steady background noise. Please move to a quieter place and re-record."
+                      : "We couldn’t confidently detect a real cough in this recording. Please re-record in a quiet environment and cough once clearly."}
+            </Text>
+          </View>
+        )}
+        {typeof probTb === "number" && Number.isFinite(probTb) && (
+          <View style={{ marginBottom: 18, alignItems: "center" }}>
+            <Text style={{ color: "#64748B", fontSize: 12, fontWeight: "700" }}>
+              TB probability (avg): {(probTb * 100).toFixed(1)}%
+            </Text>
+          </View>
+        )}
         {/* Risk indicator */}
         <View style={{ alignItems: "center", marginBottom: 32 }}>
           {/* Outer ring */}
@@ -200,7 +334,20 @@ export default function ResultScreen() {
 
         {/* Buttons */}
         <Pressable
-          onPress={() => {}}
+          onPress={() =>
+            router.push({
+              pathname: "/screening/details",
+              params: {
+                risk,
+                probTb: typeof probTb === "number" && Number.isFinite(probTb) ? String(probTb) : "",
+                audioUris: typeof params.audioUris === "string" ? params.audioUris : "[]",
+                imageUri: typeof params.imageUri === "string" ? params.imageUri : "",
+                invalidAudio: invalidAudio ? "1" : "0",
+                invalidLabel,
+                invalidReasons: typeof params.invalidReasons === "string" ? params.invalidReasons : "[]",
+              },
+            } as any)
+          }
           style={({ pressed }) => ({
             backgroundColor: pressed ? "rgba(11,21,48,0.88)" : "#0B1530",
             borderRadius: 14,
