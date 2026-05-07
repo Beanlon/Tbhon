@@ -1,122 +1,87 @@
-import React, { useState } from 'react';
-import { View, Text, SafeAreaView, Pressable, TextInput } from 'react-native';
-import CachedImage from '../components/CachedImage';
-import { useRouter } from 'expo-router';
+import React, { useState } from "react";
+import { View, Text, Pressable, TextInput } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import CachedImage from "../components/CachedImage";
+import { useRouter } from "expo-router";
 
 export default function SignUpPersonal() {
   const router = useRouter();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [birthdate, setBirthdate] = useState('');
-  const [location, setLocation] = useState('');
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [birthdate, setBirthdate] = useState("");
+  const [location, setLocation] = useState("");
 
   const handleContinue = () => {
-    router.push('/signUp/signUpEmail');
+    router.push("/signUp/signUpEmail");
   };
 
   return (
-    <SafeAreaView style={{flex: 1, backgroundColor: '#FFFFFF',}}>
-      <View style={{flex: 1, paddingHorizontal: '7%', paddingTop: '7%', paddingBottom: '8%', justifyContent: 'space-between',}}>
-        <View style={{alignItems: 'center', marginTop: '2%', marginBottom: '3%',}}>
-          <CachedImage
-            source={require('../../assets/images/Tbhon assets/Tbhon Logo.png')}
-            style={{width: '75%', height: undefined, aspectRatio: 1,}}
-            resizeMode="contain"
-          />
+    <SafeAreaView
+      className="flex-1 bg-white"
+      style={{ flex: 1 }}
+      edges={["top", "right", "bottom", "left"]}
+    >
+      <View className="flex-1 justify-between px-5 pt-6 pb-7 sm:px-6 sm:pt-7 sm:pb-8 md:px-8 md:pt-8 md:pb-10">
+        <View className="mt-2 mb-3 w-full items-center sm:mb-4">
+          <View className="aspect-square w-3/4 max-w-72">
+            <CachedImage
+              source={require("../../assets/images/Tbhon assets/Tbhon Logo.png")}
+              className="size-full"
+              resizeMode="contain"
+            />
+          </View>
         </View>
 
-        <Text 
-          style={{fontSize: 28, fontWeight: '700', color: '#111111', marginBottom: '7%', textAlign: 'center',}}>
+        <Text className="mb-6 text-center text-3xl font-bold text-[#111111] sm:mb-8 md:mb-10">
           Create your account
         </Text>
 
-        <View style={{flex: 1, justifyContent: 'flex-start',}}>
+        <View className="flex-1 justify-start">
           <TextInput
-            style={{ 
-              backgroundColor: '#f8f8f8',
-              borderRadius: 14,
-              paddingHorizontal: 15,
-              paddingVertical: '4.5%',
-              marginBottom: '6%',
-              fontSize: 15,
-              color: '#111111',
-              fontWeight: '500',
-              borderWidth: 1,
-              borderColor: '#e8e8e8',
-              height: '13%',}}
+            className="mb-3 h-12 w-full rounded-xl border border-[#EDEDED] bg-[#F8F8F8] px-3 py-0 text-base font-medium leading-5 text-[#111111] sm:mb-4 md:mb-5"
             placeholder="First Name"
             placeholderTextColor="#999999"
+            textAlignVertical="center"
+            style={{ includeFontPadding: false }}
             value={firstName}
             onChangeText={setFirstName}
           />
 
           <TextInput
-            style={{ 
-              backgroundColor: '#f8f8f8',
-              borderRadius: 14,
-              paddingHorizontal: 15,
-              paddingVertical: '4.5%',
-              marginBottom: '6%',
-              fontSize: 15,
-              color: '#111111',
-              fontWeight: '500',
-              borderWidth: 1,
-              borderColor: '#e8e8e8',
-              height: '13%',}}
+            className="mb-3 h-12 w-full rounded-xl border border-[#EDEDED] bg-[#F8F8F8] px-3 py-0 text-base font-medium leading-5 text-[#111111] sm:mb-4 md:mb-5"
             placeholder="Last Name"
             placeholderTextColor="#999999"
+            textAlignVertical="center"
+            style={{ includeFontPadding: false }}
             value={lastName}
             onChangeText={setLastName}
           />
 
           <TextInput
-            style={{ 
-              backgroundColor: '#f8f8f8',
-              borderRadius: 14,
-              paddingHorizontal: 15,
-              paddingVertical: '4.5%',
-              marginBottom: '6%',
-              fontSize: 15,
-              color: '#111111',
-              fontWeight: '500',
-              borderWidth: 1,
-              borderColor: '#e8e8e8',
-              height: '13%',}}
+            className="mb-3 h-12 w-full rounded-xl border border-[#EDEDED] bg-[#F8F8F8] px-3 py-0 text-base font-medium leading-5 text-[#111111] sm:mb-4 md:mb-5"
             placeholder="Birthdate"
             placeholderTextColor="#999999"
+            textAlignVertical="center"
+            style={{ includeFontPadding: false }}
             value={birthdate}
             onChangeText={setBirthdate}
           />
 
           <TextInput
-            style={{ 
-              backgroundColor: '#f8f8f8',
-              borderRadius: 14,
-              paddingHorizontal: 15,
-              paddingVertical: '4.5%',
-              marginBottom: '6%',
-              fontSize: 15,
-              color: '#111111',
-              fontWeight: '500',
-              borderWidth: 1,
-              borderColor: '#e8e8e8',
-              height: '13%',}}
+            className="mb-3 h-12 w-full rounded-xl border border-[#EDEDED] bg-[#F8F8F8] px-3 py-0 text-base font-medium leading-5 text-[#111111] sm:mb-4 md:mb-5"
             placeholder="Location"
             placeholderTextColor="#999999"
+            textAlignVertical="center"
+            style={{ includeFontPadding: false }}
             value={location}
             onChangeText={setLocation}
           />
 
-          <Pressable 
-            style={{
-              backgroundColor: '#1a1a4d', 
-              borderRadius: 12, 
-              paddingVertical: '5%', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              marginTop: '6%',}} 
-            onPress={handleContinue}>
-            <Text style={{fontSize: 16,fontWeight: '700',color: '#FFFFFF',letterSpacing: 0.5,}}>
+          <Pressable
+            className="mt-5 w-full items-center justify-center rounded-xl bg-[#1a1a4d] py-3.5 sm:mt-6 sm:py-4"
+            onPress={handleContinue}
+          >
+            <Text className="text-base font-bold text-white" style={{ letterSpacing: 0.5 }}>
               CONTINUE
             </Text>
           </Pressable>
@@ -125,4 +90,3 @@ export default function SignUpPersonal() {
     </SafeAreaView>
   );
 }
-
