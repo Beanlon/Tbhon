@@ -1,15 +1,17 @@
 import { View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function InstructionsScreen({ onClose }: { onClose?: () => void }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const handleClose = () => {
     if (onClose) onClose();
     else router.back();
   };
 
-  // Instructions data
   const instructions = [
     "Find a quiet environment",
     "You will record 3 separate coughs, one at a time",
@@ -17,84 +19,50 @@ export default function InstructionsScreen({ onClose }: { onClose?: () => void }
   ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#fff" }}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 50, paddingBottom: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <Text style={{ fontSize: 24, fontWeight: "800", color: "#000" }}>Instructions</Text>
-          <TouchableOpacity onPress={handleClose}>
-            <Ionicons name="close" size={28} color="#333" />
-          </TouchableOpacity>
-        </View>
+    <>
+      <StatusBar style="dark" backgroundColor="#fff" translucent={false} />
+      <View className="flex-1 bg-white">
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingTop: insets.top + 24 }}
+        >
+          <View className="flex-row items-center justify-between px-5 pb-5">
+            <Text className="text-2xl font-extrabold text-black">Instructions</Text>
+            <TouchableOpacity onPress={handleClose}>
+              <Ionicons name="close" size={28} color="#333" />
+            </TouchableOpacity>
+          </View>
 
-        {/* Instructions List */}
-        <View style={{ paddingHorizontal: 20, marginTop: 20 }}>
-          {instructions.map((instruction, idx) => (
-            <View
-              key={idx}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                marginBottom: 18,
-                backgroundColor: "#f8f8f8",
-                borderRadius: 14,
-                padding: 18,
-                borderWidth: 1,
-                borderColor: "#efefef",
-              }}
-            >
-              {/* Step number circle */}
+          <View className="mt-5 px-5">
+            {instructions.map((instruction, idx) => (
               <View
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  backgroundColor: "#0a1428",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  marginRight: 16,
-                  minWidth: 44,
-                }}
+                key={idx}
+                className="mb-5 flex-row items-center rounded-2xl border border-[#efefef] bg-[#f8f8f8] p-5"
               >
-                <Text style={{ fontSize: 18, fontWeight: "bold", color: "#fff" }}>{idx + 1}</Text>
+                <View className="mr-4 size-11 min-w-11 items-center justify-center rounded-full bg-[#0a1428]">
+                  <Text className="text-lg font-bold text-white">{idx + 1}</Text>
+                </View>
+
+                <Text className="flex-1 text-base font-semibold leading-5 text-[#333]">
+                  {instruction}
+                </Text>
               </View>
+            ))}
+          </View>
 
-              {/* Instruction text */}
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: "600",
-                  color: "#333",
-                  flex: 1,
-                  lineHeight: 20,
-                }}
-              >
-                {instruction}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Start Button */}
-        <View style={{ paddingHorizontal: 20, marginTop: 40, marginBottom: 40 }}>
-          <TouchableOpacity
-            onPress={() => {
-              if (onClose) onClose();
-              router.push({ pathname: "/screening/recording" as any });
-            }}
-            style={{
-              backgroundColor: "#0a1428",
-              paddingVertical: 16,
-              paddingHorizontal: 20,
-              borderRadius: 12,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff" }}>Start Recording</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </View>
+          <View className="mt-10 mb-10 px-5">
+            <TouchableOpacity
+              onPress={() => {
+                if (onClose) onClose();
+                router.push({ pathname: "/screening/recording" as any });
+              }}
+              className="items-center justify-center rounded-xl bg-[#0a1428] px-5 py-4"
+            >
+              <Text className="text-base font-bold text-white">Start Recording</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+    </>
   );
 }

@@ -1,6 +1,7 @@
 // Proxies TB inference to Metro's port so phones can use the same host:port as Expo
 // (Windows often allows 8081 but blocks 8000).
 const { getDefaultConfig } = require("expo/metro-config");
+const { withNativeWind } = require("nativewind/metro");
 const connect = require("connect");
 const http = require("http");
 
@@ -63,4 +64,4 @@ config.server = {
   },
 };
 
-module.exports = config;
+module.exports = withNativeWind(config, { input: "./global.css" });

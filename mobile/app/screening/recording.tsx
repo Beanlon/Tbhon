@@ -7,7 +7,6 @@ import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
 
-// Configuration
 const COUGH_TOTAL = 3;
 const MIN_RECORD_SECONDS = 3;
 const MAX_RECORD_SECONDS = 10;
@@ -23,10 +22,8 @@ const QUALITY_LABEL_MSG: Record<string, string> = {
   invalid: "Could not validate recording",
 };
 
-// Type definitions
 type Phase = "ready" | "countdown" | "recording" | "done";
 
-// Utility function
 function pad2(n: number) {
   return String(Math.max(0, Math.floor(n))).padStart(2, "0");
 }
@@ -117,20 +114,9 @@ function QualityBadge({ status, label }: { status: QualityStatus; label: Quality
 
   if (status === "checking") {
     return (
-      <View
-        style={{
-          marginTop: 14,
-          paddingHorizontal: 16,
-          paddingVertical: 10,
-          borderRadius: 12,
-          backgroundColor: "rgba(255,255,255,0.08)",
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
+      <View className="mt-3.5 flex-row items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5">
         <Ionicons name="sync-outline" size={18} color="rgba(232,238,255,0.7)" />
-        <Text style={{ color: "rgba(232,238,255,0.7)", fontSize: 13, fontWeight: "600" }}>
+        <Text className="text-sm font-semibold text-[#E8EEFF]/70">
           Checking recording quality…
         </Text>
       </View>
@@ -139,22 +125,9 @@ function QualityBadge({ status, label }: { status: QualityStatus; label: Quality
 
   if (status === "ok") {
     return (
-      <View
-        style={{
-          marginTop: 14,
-          paddingHorizontal: 16,
-          paddingVertical: 10,
-          borderRadius: 12,
-          backgroundColor: "rgba(52,211,153,0.15)",
-          borderWidth: 1,
-          borderColor: "rgba(52,211,153,0.35)",
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
+      <View className="mt-3.5 flex-row items-center gap-2 rounded-xl border border-[#34D399]/35 bg-[#34D399]/15 px-4 py-2.5">
         <Ionicons name="checkmark-circle" size={18} color="#34D399" />
-        <Text style={{ color: "#34D399", fontSize: 13, fontWeight: "700" }}>
+        <Text className="text-sm font-bold text-[#34D399]">
           Good take — cough detected
         </Text>
       </View>
@@ -163,26 +136,13 @@ function QualityBadge({ status, label }: { status: QualityStatus; label: Quality
 
   const msg = QUALITY_LABEL_MSG[label] ?? "Recording may not be a clear cough";
   return (
-    <View
-      style={{
-        marginTop: 14,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 12,
-        backgroundColor: "rgba(251,191,36,0.12)",
-        borderWidth: 1,
-        borderColor: "rgba(251,191,36,0.35)",
-        flexDirection: "row",
-        alignItems: "flex-start",
-        gap: 8,
-      }}
-    >
+    <View className="mt-3.5 flex-row items-start gap-2 rounded-xl border border-[#FBBF24]/35 bg-[#FBBF24]/10 px-4 py-2.5">
       <Ionicons name="warning-outline" size={18} color="#FBBf24" style={{ marginTop: 1 }} />
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: "#FBBf24", fontSize: 13, fontWeight: "700", marginBottom: 2 }}>
+      <View className="flex-1">
+        <Text className="mb-0.5 text-sm font-bold text-[#FBBf24]">
           Poor quality — redo recommended
         </Text>
-        <Text style={{ color: "rgba(251,191,36,0.85)", fontSize: 12 }}>{msg}</Text>
+        <Text className="text-sm text-[#FBBf24]/85">{msg}</Text>
       </View>
     </View>
   );
@@ -202,21 +162,18 @@ export default function RecordingScreen() {
   const [qualityStatus, setQualityStatus] = useState<QualityStatus>("skipped");
   const [qualityLabel, setQualityLabel] = useState<QualityLabel>("");
 
-  // Refs for interval management
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const meterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingRef = useRef<any>(null);
   const stoppingRef = useRef(false);
 
-  // Computed values
   const timeLabel = useMemo(() => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${pad2(m)}:${pad2(s)}`;
   }, [seconds]);
 
-  // Timer management
   const clearTimers = () => {
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);
@@ -250,7 +207,6 @@ export default function RecordingScreen() {
     return () => {
       mounted = false;
       clearTimers();
-      // best-effort cleanup
       void recordingRef.current?.stopAndUnloadAsync().catch(() => undefined);
       recordingRef.current = null;
     };
@@ -273,26 +229,22 @@ export default function RecordingScreen() {
       });
     }, 1000);
 
-    // Start real audio recording (best effort).
     if (!micReady) return;
     try {
       const rec = new Audio.Recording();
       const opts: any = Audio.RecordingOptionsPresets.HIGH_QUALITY;
-      // Enable metering if supported so the waveform matches real mic input.
       if (opts?.ios) opts.ios.isMeteringEnabled = true;
       if (opts?.android) opts.android.isMeteringEnabled = true;
       await rec.prepareToRecordAsync(opts);
       await rec.startAsync();
       recordingRef.current = rec;
 
-      // Poll metering frequently for a responsive waveform.
       meterIntervalRef.current = setInterval(async () => {
         try {
           const r = recordingRef.current;
           if (!r) return;
           const st = await r.getStatusAsync();
           const db = typeof st?.metering === "number" ? st.metering : -160;
-          // metering is typically in dBFS (negative). Map [-60..0] -> [0..1].
           const clamped = Math.max(-60, Math.min(0, db));
           const norm = (clamped + 60) / 60;
           const v = 0.12 + norm * 0.88;
@@ -306,7 +258,6 @@ export default function RecordingScreen() {
         }
       }, 90);
     } catch {
-      // keep UX running; file uri will stay null
       recordingRef.current = null;
     }
   };
@@ -455,17 +406,10 @@ export default function RecordingScreen() {
           : "Record Cough";
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#0B1530" }}>
-      {/* Header */}
+    <View className="flex-1 bg-[#0B1530]">
       <View
-        style={{
-          paddingTop: Math.max(insets.top, 16) + 8,
-          paddingHorizontal: 18,
-          paddingBottom: 14,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
+        className="flex-row items-center justify-between px-4 pb-3.5"
+        style={{ paddingTop: Math.max(insets.top, 16) + 8 }}
       >
         <Pressable
           onPress={() => {
@@ -475,23 +419,16 @@ export default function RecordingScreen() {
             resetSession();
             router.back();
           }}
-          style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-          })}
+          className="size-11 items-center justify-center rounded-full bg-white/5 active:bg-white/10"
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
           <Ionicons name="chevron-back" size={22} color="#E8EEFF" />
         </Pressable>
 
-        <View style={{ alignItems: "center" }}>
-          <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 16 }}>{headerTitle}</Text>
-          <Text style={{ color: "rgba(232,238,255,0.55)", fontSize: 12, marginTop: 2, fontWeight: "600" }}>
+        <View className="items-center">
+          <Text className="text-base font-extrabold text-[#E8EEFF]">{headerTitle}</Text>
+          <Text className="mt-0.5 text-sm font-semibold text-[#E8EEFF]/55">
             Cough {coughIndex} of {COUGH_TOTAL}
           </Text>
         </View>
@@ -501,14 +438,7 @@ export default function RecordingScreen() {
             resetSession();
             router.back();
           }}
-          style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-          })}
+          className="size-11 items-center justify-center rounded-full bg-white/5 active:bg-white/10"
           accessibilityRole="button"
           accessibilityLabel="Close"
         >
@@ -516,8 +446,7 @@ export default function RecordingScreen() {
         </Pressable>
       </View>
 
-      {/* Progress dots */}
-      <View style={{ flexDirection: "row", justifyContent: "center", gap: 8, paddingBottom: 8 }}>
+      <View className="flex-row justify-center gap-2 pb-2">
         {Array.from({ length: COUGH_TOTAL }).map((_, i) => {
           const n = i + 1;
           const recorded = durations[i] != null;
@@ -525,10 +454,10 @@ export default function RecordingScreen() {
           return (
             <View
               key={n}
+              className="rounded-full"
               style={{
                 width: current ? 22 : 8,
                 height: 8,
-                borderRadius: 4,
                 backgroundColor: recorded
                   ? "rgba(255,255,255,0.85)"
                   : current
@@ -540,42 +469,11 @@ export default function RecordingScreen() {
         })}
       </View>
 
-      {/* Content */}
-      <View style={{ flex: 1, paddingHorizontal: 18, justifyContent: "center", alignItems: "center" }}>
-        {/* Mic */}
-        <View style={{ alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
-          <View
-            style={{
-              width: 220,
-              height: 220,
-              borderRadius: 110,
-              backgroundColor: "rgba(255,255,255,0.06)",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <View
-              style={{
-                width: 170,
-                height: 170,
-                borderRadius: 85,
-                backgroundColor: "rgba(255,255,255,0.07)",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <View
-                style={{
-                  width: 120,
-                  height: 120,
-                  borderRadius: 60,
-                  backgroundColor: "rgba(255,255,255,0.92)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.25)",
-                }}
-              >
+      <View className="flex-1 items-center justify-center px-4">
+        <View className="mb-4 items-center justify-center">
+          <View className="size-56 items-center justify-center rounded-full bg-white/5">
+            <View className="size-44 items-center justify-center rounded-full bg-white/5">
+              <View className="size-32 items-center justify-center rounded-full border border-white/25 bg-white/90">
                 <Ionicons name="mic" size={42} color="#0B1530" />
               </View>
             </View>
@@ -584,12 +482,12 @@ export default function RecordingScreen() {
 
         {phase === "ready" && (
           <>
-            <Text style={{ color: "#E8EEFF", fontSize: 16, fontWeight: "700", marginBottom: 6 }}>
+            <Text className="mb-1.5 text-base font-bold text-[#E8EEFF]">
               {coughIndex === 1
                 ? "We’ll record 3 coughs"
                 : `Ready for cough ${coughIndex}`}
             </Text>
-            <Text style={{ color: "rgba(232,238,255,0.75)", fontSize: 13, textAlign: "center", lineHeight: 18 }}>
+            <Text className="text-center text-sm leading-5 text-[#E8EEFF]/75">
               {coughIndex === 1
                 ? "One cough at a time. Hold the phone ~20cm away, then start the countdown."
                 : "Same setup — one clear cough when you hear GO."}
@@ -599,10 +497,10 @@ export default function RecordingScreen() {
 
         {phase === "countdown" && (
           <>
-            <Text style={{ color: "rgba(232,238,255,0.8)", fontSize: 14, fontWeight: "700", marginBottom: 10 }}>
+            <Text className="mb-2.5 text-base font-bold text-[#E8EEFF]/80">
               Cough {coughIndex} — get ready…
             </Text>
-            <Text style={{ color: "#FFFFFF", fontSize: 44, fontWeight: "900", letterSpacing: 2 }}>
+            <Text className="text-5xl font-black tracking-widest text-white">
               {countdown <= 0 ? "GO" : countdown}
             </Text>
           </>
@@ -610,57 +508,39 @@ export default function RecordingScreen() {
 
         {phase === "recording" && (
           <>
-            <Text style={{ color: "#E8EEFF", fontSize: 16, fontWeight: "800", marginBottom: 6 }}>
+            <Text className="mb-1.5 text-base font-extrabold text-[#E8EEFF]">
               Recording cough {coughIndex}…
             </Text>
-            <Text style={{ color: "rgba(232,238,255,0.75)", fontSize: 13, marginBottom: 18 }}>
+            <Text className="mb-4 text-sm text-[#E8EEFF]/75">
               Cough once clearly, then tap Stop.
             </Text>
 
-            <View
-              style={{
-                width: "100%",
-                maxWidth: 340,
-                height: 64,
-                borderRadius: 14,
-                backgroundColor: "rgba(255,255,255,0.06)",
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.10)",
-                paddingHorizontal: 14,
-                flexDirection: "row",
-                alignItems: "flex-end",
-                justifyContent: "space-between",
-                overflow: "hidden",
-              }}
-            >
+            <View className="h-16 w-full max-w-80 flex-row items-end justify-between overflow-hidden rounded-2xl border border-white/10 bg-white/5 px-3.5">
               {levels.map((lvl, i) => {
                 const h = 8 + lvl * 44;
                 return (
                   <View
                     key={i}
+                    className="rounded bg-[#E8EEFF]/70"
                     style={{
                       width: 5,
                       height: Math.min(52, h),
-                      borderRadius: 4,
-                      backgroundColor: "rgba(232,238,255,0.70)",
                     }}
                   />
                 );
               })}
             </View>
 
-            <Text style={{ color: "rgba(232,238,255,0.70)", fontSize: 12, marginTop: 10 }}>
-              {timeLabel}
-            </Text>
+            <Text className="mt-2.5 text-sm text-[#E8EEFF]/70">{timeLabel}</Text>
           </>
         )}
 
         {phase === "done" && !allDone && (
           <>
-            <Text style={{ color: "#E8EEFF", fontSize: 16, fontWeight: "800", marginBottom: 6 }}>
+            <Text className="mb-1.5 text-base font-extrabold text-[#E8EEFF]">
               Cough {coughIndex} saved
             </Text>
-            <Text style={{ color: "rgba(232,238,255,0.75)", fontSize: 13, textAlign: "center", lineHeight: 18 }}>
+            <Text className="text-center text-sm leading-5 text-[#E8EEFF]/75">
               Duration {timeLabel}. Next: cough {coughIndex + 1} of {COUGH_TOTAL}.
             </Text>
             <QualityBadge status={qualityStatus} label={qualityLabel} />
@@ -669,10 +549,10 @@ export default function RecordingScreen() {
 
         {phase === "done" && allDone && (
           <>
-            <Text style={{ color: "#E8EEFF", fontSize: 16, fontWeight: "800", marginBottom: 6 }}>
+            <Text className="mb-1.5 text-base font-extrabold text-[#E8EEFF]">
               All 3 coughs recorded
             </Text>
-            <Text style={{ color: "rgba(232,238,255,0.75)", fontSize: 13, textAlign: "center", lineHeight: 18 }}>
+            <Text className="text-center text-sm leading-5 text-[#E8EEFF]/75">
               Last clip: {timeLabel}. You can redo the last cough if needed.
             </Text>
             <QualityBadge status={qualityStatus} label={qualityLabel} />
@@ -680,74 +560,47 @@ export default function RecordingScreen() {
         )}
       </View>
 
-      {/* Bottom actions */}
       <View
-        style={{
-          paddingHorizontal: 18,
-          paddingTop: 12,
-          paddingBottom: Math.max(insets.bottom, 38) + 42,
-        }}
+        className="px-4 pt-3"
+        style={{ paddingBottom: Math.max(insets.bottom, 38) + 42 }}
       >
         {phase === "ready" && (
           <Pressable
             onPress={startCountdown}
-            style={({ pressed }) => ({
-              backgroundColor: pressed ? "rgba(255,255,255,0.92)" : "#FFFFFF",
-              borderRadius: 14,
-              paddingVertical: 16,
-              alignItems: "center",
-              justifyContent: "center",
-            })}
+            className="items-center justify-center rounded-2xl bg-white py-4 active:bg-white/90"
             accessibilityRole="button"
           >
-            <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 14 }}>
+            <Text className="text-base font-black text-[#0B1530]">
               {coughIndex === 1 ? "Start cough 1" : `Record cough ${coughIndex}`}
             </Text>
           </Pressable>
         )}
 
         {phase === "countdown" && (
-          <View style={{ flexDirection: "row", gap: 12 }}>
+          <View className="flex-row gap-3">
             <Pressable
               onPress={redoCurrentCough}
-              style={({ pressed }) => ({
-                flex: 1,
-                backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-                borderRadius: 14,
-                paddingVertical: 16,
-                alignItems: "center",
-                justifyContent: "center",
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.10)",
-              })}
+              className="flex-1 items-center justify-center rounded-2xl border border-white/10 bg-white/5 py-4 active:bg-white/10"
               accessibilityRole="button"
             >
-              <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 14 }}>Cancel</Text>
+              <Text className="text-base font-extrabold text-[#E8EEFF]">Cancel</Text>
             </Pressable>
           </View>
         )}
 
         {phase === "recording" && (
-          <View style={{ flexDirection: "row", gap: 12 }}>
+          <View className="flex-row gap-3">
             <Pressable
               onPress={() => void stopRecording()}
               disabled={seconds < MIN_RECORD_SECONDS}
-              style={({ pressed }) => ({
-                flex: 1,
-                backgroundColor:
-                  seconds < MIN_RECORD_SECONDS
-                    ? "rgba(255,90,90,0.35)"
-                    : pressed
-                      ? "rgba(255,90,90,0.95)"
-                      : "#FF5A5A",
-                borderRadius: 14,
-                paddingVertical: 16,
-                alignItems: "center",
-                justifyContent: "center",
-              })}
+              className={`flex-1 items-center justify-center rounded-2xl py-4 ${
+                seconds < MIN_RECORD_SECONDS
+                  ? "bg-[#FF5A5A]/35"
+                  : "bg-[#FF5A5A] active:bg-[#FF5A5A]/95"
+              }`}
               accessibilityRole="button"
             >
-              <Text style={{ color: "#081126", fontWeight: "900", fontSize: 14 }}>
+              <Text className="text-base font-black text-[#081126]">
                 {seconds < MIN_RECORD_SECONDS ? `Hold… (${MIN_RECORD_SECONDS - seconds}s)` : "Stop"}
               </Text>
             </Pressable>
@@ -763,50 +616,30 @@ export default function RecordingScreen() {
                 ? "Next cough"
                 : "Redo to continue";
           return (
-            <View style={{ flexDirection: "row", gap: 12 }}>
+            <View className="flex-row gap-3">
               <Pressable
                 onPress={() => {
                   clearDurationForCurrentCough();
                   redoCurrentCough();
                 }}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-                  borderRadius: 14,
-                  paddingVertical: 16,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.10)",
-                })}
+                className="flex-1 items-center justify-center rounded-2xl border border-white/10 bg-white/5 py-4 active:bg-white/10"
                 accessibilityRole="button"
               >
-                <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 14 }}>Redo</Text>
+                <Text className="text-base font-extrabold text-[#E8EEFF]">Redo</Text>
               </Pressable>
               <Pressable
                 onPress={goToNextCough}
                 disabled={advanceDisabled}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  backgroundColor: advanceDisabled
-                    ? "rgba(255,255,255,0.18)"
-                    : pressed
-                      ? "rgba(255,255,255,0.92)"
-                      : "#FFFFFF",
-                  borderRadius: 14,
-                  paddingVertical: 16,
-                  alignItems: "center",
-                  justifyContent: "center",
-                })}
+                className={`flex-1 items-center justify-center rounded-2xl py-4 ${
+                  advanceDisabled ? "bg-white/20" : "bg-white active:bg-white/90"
+                }`}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: advanceDisabled }}
               >
                 <Text
-                  style={{
-                    color: advanceDisabled ? "rgba(232,238,255,0.55)" : "#0B1530",
-                    fontWeight: "900",
-                    fontSize: 14,
-                  }}
+                  className={`text-base font-black ${
+                    advanceDisabled ? "text-[#E8EEFF]/55" : "text-[#0B1530]"
+                  }`}
                 >
                   {advanceLabel}
                 </Text>
@@ -820,25 +653,16 @@ export default function RecordingScreen() {
           const continueDisabled = !allOk;
           const continueLabel = qualityStatus === "checking" ? "Checking…" : allOk ? "Continue" : "Redo to continue";
           return (
-            <View style={{ flexDirection: "row", gap: 12 }}>
+            <View className="flex-row gap-3">
               <Pressable
                 onPress={() => {
                   clearDurationForCurrentCough();
                   redoCurrentCough();
                 }}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-                  borderRadius: 14,
-                  paddingVertical: 16,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.10)",
-                })}
+                className="flex-1 items-center justify-center rounded-2xl border border-white/10 bg-white/5 py-4 active:bg-white/10"
                 accessibilityRole="button"
               >
-                <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 14 }}>Redo last</Text>
+                <Text className="text-base font-extrabold text-[#E8EEFF]">Redo last</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
@@ -854,27 +678,16 @@ export default function RecordingScreen() {
                   } as any);
                 }}
                 disabled={continueDisabled}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  backgroundColor: continueDisabled
-                    ? "rgba(255,255,255,0.18)"
-                    : pressed
-                      ? "rgba(255,255,255,0.92)"
-                      : "#FFFFFF",
-                  borderRadius: 14,
-                  paddingVertical: 16,
-                  alignItems: "center",
-                  justifyContent: "center",
-                })}
+                className={`flex-1 items-center justify-center rounded-2xl py-4 ${
+                  continueDisabled ? "bg-white/20" : "bg-white active:bg-white/90"
+                }`}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: continueDisabled }}
               >
                 <Text
-                  style={{
-                    color: continueDisabled ? "rgba(232,238,255,0.55)" : "#0B1530",
-                    fontWeight: "900",
-                    fontSize: 14,
-                  }}
+                  className={`text-base font-black ${
+                    continueDisabled ? "text-[#E8EEFF]/55" : "text-[#0B1530]"
+                  }`}
                 >
                   {continueLabel}
                 </Text>

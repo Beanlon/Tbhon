@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import React from "react";
+import { View, Text, ScrollView, TouchableOpacity } from "react-native";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
 type Stat = {
   value: string;
@@ -29,111 +29,111 @@ type Step = {
 };
 
 const overviewStats: Stat[] = [
-  { value: '1.3M', label: 'Deaths globally per year', color: '#E53935' },
-  { value: '10M', label: 'People fall ill yearly', color: '#E67E22' },
-  { value: '85%', label: 'Cure rate with treatment', color: '#1E8449' },
+  { value: "1.3M", label: "Deaths globally per year", color: "#E53935" },
+  { value: "10M", label: "People fall ill yearly", color: "#E67E22" },
+  { value: "85%", label: "Cure rate with treatment", color: "#1E8449" },
 ];
 
 const spreadTags: Tag[] = [
-  { label: 'Airborne', backgroundColor: '#E6F3FB', color: '#1D6FA4' },
-  { label: 'Close contact', backgroundColor: '#FEF5E7', color: '#E67E22' },
-  { label: 'Coughing / sneezing', backgroundColor: '#FDEDEC', color: '#C0392B' },
-  { label: 'Talking', backgroundColor: '#E6F3FB', color: '#1D6FA4' },
-  { label: 'Singing', backgroundColor: '#E6F3FB', color: '#1D6FA4' },
+  { label: "Airborne", backgroundColor: "#E6F3FB", color: "#1D6FA4" },
+  { label: "Close contact", backgroundColor: "#FEF5E7", color: "#E67E22" },
+  { label: "Coughing / sneezing", backgroundColor: "#FDEDEC", color: "#C0392B" },
+  { label: "Talking", backgroundColor: "#E6F3FB", color: "#1D6FA4" },
+  { label: "Singing", backgroundColor: "#E6F3FB", color: "#1D6FA4" },
 ];
 
 const riskTags: Tag[] = [
-  { label: 'HIV positive', backgroundColor: '#FDEDEC', color: '#C0392B' },
-  { label: 'Malnutrition', backgroundColor: '#FDEDEC', color: '#C0392B' },
-  { label: 'Diabetes', backgroundColor: '#FEF5E7', color: '#E67E22' },
-  { label: 'Smokers', backgroundColor: '#FEF5E7', color: '#E67E22' },
-  { label: 'Overcrowded spaces', backgroundColor: '#FEF5E7', color: '#E67E22' },
-  { label: 'Healthcare workers', backgroundColor: '#E6F3FB', color: '#1D6FA4' },
-  { label: 'Elderly & children', backgroundColor: '#E6F3FB', color: '#1D6FA4' },
+  { label: "HIV positive", backgroundColor: "#FDEDEC", color: "#C0392B" },
+  { label: "Malnutrition", backgroundColor: "#FDEDEC", color: "#C0392B" },
+  { label: "Diabetes", backgroundColor: "#FEF5E7", color: "#E67E22" },
+  { label: "Smokers", backgroundColor: "#FEF5E7", color: "#E67E22" },
+  { label: "Overcrowded spaces", backgroundColor: "#FEF5E7", color: "#E67E22" },
+  { label: "Healthcare workers", backgroundColor: "#E6F3FB", color: "#1D6FA4" },
+  { label: "Elderly & children", backgroundColor: "#E6F3FB", color: "#1D6FA4" },
 ];
 
 const symptoms: Symptom[] = [
-  { name: 'Persistent cough', note: '3+ weeks', dotColor: '#C0392B' },
-  { name: 'Coughing up blood', note: 'Seek help now', dotColor: '#E67E22' },
-  { name: 'Night sweats', note: 'Recurring', dotColor: '#E67E22' },
-  { name: 'Unexplained weight loss', note: 'Rapid drop', dotColor: '#1D6FA4' },
-  { name: 'Fatigue & weakness', note: 'Prolonged', dotColor: '#1D6FA4' },
-  { name: 'Fever & chills', note: 'Low-grade', dotColor: '#1D6FA4' },
-  { name: 'Chest pain', note: 'When breathing', dotColor: '#1D6FA4' },
+  { name: "Persistent cough", note: "3+ weeks", dotColor: "#C0392B" },
+  { name: "Coughing up blood", note: "Seek help now", dotColor: "#E67E22" },
+  { name: "Night sweats", note: "Recurring", dotColor: "#E67E22" },
+  { name: "Unexplained weight loss", note: "Rapid drop", dotColor: "#1D6FA4" },
+  { name: "Fatigue & weakness", note: "Prolonged", dotColor: "#1D6FA4" },
+  { name: "Fever & chills", note: "Low-grade", dotColor: "#1D6FA4" },
+  { name: "Chest pain", note: "When breathing", dotColor: "#1D6FA4" },
 ];
 
 const steps: Step[] = [
   {
-    number: '1',
-    title: 'See a doctor immediately',
-    description: 'Do not wait. Visit a health center for a proper evaluation if you have a cough lasting 3+ weeks.',
-    backgroundColor: '#1D6FA4',
+    number: "1",
+    title: "See a doctor immediately",
+    description:
+      "Do not wait. Visit a health center for a proper evaluation if you have a cough lasting 3+ weeks.",
+    backgroundColor: "#1D6FA4",
   },
   {
-    number: '2',
-    title: 'Get tested',
-    description: 'A sputum test, chest X-ray, or skin test can confirm or rule out TB.',
-    backgroundColor: '#E67E22',
+    number: "2",
+    title: "Get tested",
+    description: "A sputum test, chest X-ray, or skin test can confirm or rule out TB.",
+    backgroundColor: "#E67E22",
   },
   {
-    number: '3',
-    title: 'Take medications as prescribed',
-    description: 'TB treatment takes 6–9 months. Stopping early can lead to drug-resistant TB.',
-    backgroundColor: '#1E8449',
+    number: "3",
+    title: "Take medications as prescribed",
+    description: "TB treatment takes 6–9 months. Stopping early can lead to drug-resistant TB.",
+    backgroundColor: "#1E8449",
   },
   {
-    number: '4',
-    title: 'Isolate while contagious',
-    description: 'Stay home, use masks, and avoid crowded places in the early weeks of treatment.',
-    backgroundColor: '#0a1428',
+    number: "4",
+    title: "Isolate while contagious",
+    description: "Stay home, use masks, and avoid crowded places in the early weeks of treatment.",
+    backgroundColor: "#0a1428",
   },
   {
-    number: '5',
-    title: 'Notify close contacts',
-    description: 'People who live with you or spend long hours nearby should also get tested.',
-    backgroundColor: '#C0392B',
+    number: "5",
+    title: "Notify close contacts",
+    description: "People who live with you or spend long hours nearby should also get tested.",
+    backgroundColor: "#C0392B",
   },
 ];
 
 const prevention: Step[] = [
   {
-    number: '💉',
-    title: 'BCG vaccine',
-    description: 'Given at birth, it helps protect infants from severe forms of TB.',
-    backgroundColor: '#1D6FA4',
+    number: "💉",
+    title: "BCG vaccine",
+    description: "Given at birth, it helps protect infants from severe forms of TB.",
+    backgroundColor: "#1D6FA4",
   },
   {
-    number: '😷',
-    title: 'Wear masks in crowded areas',
-    description: 'N95 or surgical masks reduce airborne transmission risk significantly.',
-    backgroundColor: '#1D6FA4',
+    number: "😷",
+    title: "Wear masks in crowded areas",
+    description: "N95 or surgical masks reduce airborne transmission risk significantly.",
+    backgroundColor: "#1D6FA4",
   },
   {
-    number: '🌬️',
-    title: 'Ensure good ventilation',
-    description: 'Open windows and use fans to reduce TB bacteria concentration indoors.',
-    backgroundColor: '#1D6FA4',
+    number: "🌬️",
+    title: "Ensure good ventilation",
+    description: "Open windows and use fans to reduce TB bacteria concentration indoors.",
+    backgroundColor: "#1D6FA4",
   },
   {
-    number: '🥗',
-    title: 'Support your immune system',
-    description: 'Eat nutritious food, sleep well, and avoid smoking to stay strong.',
-    backgroundColor: '#1D6FA4',
+    number: "🥗",
+    title: "Support your immune system",
+    description: "Eat nutritious food, sleep well, and avoid smoking to stay strong.",
+    backgroundColor: "#1D6FA4",
   },
 ];
 
+const learnCardShadow = {
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 3 },
+  shadowOpacity: 0.08,
+  shadowRadius: 10,
+  elevation: 4,
+};
+
 function SectionLabel({ children }: { children: string }) {
   return (
-    <Text
-      style={{
-        fontSize: 11,
-        fontWeight: '700',
-        letterSpacing: 1.1,
-        color: '#8FA3B1',
-        textTransform: 'uppercase',
-        marginBottom: '-2%',
-      }}
-    >
+    <Text className="-mb-1 text-sm font-bold uppercase tracking-widest text-[#8FA3B1]">
       {children}
     </Text>
   );
@@ -153,39 +153,20 @@ function InfoCard({
   children: React.ReactNode;
 }) {
   return (
-    <View
-      style={{
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: '5%',
-        borderWidth: 1,
-        borderColor: '#efefef',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.08,
-        shadowRadius: 10,
-        elevation: 4,
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: '4%' }}>
+    <View className="rounded-2xl border border-[#efefef] bg-white p-5" style={learnCardShadow}>
+      <View className="mb-4 flex-row items-center gap-2.5">
         <View
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 10,
-            backgroundColor: iconBackground,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
+          className="h-10 w-10 items-center justify-center rounded-2xl"
+          style={{ backgroundColor: iconBackground }}
         >
-          <Text style={{ fontSize: 18 }}>{icon}</Text>
+          <Text className="text-lg">{icon}</Text>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: '#111111' }}>{title}</Text>
-          <Text style={{ fontSize: 11, color: '#8FA3B1', marginTop: 2 }}>{subtitle}</Text>
+        <View className="flex-1">
+          <Text className="text-base font-bold text-[#111111]">{title}</Text>
+          <Text className="mt-0.5 text-sm text-[#8FA3B1]">{subtitle}</Text>
         </View>
       </View>
-      <View style={{ height: 1, backgroundColor: '#efefef', marginBottom: '4%' }} />
+      <View className="mb-4 h-px bg-[#efefef]" />
       {children}
     </View>
   );
@@ -194,47 +175,41 @@ function InfoCard({
 function TagPill({ label, backgroundColor, color }: Tag) {
   return (
     <View
-      style={{
-        paddingVertical: '1.7%',
-        paddingHorizontal: '3.4%',
-        borderRadius: 999,
-        backgroundColor,
-      }}
+      className="rounded-full py-1.5 px-3"
+      style={{ backgroundColor }}
     >
-      <Text style={{ fontSize: 12, fontWeight: '600', color }}>{label}</Text>
+      <Text className="text-sm font-semibold" style={{ color }}>
+        {label}
+      </Text>
     </View>
   );
 }
 
 function BulletStat({ value, label, color }: Stat) {
   return (
-    <View style={{ flex: 1, backgroundColor: '#f8f8f8', borderRadius: 12, paddingVertical: '4%', paddingHorizontal: '2.5%', alignItems: 'center' }}>
-      <Text style={{ fontSize: 22, fontWeight: '800', color }}>{value}</Text>
-      <Text style={{ fontSize: 10, color: '#8FA3B1', marginTop: 4, textAlign: 'center', lineHeight: 14 }}>{label}</Text>
+    <View className="flex-1 items-center rounded-xl bg-[#f8f8f8] px-2.5 py-3.5">
+      <Text className="text-2xl font-extrabold" style={{ color }}>
+        {value}
+      </Text>
+      <Text className="mt-1 text-center text-xs leading-4 text-[#8FA3B1]">
+        {label}
+      </Text>
     </View>
   );
 }
 
 function StepRow({ number, title, description, backgroundColor }: Step) {
   return (
-    <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+    <View className="flex-row items-start gap-3">
       <View
-        style={{
-          width: 26,
-          height: 26,
-          borderRadius: 13,
-          backgroundColor,
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-          marginTop: 2,
-        }}
+        className="mt-0.5 size-6 shrink-0 items-center justify-center rounded-full"
+        style={{ backgroundColor }}
       >
-        <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>{number}</Text>
+        <Text className="text-sm font-extrabold text-white">{number}</Text>
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: '#111111' }}>{title}</Text>
-        <Text style={{ fontSize: 12, color: '#5D6D7E', lineHeight: 18, marginTop: 2 }}>{description}</Text>
+      <View className="flex-1">
+        <Text className="text-base font-bold text-[#111111]">{title}</Text>
+        <Text className="mt-0.5 text-sm leading-5 text-justify text-[#5D6D7E]">{description}</Text>
       </View>
     </View>
   );
@@ -246,34 +221,33 @@ function AlertBanner({
   title,
   description,
 }: {
-  tone: 'warn' | 'danger' | 'green';
+  tone: "warn" | "danger" | "green";
   icon: string;
   title: string;
   description: string;
 }) {
   const colors = {
-    warn: { backgroundColor: '#FEF5E7', borderColor: '#E67E22', textColor: '#7D4E00' },
-    danger: { backgroundColor: '#FDEDEC', borderColor: '#C0392B', textColor: '#7B241C' },
-    green: { backgroundColor: '#E9F7EF', borderColor: '#1E8449', textColor: '#1A6035' },
+    warn: { backgroundColor: "#FEF5E7", borderColor: "#E67E22", textColor: "#7D4E00" },
+    danger: { backgroundColor: "#FDEDEC", borderColor: "#C0392B", textColor: "#7B241C" },
+    green: { backgroundColor: "#E9F7EF", borderColor: "#1E8449", textColor: "#1A6035" },
   }[tone];
 
   return (
     <View
+      className="flex-row items-start gap-2.5 rounded-xl border-l-4 p-4"
       style={{
         backgroundColor: colors.backgroundColor,
-        borderLeftWidth: 3,
         borderLeftColor: colors.borderColor,
-        borderRadius: 10,
-        padding: '4%',
-        flexDirection: 'row',
-        gap: 10,
-        alignItems: 'flex-start',
       }}
     >
-      <Text style={{ fontSize: 16, marginTop: 1 }}>{icon}</Text>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textColor, marginBottom: 2 }}>{title}</Text>
-        <Text style={{ fontSize: 12, lineHeight: 18, color: colors.textColor }}>{description}</Text>
+      <Text className="mt-px text-base">{icon}</Text>
+      <View className="flex-1">
+        <Text className="mb-0.5 text-base font-bold" style={{ color: colors.textColor }}>
+          {title}
+        </Text>
+        <Text className="text-sm leading-5 text-justify" style={{ color: colors.textColor }}>
+          {description}
+        </Text>
       </View>
     </View>
   );
@@ -283,46 +257,50 @@ export function LearnContent() {
   const router = useRouter();
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: '2%' }}>
-      <View
-        style={{
-          paddingHorizontal: '5.5%',
-          paddingTop:"3%",
-          paddingBottom: '3%',
-        }}
-      >
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4%' }}>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingBottom: "2%" }}
+    >
+      <View className="px-5 pb-3 pt-3">
+        <View className="mb-4 flex-row items-center justify-between">
           <View>
-            <Text style={{ fontSize: 14, color: '#666', marginBottom: 4 }}>📚 Learn</Text>
-            <Text style={{ fontSize: 28, fontWeight: '800', color: '#000' }}>Tuberculosis (TB)</Text>
+            <Text className="mb-1 text-base text-[#666]">📚 Learn</Text>
+            <Text className="text-3xl font-extrabold text-black">Tuberculosis (TB)</Text>
           </View>
-          <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#d8d8d8', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 26 }}>🫁</Text>
+          <View className="size-16 items-center justify-center rounded-full bg-[#d8d8d8]">
+            <Text className="text-2xl">🫁</Text>
           </View>
         </View>
 
-        <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: '5%', borderWidth: 1, borderColor: '#efefef', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 4, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          <View style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: '#E6F3FB', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <View
+          className="flex-row items-center gap-3.5 rounded-2xl border border-[#efefef] bg-white p-5"
+          style={learnCardShadow}
+        >
+          <View className="size-14 shrink-0 items-center justify-center rounded-2xl bg-[#E6F3FB]">
             <Ionicons name="medkit-outline" size={26} color="#1D6FA4" />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 17, fontWeight: '800', color: '#111111', lineHeight: 22 }}>
+          <View className="flex-1">
+            <Text className="text-lg font-extrabold leading-6 text-[#111111]">
               A curable bacterial infection - understand it, prevent it, and act early.
             </Text>
-            <Text style={{ fontSize: 12, color: '#5D6D7E', lineHeight: 18, marginTop: 4 }}>
-              Keep the same clean card styling used throughout the home screen while learning the essentials.
+            <Text className="mt-1 text-sm leading-5 text-justify text-[#5D6D7E]">
+              Keep the same clean card styling used throughout the home screen while learning the
+              essentials.
             </Text>
           </View>
         </View>
       </View>
 
-      <View style={{ paddingHorizontal: '5.5%', gap: 16 }}>
+      <View className="gap-4 px-5">
         <SectionLabel>Overview</SectionLabel>
         <InfoCard icon="🔬" iconBackground="#E6F3FB" title="What is Tuberculosis?" subtitle="Basic definition">
-          <Text style={{ fontSize: 13, color: '#5D6D7E', lineHeight: 21, marginBottom: '4%' }}>
-            TB is a contagious disease caused by the bacterium <Text style={{ fontWeight: '700', color: '#111111' }}>Mycobacterium tuberculosis</Text>. It mainly affects the lungs, but it can spread to other organs including the kidneys, spine, and brain.
+          <Text className="mb-4 text-base leading-5 text-justify text-[#5D6D7E]">
+            TB is a contagious disease caused by the bacterium{" "}
+            <Text className="font-bold text-[#111111]">Mycobacterium tuberculosis</Text>. It mainly
+            affects the lungs, but it can spread to other organs including the kidneys, spine, and
+            brain.
           </Text>
-          <View style={{ flexDirection: 'row', gap: '2.5%' }}>
+          <View className="flex-row gap-2">
             {overviewStats.map((item) => (
               <BulletStat key={item.label} {...item} />
             ))}
@@ -331,16 +309,21 @@ export function LearnContent() {
 
         <SectionLabel>Causes</SectionLabel>
         <InfoCard icon="💨" iconBackground="#FEF5E7" title="How TB Spreads" subtitle="Transmission routes">
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: '4%' }}>
+          <View className="mb-4 flex-row flex-wrap gap-2">
             {spreadTags.map((tag) => (
               <TagPill key={tag.label} {...tag} />
             ))}
           </View>
-          <AlertBanner tone="warn" icon="⚠️" title="Not spread by touch" description="TB is not transmitted through handshakes, sharing food, kissing, or touching surfaces. It spreads only through the air." />
+          <AlertBanner
+            tone="warn"
+            icon="⚠️"
+            title="Not spread by touch"
+            description="TB is not transmitted through handshakes, sharing food, kissing, or touching surfaces. It spreads only through the air."
+          />
         </InfoCard>
 
         <InfoCard icon="⚡" iconBackground="#FDEDEC" title="Who is at Higher Risk?" subtitle="Vulnerability factors">
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <View className="flex-row flex-wrap gap-2">
             {riskTags.map((tag) => (
               <TagPill key={tag.label} {...tag} />
             ))}
@@ -349,33 +332,47 @@ export function LearnContent() {
 
         <SectionLabel>Symptoms</SectionLabel>
         <InfoCard icon="🩺" iconBackground="#FDEDEC" title="Signs & Symptoms" subtitle="Watch for these warning signs">
-          <View style={{ gap: 8 }}>
+          <View className="gap-2">
             {symptoms.map((symptom) => (
-              <View key={symptom.name} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: '2.7%', paddingHorizontal: '3.5%', backgroundColor: '#f8f8f8', borderRadius: 10 }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: symptom.dotColor, flexShrink: 0 }} />
-                <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: '#111111' }}>{symptom.name}</Text>
-                <Text style={{ fontSize: 11, color: '#8FA3B1' }}>{symptom.note}</Text>
+              <View
+                key={symptom.name}
+                className="flex-row items-center gap-2.5 rounded-xl bg-[#f8f8f8] px-3 py-2.5"
+              >
+                <View
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: symptom.dotColor }}
+                />
+                <Text className="flex-1 text-base font-semibold text-[#111111]">
+                  {symptom.name}
+                </Text>
+                <Text className="text-sm text-[#8FA3B1]">{symptom.note}</Text>
               </View>
             ))}
           </View>
         </InfoCard>
 
         <InfoCard icon="🔄" iconBackground="#E9F7EF" title="Latent vs Active TB" subtitle="Two very different states">
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <View style={{ flex: 1, backgroundColor: '#E9F7EF', borderRadius: 10, padding: '4%' }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#1E8449', marginBottom: 6 }}>Latent TB</Text>
-              <Text style={{ fontSize: 11, color: '#1A6035', lineHeight: 18 }}>• No symptoms{"\n"}• Not contagious{"\n"}• Bacteria inactive{"\n"}• Can become active</Text>
+          <View className="flex-row gap-2">
+            <View className="flex-1 rounded-xl bg-[#E9F7EF] p-4">
+              <Text className="mb-1.5 text-sm font-bold text-[#1E8449]">Latent TB</Text>
+              <Text className="text-sm leading-5 text-justify text-[#1A6035]">
+                • No symptoms{"\n"}• Not contagious{"\n"}• Bacteria inactive{"\n"}• Can become
+                active
+              </Text>
             </View>
-            <View style={{ flex: 1, backgroundColor: '#FDEDEC', borderRadius: 10, padding: '4%' }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#C0392B', marginBottom: 6 }}>Active TB</Text>
-              <Text style={{ fontSize: 11, color: '#7B241C', lineHeight: 18 }}>• Symptoms present{"\n"}• Contagious to others{"\n"}• Bacteria active{"\n"}• Requires treatment</Text>
+            <View className="flex-1 rounded-xl bg-[#FDEDEC] p-4">
+              <Text className="mb-1.5 text-sm font-bold text-[#C0392B]">Active TB</Text>
+              <Text className="text-sm leading-5 text-justify text-[#7B241C]">
+                • Symptoms present{"\n"}• Contagious to others{"\n"}• Bacteria active{"\n"}•
+                Requires treatment
+              </Text>
             </View>
           </View>
         </InfoCard>
 
         <SectionLabel>What To Do</SectionLabel>
         <InfoCard icon="✅" iconBackground="#E9F7EF" title="Steps to Take" subtitle="If you suspect TB">
-          <View style={{ gap: 12 }}>
+          <View className="gap-3">
             {steps.map((step) => (
               <StepRow key={step.title} {...step} />
             ))}
@@ -384,24 +381,38 @@ export function LearnContent() {
 
         <SectionLabel>Prevention</SectionLabel>
         <InfoCard icon="🛡️" iconBackground="#E9F7EF" title="How to Prevent TB" subtitle="Protect yourself and others">
-          <View style={{ gap: 12 }}>
+          <View className="gap-3">
             {prevention.map((item) => (
               <StepRow key={item.title} {...item} />
             ))}
           </View>
         </InfoCard>
 
-        <AlertBanner tone="danger" icon="🚨" title="Seek emergency care if..." description="You cough up blood, experience severe chest pain, or have difficulty breathing. These are signs of advanced TB requiring urgent medical attention." />
+        <AlertBanner
+          tone="danger"
+          icon="🚨"
+          title="Seek emergency care if..."
+          description="You cough up blood, experience severe chest pain, or have difficulty breathing. These are signs of advanced TB requiring urgent medical attention."
+        />
 
-        <AlertBanner tone="green" icon="💚" title="Good news - TB is curable!" description="With complete and consistent treatment, the vast majority of people fully recover from TB." />
+        <AlertBanner
+          tone="green"
+          icon="💚"
+          title="Good news - TB is curable!"
+          description="With complete and consistent treatment, the vast majority of people fully recover from TB."
+        />
 
-        <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/screening/recording')} style={{ backgroundColor: '#0a1428', borderRadius: 16, paddingVertical: '4.5%', paddingHorizontal: '5%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: '2%', marginBottom: '4%' }}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => router.push("/screening/recording")}
+          className="mb-4 mt-2 flex-row items-center justify-between rounded-2xl bg-[#0a1428] px-5 py-4"
+        >
           <View>
-            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Find a TB Testing Center</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 3 }}>Locate the nearest health facility</Text>
+            <Text className="text-base font-bold text-white">Find a TB Testing Center</Text>
+            <Text className="mt-0.5 text-sm text-white/70">Locate the nearest health facility</Text>
           </View>
-          <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: '#fff', fontSize: 16 }}>→</Text>
+          <View className="size-9 items-center justify-center rounded-full bg-white/20">
+            <Text className="text-base text-white">→</Text>
           </View>
         </TouchableOpacity>
       </View>
