@@ -20,6 +20,7 @@ export default function RootLayout() {
       <Stack.Screen name="login/login" options={{ headerShown: false }} />
       <Stack.Screen name="signUp/signUpPersonal" options={{ headerShown: false }} />
       <Stack.Screen name="signUp/signUpEmail" options={{ headerShown: false }} />
+      <Stack.Screen name="screening" options={{ headerShown: false }} />
     </Stack>
   );
 }

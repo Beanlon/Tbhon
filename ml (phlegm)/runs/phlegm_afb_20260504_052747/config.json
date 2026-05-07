@@ -1,0 +1,62 @@
+{
+  "seed": 1337,
+  "img_size": 224,
+  "batch_size": 16,
+  "epochs": 2,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "num_workers": 0,
+  "augment": true,
+  "backbone": "small_cnn",
+  "class_weight": true,
+  "dataset": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset",
+  "labels": [
+    "none",
+    "low",
+    "moderate",
+    "high"
+  ],
+  "load_bins": [
+    {
+      "name": "none",
+      "min": 0,
+      "max": 0
+    },
+    {
+      "name": "low",
+      "min": 1,
+      "max": 4
+    },
+    {
+      "name": "moderate",
+      "min": 5,
+      "max": 14
+    },
+    {
+      "name": "high",
+      "min": 15,
+      "max": null
+    }
+  ],
+  "distribution": {
+    "train": {
+      "none": 35,
+      "low": 401,
+      "moderate": 538,
+      "high": 175
+    },
+    "val": {
+      "none": 2,
+      "low": 46,
+      "moderate": 74,
+      "high": 20
+    },
+    "test": {
+      "none": 4,
+      "low": 52,
+      "moderate": 62,
+      "high": 29
+    }
+  },
+  "device": "cpu"
+}

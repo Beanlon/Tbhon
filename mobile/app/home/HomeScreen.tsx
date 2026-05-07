@@ -1,10 +1,11 @@
 import { View, Text, ScrollView, TextInput, TouchableOpacity, Platform } from "react-native";
 import { useState } from "react";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import InstructionsScreen from "../screening/InstructionsScreen";
 import { LearnContent } from "../learn/LearnContent";
+import HistoryScreen from "../history/HistoryScreen";
+import { ProfilePage } from "../profile/profilepage";
 import BottomNav, { BottomNavTab } from "../components/BottomNav";
 import CachedImage from "../components/CachedImage";
 
@@ -234,7 +235,6 @@ const DotsGrid = () => (
 
 /* ─── Main screen ──────────────────────────────────────────── */
 export default function HomeScreen() {
-  const router = useRouter();
   const [showInstructions, setShowInstructions] = useState(false);
   const [activeTab, setActiveTab] = useState<BottomNavTab>("home");
 
@@ -254,11 +254,12 @@ export default function HomeScreen() {
       return;
     }
     if (tab === "profile") {
-      router.push("/acountOptions/accountOptions");
+      setActiveTab("profile");
       return;
     }
 
     if (tab === "history") {
+      setActiveTab("history");
       return;
     }
   };
@@ -275,6 +276,28 @@ export default function HomeScreen() {
         </View>
 
         <BottomNav activeTab="learn" onTabPress={handleTabPress} />
+      </SafeAreaView>
+    );
+  }
+
+  if (activeTab === "history") {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }} edges={["left", "right"]}>
+        <View style={{ flex: 1 }}>
+          <HistoryScreen onTabChange={() => setActiveTab("home")} />
+        </View>
+        <BottomNav activeTab="history" onTabPress={handleTabPress} />
+      </SafeAreaView>
+    );
+  }
+
+  if (activeTab === "profile") {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }} edges={["top", "left", "right"]}>
+        <View style={{ flex: 1 }}>
+          <ProfilePage />
+        </View>
+        <BottomNav activeTab="profile" onTabPress={handleTabPress} />
       </SafeAreaView>
     );
   }

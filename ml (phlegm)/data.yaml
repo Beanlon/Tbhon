@@ -1,0 +1,9 @@
+# Ultralytics YOLO config for sputum smear AFB detection.
+# Class 0 == AFB (acid-fast bacillus, Mycobacterium tuberculosis rod).
+path: Raw_Sputum_Microscopy_Dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: AFB

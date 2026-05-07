@@ -30,15 +30,17 @@ app.add_middleware(
 @dataclass(frozen=True)
 class InferenceConfig:
   sample_rate: int = 16000
-  clip_seconds: float = 4.0
-  n_mels: int = 64
+  clip_seconds: float = 6.0
+  n_mels: int = 128
   n_fft: int = 1024
   hop_length: int = 256
   f_min: int = 20
   f_max: int = 8000
 
 
-class SmallAudioCNN(nn.Module):
+class _LegacySmallAudioCNN(nn.Module):
+  """Original 3-conv SmallAudioCNN. Kept for older checkpoints."""
+
   def __init__(self) -> None:
     super().__init__()
     self.features = nn.Sequential(
@@ -66,6 +68,72 @@ class SmallAudioCNN(nn.Module):
   def forward(self, x: torch.Tensor) -> torch.Tensor:
     x = self.features(x)
     return self.classifier(x)
+
+
+class _ResBlock(nn.Module):
+  def __init__(self, channels: int) -> None:
+    super().__init__()
+    self.block = nn.Sequential(
+      nn.Conv2d(channels, channels, 3, padding=1, bias=False),
+      nn.BatchNorm2d(channels),
+      nn.ReLU(inplace=True),
+      nn.Conv2d(channels, channels, 3, padding=1, bias=False),
+      nn.BatchNorm2d(channels),
+    )
+    self.relu = nn.ReLU(inplace=True)
+
+  def forward(self, x: torch.Tensor) -> torch.Tensor:
+    return self.relu(x + self.block(x))
+
+
+class SmallAudioCNN(nn.Module):
+  """Current trainer architecture: stem + ResBlock per stage, AdaptiveAvgPool(4,4)."""
+
+  def __init__(self) -> None:
+    super().__init__()
+    self.features = nn.Sequential(
+      nn.Conv2d(1, 32, kernel_size=3, padding=1, bias=False),
+      nn.BatchNorm2d(32),
+      nn.ReLU(inplace=True),
+      nn.MaxPool2d(2),
+      _ResBlock(32),
+      nn.Conv2d(32, 64, kernel_size=3, padding=1, bias=False),
+      nn.BatchNorm2d(64),
+      nn.ReLU(inplace=True),
+      nn.MaxPool2d(2),
+      _ResBlock(64),
+      nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False),
+      nn.BatchNorm2d(128),
+      nn.ReLU(inplace=True),
+      nn.MaxPool2d(2),
+      _ResBlock(128),
+      nn.AdaptiveAvgPool2d((4, 4)),
+    )
+    self.classifier = nn.Sequential(
+      nn.Flatten(),
+      nn.Linear(128 * 4 * 4, 256),
+      nn.ReLU(inplace=True),
+      nn.Dropout(0.4),
+      nn.Linear(256, 64),
+      nn.ReLU(inplace=True),
+      nn.Dropout(0.2),
+      nn.Linear(64, 2),
+    )
+
+  def forward(self, x: torch.Tensor) -> torch.Tensor:
+    x = self.features(x)
+    return self.classifier(x)
+
+
+def _looks_like_legacy_state(state: dict) -> bool:
+  """Detect old (no ResBlock) checkpoints by their state_dict keys/shapes."""
+  if any(".block." in k for k in state):
+    return False
+  w = state.get("features.0.weight")
+  try:
+    return bool(w is not None and w.shape[0] == 16)
+  except Exception:
+    return False
 
 
 def _to_mono_float(x: np.ndarray) -> np.ndarray:
@@ -350,20 +418,28 @@ def make_feature_extractor(cfg: InferenceConfig) -> tuple[nn.Module, nn.Module]:
   return mel, amp_to_db
 
 
-def load_checkpoint(model_path: Path) -> tuple[SmallAudioCNN, InferenceConfig]:
-  ckpt = torch.load(model_path, map_location="cpu")
+def load_checkpoint(model_path: Path) -> tuple[nn.Module, InferenceConfig]:
+  try:
+    ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
+  except TypeError:
+    ckpt = torch.load(model_path, map_location="cpu")
   cfg_dict = ckpt.get("config") or {}
   cfg = InferenceConfig(
     sample_rate=int(cfg_dict.get("sample_rate", 16000)),
-    clip_seconds=float(cfg_dict.get("clip_seconds", 4.0)),
-    n_mels=int(cfg_dict.get("n_mels", 64)),
+    clip_seconds=float(cfg_dict.get("clip_seconds", 6.0)),
+    n_mels=int(cfg_dict.get("n_mels", 128)),
     n_fft=int(cfg_dict.get("n_fft", 1024)),
     hop_length=int(cfg_dict.get("hop_length", 256)),
     f_min=int(cfg_dict.get("f_min", 20)),
     f_max=int(cfg_dict.get("f_max", 8000)),
   )
-  model = SmallAudioCNN()
-  model.load_state_dict(ckpt["model_state_dict"])
+  state = ckpt["model_state_dict"]
+  model: nn.Module
+  if _looks_like_legacy_state(state):
+    model = _LegacySmallAudioCNN()
+  else:
+    model = SmallAudioCNN()
+  model.load_state_dict(state)
   model.eval()
   return model, cfg
 

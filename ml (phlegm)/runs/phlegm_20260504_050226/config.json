@@ -1,0 +1,24 @@
+{
+  "seed": 1337,
+  "img_size": 160,
+  "batch_size": 16,
+  "epochs": 2,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "num_workers": 0,
+  "augment": true,
+  "backbone": "small_cnn",
+  "class_weight": true,
+  "metadata": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\metadata.csv",
+  "images_root": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images",
+  "num_train": 1149,
+  "num_val": 142,
+  "num_test": 147,
+  "labels": [
+    "Bluish",
+    "Greenish",
+    "Purplish/Pinkish",
+    "Yellowish"
+  ],
+  "device": "cpu"
+}
