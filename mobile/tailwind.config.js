@@ -7,6 +7,10 @@ module.exports = {
   presets: [require("nativewind/preset")],
   theme: {
     extend: {
+      colors: {
+        /** TBhon screening / primary actions — matches legacy `#0B1530` */
+        navy: "#0B1530",
+      },
       // Mobile-first: default = small phones; these fire at min logical width (see NativeWind docs).
       screens: {
         sm: "390px",

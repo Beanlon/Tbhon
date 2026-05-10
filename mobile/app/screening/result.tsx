@@ -1,7 +1,9 @@
-import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useMemo } from "react";
+import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type RiskLevel = "low" | "moderate" | "high";
 
@@ -49,9 +51,26 @@ const RISK_CONFIG: Record<
   },
 };
 
+const monoFont = Platform.OS === "ios" ? "Menlo" : "monospace";
+
 export default function ResultScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+
+  /** Risk ring scales with viewport so it never overflows narrow phones */
+  const ring = useMemo(() => {
+    const pad = 48;
+    const maxByScreen = Math.max(120, windowWidth - pad);
+    const outer = Math.min(180, Math.min(maxByScreen, Math.round(windowWidth * 0.44)));
+    const scale = outer / 180;
+    const inner = Math.round(130 * scale);
+    const borderWidth = Math.max(4, Math.round(6 * scale));
+    const emojiSize = Math.max(34, Math.min(52, Math.round(52 * scale)));
+    const radius = outer / 2;
+    const innerRadius = inner / 2;
+    return { outer, inner, borderWidth, emojiSize, radius, innerRadius };
+  }, [windowWidth]);
+
   const params = useLocalSearchParams<{
     risk?: string;
     probTb?: string;
@@ -66,9 +85,7 @@ export default function ResultScreen() {
   }>();
 
   const risk: RiskLevel =
-    params.risk === "moderate" || params.risk === "high"
-      ? params.risk
-      : "low";
+    params.risk === "moderate" || params.risk === "high" ? params.risk : "low";
 
   const cfg = RISK_CONFIG[risk];
   const probTb = typeof params.probTb === "string" ? Number(params.probTb) : null;
@@ -79,308 +96,185 @@ export default function ResultScreen() {
   const wifiRequired = params.wifiRequired === "1";
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
-      {/* Header */}
-      <View
-        style={{
-          paddingTop: Math.max(insets.top, 16) + 8,
-          paddingHorizontal: 18,
-          paddingBottom: 12,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderBottomWidth: 1,
-          borderBottomColor: "#F1F1F1",
-        }}
-      >
-        <View style={{ width: 44 }} />
-        <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 16 }}>
-          Screening Result
-        </Text>
+    <>
+      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
+      <SafeAreaView className="flex-1 bg-white" edges={["top", "right", "bottom", "left"]}>
+      <View className="flex-row items-center justify-between border-b border-neutral-100 px-4 pb-3 pt-2 sm:px-5 md:px-6">
+        <View className="size-11" />
+        <View className="min-w-0 flex-1 items-center px-2">
+          <Text className="text-center text-sm font-bold text-navy sm:text-base" numberOfLines={1}>
+            Screening Result
+          </Text>
+        </View>
         <Pressable
           onPress={() => router.replace({ pathname: "/home/HomeScreen" as any })}
-          style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: pressed ? "rgba(11,21,48,0.06)" : "transparent",
-          })}
+          className="size-11 items-center justify-center rounded-full active:bg-slate-900/10"
           accessibilityRole="button"
           accessibilityLabel="Close"
         >
-          <Ionicons name="close" size={22} color="#0B1530" />
+          <Ionicons name="close" size={22} color="#0f172a" />
         </Pressable>
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 32, paddingBottom: 32 }}
+        className="min-h-0 flex-1"
+        contentContainerStyle={{ flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
       >
-        {uploadError && (
-          <View
-            style={{
-              backgroundColor: "#FEF2F2",
-              borderRadius: 14,
-              padding: 14,
-              borderWidth: 1,
-              borderColor: "#FECACA",
-              marginBottom: 16,
-            }}
-          >
-            {wifiRequired ? (
-              <View
-                style={{
-                  backgroundColor: "#FFFBEB",
-                  borderRadius: 12,
-                  padding: 12,
-                  borderWidth: 1,
-                  borderColor: "#FCD34D",
-                  marginBottom: 12,
-                }}
-              >
-                <Text style={{ color: "#92400E", fontWeight: "900", fontSize: 13, marginBottom: 6 }}>
-                  Phone is on mobile data (4G/5G)
+        <View className="px-5 pb-8 pt-8 sm:px-6 md:px-8">
+          {uploadError && (
+            <View className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3.5">
+              {wifiRequired ? (
+                <View className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
+                  <Text className="mb-1.5 text-sm font-bold text-amber-900">Phone is on mobile data (4G/5G)</Text>
+                  <Text className="text-xs leading-5 text-amber-950">
+                    Addresses like <Text className="font-bold">192.168.x.x</Text> only work on the same{" "}
+                    <Text className="font-bold">Wi‑Fi</Text> as your PC. Turn on Wi‑Fi, join the same network as the computer running{" "}
+                    <Text className="font-bold">Expo</Text> and <Text className="font-bold">infer_api.py</Text>, then run screening again.
+                  </Text>
+                </View>
+              ) : null}
+              <Text className="mb-1.5 text-sm font-bold text-red-900">Could not reach the analysis server</Text>
+              {!wifiRequired ? (
+                <Text className="text-xs leading-5 text-red-950">
+                  The app tries <Text className="font-bold">http://YOUR_IP:8081/_tb_infer</Text> first (Metro proxies to port 8000).{" "}
+                  <Text className="font-bold">Restart Expo</Text> after updating the project so Metro loads the proxy. If it still fails, Windows may be blocking port{" "}
+                  <Text className="font-bold">8000</Text> (direct URL) — use one of these:
                 </Text>
-                <Text style={{ color: "#78350F", fontSize: 12, lineHeight: 18 }}>
-                  Addresses like <Text style={{ fontWeight: "800" }}>192.168.x.x</Text> only work on the same{" "}
-                  <Text style={{ fontWeight: "800" }}>Wi‑Fi</Text> as your PC. Turn on Wi‑Fi, join the same network as the computer running{" "}
-                  <Text style={{ fontWeight: "800" }}>Expo</Text> and <Text style={{ fontWeight: "800" }}>infer_api.py</Text>, then run screening again.
+              ) : (
+                <Text className="text-xs leading-5 text-red-950">
+                  After you are on Wi‑Fi, if it still fails, check Windows Firewall for port <Text className="font-bold">8000</Text> or use:
                 </Text>
-              </View>
-            ) : null}
-            <Text style={{ color: "#991B1B", fontWeight: "900", fontSize: 13, marginBottom: 6 }}>
-              Could not reach the analysis server
-            </Text>
-            {!wifiRequired ? (
-            <Text style={{ color: "#7F1D1D", fontSize: 12, lineHeight: 18 }}>
-              The app tries <Text style={{ fontWeight: "800" }}>http://YOUR_IP:8081/_tb_infer</Text> first (Metro proxies to port 8000).{" "}
-              <Text style={{ fontWeight: "800" }}>Restart Expo</Text> after updating the project so Metro loads the proxy. If it still fails, Windows may be blocking port{" "}
-              <Text style={{ fontWeight: "800" }}>8000</Text> (direct URL) — use one of these:
-            </Text>
-            ) : (
-            <Text style={{ color: "#7F1D1D", fontSize: 12, lineHeight: 18 }}>
-              After you are on Wi‑Fi, if it still fails, check Windows Firewall for port <Text style={{ fontWeight: "800" }}>8000</Text> or use:
-            </Text>
-            )}
-            <Text style={{ color: "#7F1D1D", fontSize: 12, lineHeight: 18, marginTop: 10 }}>
-              1) Open <Text style={{ fontWeight: "800" }}>PowerShell as Administrator</Text> and run (then retry):
-            </Text>
-            <Text
-              style={{
-                color: "#450A0A",
-                fontSize: 11,
-                marginTop: 6,
-                fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-              }}
-              selectable
-            >
-              netsh advfirewall firewall add rule name=&quot;TBhon API 8000&quot; dir=in action=allow protocol=TCP localport=8000 profile=private
-            </Text>
-            <Text style={{ color: "#7F1D1D", fontSize: 12, lineHeight: 18, marginTop: 10 }}>
-              2) <Text style={{ fontWeight: "800" }}>Android + USB:</Text> run{" "}
-              <Text style={{ fontWeight: "800" }}>adb reverse tcp:8000 tcp:8000</Text> — the app will retry via{" "}
-              <Text style={{ fontWeight: "800" }}>127.0.0.1:8000</Text> automatically.
-            </Text>
-            <Text style={{ color: "#7F1D1D", fontSize: 12, lineHeight: 18, marginTop: 8 }}>
-              Keep <Text style={{ fontWeight: "800" }}>python infer_api.py</Text> running in the <Text style={{ fontWeight: "800" }}>ml</Text> folder.
-            </Text>
-            {apiAttempt.length > 0 ? (
-              <Text
-                style={{
-                  color: "#991B1B",
-                  fontSize: 11,
-                  marginTop: 10,
-                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-                }}
-                selectable
-              >
-                Tried: {apiAttempt}
+              )}
+              <Text className="mt-2.5 text-xs leading-5 text-red-950">
+                1) Open <Text className="font-bold">PowerShell as Administrator</Text> and run (then retry):
               </Text>
-            ) : null}
-          </View>
-        )}
-        {invalidAudio && (
-          <View
-            style={{
-              backgroundColor: "#FFFBEB",
-              borderRadius: 14,
-              padding: 14,
-              borderWidth: 1,
-              borderColor: "#FCD34D",
-              marginBottom: 16,
-            }}
-          >
-            <Text style={{ color: "#92400E", fontWeight: "900", fontSize: 13, marginBottom: 6 }}>
-              Recording quality issue detected
-            </Text>
-            <Text style={{ color: "#92400E", fontSize: 12, lineHeight: 17 }}>
-              {invalidLabel === "silence"
-                ? "The recording was too quiet / silent. Please cough once clearly within 3–10 seconds."
-                : invalidLabel === "speech"
-                  ? "This sounded more like speech/throat-clearing than a cough. Please record a single clear cough."
-                  : invalidLabel === "replay"
-                    ? "This may be playback/replay audio. Please record directly from the phone microphone."
-                    : invalidLabel === "noise"
-                      ? "This sounded like steady background noise. Please move to a quieter place and re-record."
-                      : "We couldn’t confidently detect a real cough in this recording. Please re-record in a quiet environment and cough once clearly."}
-            </Text>
-          </View>
-        )}
-        {typeof probTb === "number" && Number.isFinite(probTb) && (
-          <View style={{ marginBottom: 18, alignItems: "center" }}>
-            <Text style={{ color: "#64748B", fontSize: 12, fontWeight: "700" }}>
-              TB probability (avg): {(probTb * 100).toFixed(1)}%
-            </Text>
-          </View>
-        )}
-        {/* Risk indicator */}
-        <View style={{ alignItems: "center", marginBottom: 32 }}>
-          {/* Outer ring */}
-          <View
-            style={{
-              width: 180,
-              height: 180,
-              borderRadius: 90,
-              backgroundColor: cfg.bg,
-              borderWidth: 6,
-              borderColor: cfg.ringColor,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {/* Inner circle */}
+              <Text className="mt-1.5 text-xs text-red-950" style={{ fontFamily: monoFont }} selectable>
+                netsh advfirewall firewall add rule name=&quot;TBhon API 8000&quot; dir=in action=allow protocol=TCP localport=8000 profile=private
+              </Text>
+              <Text className="mt-2.5 text-xs leading-5 text-red-950">
+                2) <Text className="font-bold">Android + USB:</Text> run{" "}
+                <Text className="font-bold">adb reverse tcp:8000 tcp:8000</Text> — the app will retry via{" "}
+                <Text className="font-bold">127.0.0.1:8000</Text> automatically.
+              </Text>
+              <Text className="mt-2 text-xs leading-5 text-red-950">
+                Keep <Text className="font-bold">python infer_api.py</Text> running in the <Text className="font-bold">ml</Text> folder.
+              </Text>
+              {apiAttempt.length > 0 ? (
+                <Text className="mt-2.5 text-xs text-red-900" style={{ fontFamily: monoFont }} selectable>
+                  Tried: {apiAttempt}
+                </Text>
+              ) : null}
+            </View>
+          )}
+          {invalidAudio && (
+            <View className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-3.5">
+              <Text className="mb-1.5 text-sm font-bold text-amber-900">Recording quality issue detected</Text>
+              <Text className="text-xs leading-snug text-amber-900">
+                {invalidLabel === "silence"
+                  ? "The recording was too quiet / silent. Please cough once clearly within 3–10 seconds."
+                  : invalidLabel === "speech"
+                    ? "This sounded more like speech/throat-clearing than a cough. Please record a single clear cough."
+                    : invalidLabel === "replay"
+                      ? "This may be playback/replay audio. Please record directly from the phone microphone."
+                      : invalidLabel === "noise"
+                        ? "This sounded like steady background noise. Please move to a quieter place and re-record."
+                        : "We couldn’t confidently detect a real cough in this recording. Please re-record in a quiet environment and cough once clearly."}
+              </Text>
+            </View>
+          )}
+          {typeof probTb === "number" && Number.isFinite(probTb) && (
+            <View className="mb-5 items-center">
+              <Text className="text-xs font-bold text-slate-500">
+                TB probability (avg): {(probTb * 100).toFixed(1)}%
+              </Text>
+            </View>
+          )}
+
+          <View className="mb-6 w-full max-w-md items-center self-center sm:mb-8">
             <View
+              className="items-center justify-center overflow-hidden rounded-full"
               style={{
-                width: 130,
-                height: 130,
-                borderRadius: 65,
-                backgroundColor: "#FFFFFF",
-                alignItems: "center",
-                justifyContent: "center",
-                shadowColor: cfg.color,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.15,
-                shadowRadius: 12,
-                elevation: 4,
+                width: ring.outer,
+                height: ring.outer,
+                borderRadius: ring.radius,
+                borderWidth: ring.borderWidth,
+                backgroundColor: cfg.bg,
+                borderColor: cfg.ringColor,
               }}
             >
-              <Text style={{ fontSize: 52 }}>{cfg.emoji}</Text>
+              <View
+                className="items-center justify-center rounded-full bg-white"
+                style={{
+                  width: ring.inner,
+                  height: ring.inner,
+                  borderRadius: ring.innerRadius,
+                  shadowColor: cfg.color,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 12,
+                  elevation: 4,
+                }}
+              >
+                <Text style={{ fontSize: ring.emojiSize, lineHeight: ring.emojiSize + 4 }}>{cfg.emoji}</Text>
+              </View>
             </View>
-          </View>
 
-          {/* Label */}
-          <Text
-            style={{
-              marginTop: 20,
-              fontSize: 28,
-              fontWeight: "900",
-              color: cfg.color,
-              textAlign: "center",
-            }}
-          >
-            {cfg.label}
-          </Text>
+            <Text
+              className="mt-4 text-center text-2xl font-bold sm:mt-5 sm:text-3xl"
+              style={{ color: cfg.color }}
+            >
+              {cfg.label}
+            </Text>
 
-          {/* Tagline */}
-          <Text
-            style={{
-              marginTop: 8,
-              fontSize: 15,
-              fontWeight: "700",
-              color: "#0B1530",
-              textAlign: "center",
-            }}
-          >
-            {cfg.tagline}
-          </Text>
+            <Text className="mt-2 px-1 text-center text-sm font-bold text-navy sm:text-base">{cfg.tagline}</Text>
 
-          {/* Disclaimer */}
-          <Text
-            style={{
-              marginTop: 6,
-              fontSize: 12,
-              color: "#999999",
-              textAlign: "center",
-              fontStyle: "italic",
-            }}
-          >
-            This is not a medical diagnosis
-          </Text>
-        </View>
-
-        {/* Recommendation card */}
-        <View
-          style={{
-            backgroundColor: cfg.bg,
-            borderRadius: 16,
-            padding: 18,
-            borderWidth: 1,
-            borderColor: cfg.ringColor,
-            marginBottom: 28,
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 8 }}>
-            <Ionicons name="information-circle" size={20} color={cfg.color} />
-            <Text style={{ fontSize: 14, fontWeight: "800", color: cfg.color }}>
-              Recommendation
+            <Text className="mt-1.5 px-2 text-center text-xs italic text-neutral-400">
+              This is not a medical diagnosis
             </Text>
           </View>
-          <Text style={{ fontSize: 14, color: "#374151", lineHeight: 22 }}>
-            {cfg.recommendation}
-          </Text>
+
+          <View className="mb-7 rounded-2xl border p-5" style={{ backgroundColor: cfg.bg, borderColor: cfg.ringColor }}>
+            <View className="mb-2.5 flex-row items-center gap-2">
+              <Ionicons name="information-circle" size={20} color={cfg.color} />
+              <Text className="text-sm font-bold" style={{ color: cfg.color }}>
+                Recommendation
+              </Text>
+            </View>
+            <Text className="text-sm leading-6 text-gray-700">{cfg.recommendation}</Text>
+          </View>
+
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/screening/details",
+                params: {
+                  risk,
+                  probTb: typeof probTb === "number" && Number.isFinite(probTb) ? String(probTb) : "",
+                  audioUris: typeof params.audioUris === "string" ? params.audioUris : "[]",
+                  imageUri: typeof params.imageUri === "string" ? params.imageUri : "",
+                  invalidAudio: invalidAudio ? "1" : "0",
+                  invalidLabel,
+                  invalidReasons: typeof params.invalidReasons === "string" ? params.invalidReasons : "[]",
+                },
+              } as any)
+            }
+            className="mb-3 items-center justify-center rounded-2xl bg-navy py-4 active:bg-navy/90"
+            accessibilityRole="button"
+          >
+            <Text className="text-base font-bold text-white">View Details</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.replace({ pathname: "/home/HomeScreen" as any })}
+            className="items-center justify-center rounded-2xl border border-navy/10 bg-navy/5 py-4 active:bg-navy/10"
+            accessibilityRole="button"
+          >
+            <Text className="text-base font-bold text-navy">Return Home</Text>
+          </Pressable>
         </View>
-
-        {/* Buttons */}
-        <Pressable
-          onPress={() =>
-            router.push({
-              pathname: "/screening/details",
-              params: {
-                risk,
-                probTb: typeof probTb === "number" && Number.isFinite(probTb) ? String(probTb) : "",
-                audioUris: typeof params.audioUris === "string" ? params.audioUris : "[]",
-                imageUri: typeof params.imageUri === "string" ? params.imageUri : "",
-                invalidAudio: invalidAudio ? "1" : "0",
-                invalidLabel,
-                invalidReasons: typeof params.invalidReasons === "string" ? params.invalidReasons : "[]",
-              },
-            } as any)
-          }
-          style={({ pressed }) => ({
-            backgroundColor: pressed ? "rgba(11,21,48,0.88)" : "#0B1530",
-            borderRadius: 14,
-            paddingVertical: 16,
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 12,
-          })}
-          accessibilityRole="button"
-        >
-          <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 15 }}>
-            View Details
-          </Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => router.replace({ pathname: "/home/HomeScreen" as any })}
-          style={({ pressed }) => ({
-            backgroundColor: pressed ? "rgba(11,21,48,0.06)" : "rgba(11,21,48,0.04)",
-            borderRadius: 14,
-            paddingVertical: 16,
-            alignItems: "center",
-            justifyContent: "center",
-            borderWidth: 1,
-            borderColor: "rgba(11,21,48,0.10)",
-          })}
-          accessibilityRole="button"
-        >
-          <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 15 }}>
-            Return Home
-          </Text>
-        </Pressable>
       </ScrollView>
-    </View>
+    </SafeAreaView>
+    </>
   );
 }

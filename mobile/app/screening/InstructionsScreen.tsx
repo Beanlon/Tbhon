@@ -27,7 +27,7 @@ export default function InstructionsScreen({ onClose }: { onClose?: () => void }
           contentContainerStyle={{ paddingTop: insets.top + 24 }}
         >
           <View className="flex-row items-center justify-between px-5 pb-5">
-            <Text className="text-2xl font-extrabold text-black">Instructions</Text>
+            <Text className="text-2xl font-bold text-black">Instructions</Text>
             <TouchableOpacity onPress={handleClose}>
               <Ionicons name="close" size={28} color="#333" />
             </TouchableOpacity>
@@ -37,13 +37,13 @@ export default function InstructionsScreen({ onClose }: { onClose?: () => void }
             {instructions.map((instruction, idx) => (
               <View
                 key={idx}
-                className="mb-5 flex-row items-center rounded-2xl border border-[#efefef] bg-[#f8f8f8] p-5"
+                className="mb-5 flex-row items-center rounded-2xl border border-neutral-200 bg-neutral-100 p-5"
               >
-                <View className="mr-4 size-11 min-w-11 items-center justify-center rounded-full bg-[#0a1428]">
+                <View className="mr-4 size-11 min-w-11 items-center justify-center rounded-full bg-navy">
                   <Text className="text-lg font-bold text-white">{idx + 1}</Text>
                 </View>
 
-                <Text className="flex-1 text-base font-semibold leading-5 text-[#333]">
+                <Text className="flex-1 text-base font-semibold leading-5 text-neutral-800">
                   {instruction}
                 </Text>
               </View>
@@ -56,7 +56,7 @@ export default function InstructionsScreen({ onClose }: { onClose?: () => void }
                 if (onClose) onClose();
                 router.push({ pathname: "/screening/recording" as any });
               }}
-              className="items-center justify-center rounded-xl bg-[#0a1428] px-5 py-4"
+              className="items-center justify-center rounded-xl bg-navy px-5 py-4"
             >
               <Text className="text-base font-bold text-white">Start Recording</Text>
             </TouchableOpacity>

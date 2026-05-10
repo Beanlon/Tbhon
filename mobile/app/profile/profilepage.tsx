@@ -47,7 +47,7 @@ function ProfileCard({
 }) {
   return (
     <View
-      className="rounded-2xl border border-[#efefef] bg-white p-5"
+      className="rounded-3xl border border-[#efefef] bg-white p-5"
       style={profileCardShadow}
     >
       <View className="mb-4 flex-row items-center justify-between">
@@ -97,7 +97,7 @@ function ProfileCardHeaderOnly({
 }) {
   return (
     <View
-      className="rounded-2xl border border-[#efefef] bg-white p-5"
+      className="rounded-3xl border border-[#efefef] bg-white p-5"
       style={profileCardShadow}
     >
       <View className="mb-4 flex-row items-center gap-2.5">

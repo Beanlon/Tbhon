@@ -236,14 +236,14 @@ export default function HomeScreen() {
           </View>
 
           <View className="mb-6 px-5">
-            <View className="h-12 flex-row items-center rounded-xl border border-[#EDEDED] bg-[#F8F8F8] px-3 py-3">
-              <Ionicons name="search" size={18} color="#BBBBBB" />
+            <View className="h-14 flex-row items-center rounded-3xl border border-[#EDEDED] bg-[#F8F8F8] px-4 py-3">
+              <Ionicons name="search" size={20} color="#BBBBBB" />
               <TextInput
                 placeholder="Search"
                 placeholderTextColor="#BBBBBB"
                 textAlignVertical="center"
                 style={{ includeFontPadding: false }}
-                className="ml-2.5 h-full flex-1 py-0 text-base leading-5 text-[#333]"
+                className="ml-2.5 h-full flex-1 py-0 text-lg leading-6 text-[#333]"
               />
             </View>
           </View>
@@ -259,7 +259,7 @@ export default function HomeScreen() {
                 </Text>
                 <TouchableOpacity
                   onPress={() => setShowInstructions(true)}
-                  className="my-2 self-start rounded-md bg-[#1a1a2e] px-4 py-2"
+                  className="my-2 self-start rounded-2xl bg-[#1a1a2e] px-4 py-2"
                 >
                   <Text className="text-base font-bold text-white">Get Checked Now</Text>
                 </TouchableOpacity>
@@ -325,7 +325,7 @@ export default function HomeScreen() {
               Quick Result Preview
             </Text>
             <View
-              className="flex-row items-center justify-between rounded-xl border border-[#E8E8E8] bg-white p-4"
+              className="flex-row items-center justify-between rounded-3xl border border-[#E8E8E8] bg-white p-4"
               style={homeCardShadow}
             >
               <View>
