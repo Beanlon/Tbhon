@@ -1,13 +1,13 @@
-import { Pressable, Text, View } from "react-native";
+import { useState, type ReactNode } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useState } from "react";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 
 export default function ReviewInputsScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string; imageUri?: string }>();
 
   const audioDone = params.audioDone === "1";
@@ -18,9 +18,15 @@ export default function ReviewInputsScreen() {
   const [audioOpen, setAudioOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
 
+  const canAnalyze = audioDone && imageDone;
+
   const StatusPill = ({ done }: { done: boolean }) => (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-      <Text style={{ fontSize: 13, fontWeight: "800", color: done ? "#10B981" : "#F59E0B" }}>{done ? "✓" : "—"}</Text>
+    <View className="flex-row items-center gap-2">
+      <Text
+        className={`text-xs font-bold sm:text-sm ${done ? "text-emerald-600" : "text-amber-600"}`}
+      >
+        {done ? "✓" : "—"}
+      </Text>
       <Ionicons name={done ? "checkmark-circle" : "alert-circle"} size={18} color={done ? "#10B981" : "#F59E0B"} />
     </View>
   );
@@ -36,187 +42,138 @@ export default function ReviewInputsScreen() {
     done: boolean;
     open: boolean;
     onToggle: () => void;
-    children?: React.ReactNode;
+    children?: ReactNode;
   }) => (
-    <View>
+    <View className="border-b border-neutral-100 last:border-b-0">
       <Pressable
         onPress={onToggle}
-        style={({ pressed }) => ({
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingVertical: 14,
-          opacity: pressed ? 0.8 : 1,
-        })}
+        className="flex-row items-center justify-between py-3.5 active:opacity-90 sm:py-4"
         accessibilityRole="button"
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={18} color="#0B1530" />
-          <Text style={{ fontSize: 15, fontWeight: "800", color: "#0B1530" }}>{label}</Text>
+        <View className="flex-row items-center gap-2.5">
+          <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={18} color="#0f172a" />
+          <Text className="text-sm font-bold text-slate-900 sm:text-base">{label}</Text>
         </View>
         <StatusPill done={done} />
       </Pressable>
 
-      {open && (
-        <View style={{ paddingBottom: 14 }}>
-          {children}
-        </View>
-      )}
+      {open ? <View className="pb-3.5 pt-0 sm:pb-4">{children}</View> : null}
     </View>
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
-      {/* Header */}
-      <View
-        style={{
-          paddingTop: Math.max(insets.top, 16) + 8,
-          paddingHorizontal: 18,
-          paddingBottom: 12,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderBottomWidth: 1,
-          borderBottomColor: "#F1F1F1",
-        }}
-      >
+    <>
+      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
+      <SafeAreaView className="flex-1 bg-white" edges={["top", "right", "bottom", "left"]}>
+      <View className="flex-row items-center justify-between border-b border-neutral-100 px-4 pb-3.5 pt-2 sm:px-5 md:px-6">
         <Pressable
           onPress={() => router.back()}
-          style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: pressed ? "rgba(11,21,48,0.06)" : "rgba(11,21,48,0.04)",
-          })}
+          className="size-11 items-center justify-center rounded-full bg-navy/5 active:bg-navy/10"
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={22} color="#0B1530" />
+          <Ionicons name="chevron-back" size={22} color="#0f172a" />
         </Pressable>
 
-        <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 16 }}>Review inputs</Text>
-
-        <View style={{ width: 44, height: 44 }} />
-      </View>
-
-      {/* Content */}
-      <View style={{ flex: 1, paddingHorizontal: 18, paddingTop: 18 }}>
-        <View
-          style={{
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: "#EFEFEF",
-            backgroundColor: "#FFFFFF",
-            paddingHorizontal: 16,
-          }}
-        >
-          <AccordionRow
-            label="Recorded audio"
-            done={audioDone}
-            open={audioOpen}
-            onToggle={() => setAudioOpen((v) => !v)}
+        <View className="min-w-0 flex-1 items-center px-2">
+          <Text
+            className="text-center text-sm font-bold text-slate-900 sm:text-base"
+            numberOfLines={2}
           >
-            <Text style={{ color: "#475569", fontSize: 13, lineHeight: 18 }}>
-              {audioDone
-                ? "Audio recorded (3 coughs). Playback will appear once we wire real audio file recording."
-                : "No audio recorded yet."}
-            </Text>
-          </AccordionRow>
-          <View style={{ height: 1, backgroundColor: "#F3F3F3" }} />
-          <AccordionRow
-            label="Uploaded image"
-            done={imageDone}
-            open={imageOpen}
-            onToggle={() => setImageOpen((v) => !v)}
-          >
-            {imageUri ? (
-              <View
-                style={{
-                  borderRadius: 14,
-                  overflow: "hidden",
-                  borderWidth: 1,
-                  borderColor: "#EFEFEF",
-                  backgroundColor: "#F8FAFC",
-                  height: 220,
-                }}
-              >
-                <Image source={{ uri: imageUri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
-              </View>
-            ) : (
-              <Text style={{ color: "#475569", fontSize: 13, lineHeight: 18 }}>No image selected yet.</Text>
-            )}
-          </AccordionRow>
+            Review inputs
+          </Text>
+          <Text className="mt-0.5 text-center text-xs font-semibold text-slate-500 sm:text-sm">
+            Verify before analysis
+          </Text>
         </View>
 
-        <View style={{ height: 16 }} />
-
-        <View style={{ flexDirection: "row", gap: 12 }}>
-          <Pressable
-            onPress={() => router.replace({ pathname: "/screening/recording" as any })}
-            style={({ pressed }) => ({
-              flex: 1,
-              backgroundColor: pressed ? "rgba(11,21,48,0.08)" : "rgba(11,21,48,0.05)",
-              borderRadius: 14,
-              paddingVertical: 14,
-              alignItems: "center",
-              justifyContent: "center",
-              borderWidth: 1,
-              borderColor: "rgba(11,21,48,0.08)",
-            })}
-            accessibilityRole="button"
-          >
-            <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 13 }}>Re-record</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.replace({ pathname: "/screening/phlegm", params: { audioDone: audioDone ? "1" : "0" } } as any)}
-            style={({ pressed }) => ({
-              flex: 1,
-              backgroundColor: pressed ? "rgba(11,21,48,0.08)" : "rgba(11,21,48,0.05)",
-              borderRadius: 14,
-              paddingVertical: 14,
-              alignItems: "center",
-              justifyContent: "center",
-              borderWidth: 1,
-              borderColor: "rgba(11,21,48,0.08)",
-            })}
-            accessibilityRole="button"
-          >
-            <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 13 }}>Retake</Text>
-          </Pressable>
-        </View>
+        <View className="size-11" />
       </View>
 
-      {/* Analyze */}
-      <View
-        style={{
-          paddingHorizontal: 18,
-          paddingTop: 10,
-          paddingBottom: Math.max(insets.bottom, 16) + 18,
-        }}
+      <ScrollView
+        className="min-h-0 flex-1"
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
+        <View className="flex-1 px-4 pb-4 pt-4 sm:px-5 md:px-6">
+          <View className="overflow-hidden rounded-2xl border border-neutral-200 bg-white px-4 shadow-sm">
+            <AccordionRow
+              label="Recorded audio"
+              done={audioDone}
+              open={audioOpen}
+              onToggle={() => setAudioOpen((v) => !v)}
+            >
+              <Text className="text-xs leading-5 text-slate-600 sm:text-sm">
+                {audioDone
+                  ? "Audio recorded (3 coughs). Playback will appear once we wire real audio file recording."
+                  : "No audio recorded yet."}
+              </Text>
+            </AccordionRow>
+
+            <AccordionRow
+              label="Uploaded image"
+              done={imageDone}
+              open={imageOpen}
+              onToggle={() => setImageOpen((v) => !v)}
+            >
+              {imageUri ? (
+                <View className="h-52 overflow-hidden rounded-2xl border border-neutral-200 bg-slate-50 sm:h-56 md:h-60">
+                  <Image source={{ uri: imageUri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
+                </View>
+              ) : (
+                <Text className="text-xs leading-5 text-slate-600 sm:text-sm">No image selected yet.</Text>
+              )}
+            </AccordionRow>
+          </View>
+
+          <View className="mt-4 flex-row gap-3">
+            <Pressable
+              onPress={() => router.replace({ pathname: "/screening/recording" as any })}
+              className="flex-1 items-center justify-center rounded-2xl border border-navy/10 bg-navy/5 py-3.5 active:bg-navy/10 sm:py-4"
+              accessibilityRole="button"
+            >
+              <Text className="text-sm font-bold text-navy sm:text-base">Re-record</Text>
+            </Pressable>
+            <Pressable
+              onPress={() =>
+                router.replace({
+                  pathname: "/screening/phlegm",
+                  params: { audioDone: audioDone ? "1" : "0", audioUris },
+                } as any)
+              }
+              className="flex-1 items-center justify-center rounded-2xl border border-navy/10 bg-navy/5 py-3.5 active:bg-navy/10 sm:py-4"
+              accessibilityRole="button"
+            >
+              <Text className="text-sm font-bold text-navy sm:text-base">Retake</Text>
+            </Pressable>
+          </View>
+        </View>
+      </ScrollView>
+
+      <View className="px-4 pt-3 pb-6 sm:px-5 sm:pb-8 md:px-6">
         <Pressable
           onPress={() => {
             router.push({
               pathname: "/screening/processing",
-                params: { audioDone: audioDone ? "1" : "0", audioUris, imageUri: imageUri ?? "" },
+              params: { audioDone: audioDone ? "1" : "0", audioUris, imageUri: imageUri ?? "" },
             } as any);
           }}
-          disabled={!audioDone || !imageDone}
-          style={({ pressed }) => ({
-            backgroundColor: !audioDone || !imageDone ? "rgba(11,21,48,0.20)" : pressed ? "rgba(11,21,48,0.92)" : "#0B1530",
-            borderRadius: 14,
-            paddingVertical: 16,
-            alignItems: "center",
-            justifyContent: "center",
-          })}
+          disabled={!canAnalyze}
+          className={`items-center justify-center rounded-2xl py-3.5 sm:py-4 ${
+            canAnalyze ? "bg-navy active:bg-navy/95" : "bg-neutral-200"
+          }`}
           accessibilityRole="button"
+          accessibilityState={{ disabled: !canAnalyze }}
         >
-          <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 14 }}>Analyze</Text>
+          <Text
+            className={`text-sm font-bold sm:text-base ${canAnalyze ? "text-white" : "text-neutral-400"}`}
+          >
+            Analyze
+          </Text>
         </Pressable>
       </View>
-    </View>
+    </SafeAreaView>
+    </>
   );
 }
-

@@ -1,38 +1,39 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 
-// Type definitions
 type Mode = "camera" | "preview";
+type CaptureSource = "camera" | "library" | null;
 
 export default function PhlegmCaptureScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string }>();
-  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const cameraRef = useRef<CameraView | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("camera");
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [captureSource, setCaptureSource] = useState<CaptureSource>(null);
 
-  // Camera permissions
+  const shutterSize = windowWidth < 380 ? 68 : 78;
+  const shutterRing = windowWidth < 380 ? 56 : 64;
+
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const hasCameraPermission = cameraPermission?.granted === true;
 
-  // Request camera permission on mount
   useEffect(() => {
-    // Kick off permission prompt on first load for smoother UX.
     if (cameraPermission && !cameraPermission.granted && cameraPermission.canAskAgain) {
       requestCameraPermission();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Computed values
   const canShowCamera = hasCameraPermission && mode === "camera";
 
   const headerTitle = mode === "preview" ? "Preview" : "Capture phlegm";
@@ -54,14 +55,16 @@ export default function PhlegmCaptureScreen() {
     } as any);
   };
 
-  const showPreview = (uri: string) => {
+  const showPreview = (uri: string, source: "camera" | "library") => {
     setErrorText(null);
     setPhotoUri(uri);
+    setCaptureSource(source);
     setMode("preview");
   };
 
   const retake = () => {
     setPhotoUri(null);
+    setCaptureSource(null);
     setMode("camera");
   };
 
@@ -82,7 +85,7 @@ export default function PhlegmCaptureScreen() {
       setErrorText("No image selected. Please try again.");
       return;
     }
-    showPreview(uri);
+    showPreview(uri, "library");
   };
 
   const takePhoto = async () => {
@@ -97,69 +100,42 @@ export default function PhlegmCaptureScreen() {
       setErrorText("Couldn’t capture a photo. Try Upload instead.");
       return;
     }
-    showPreview(photo.uri);
+    showPreview(photo.uri, "camera");
   };
 
+  const fromLibraryPreview = mode === "preview" && captureSource === "library";
+
   return (
-    <View style={{ flex: 1, backgroundColor: "#0B1530" }}>
-      {/* Header */}
-      <View
-        style={{
-          paddingTop: Math.max(insets.top, 16) + 8,
-          paddingHorizontal: 18,
-          paddingBottom: 14,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
+    <>
+      <StatusBar style="light" backgroundColor="#0B1530" translucent={false} />
+      <SafeAreaView className="flex-1 bg-navy" edges={["top", "right", "bottom", "left"]}>
+      <View className="flex-row items-center justify-between px-4 pb-3.5 pt-2 sm:px-5 md:px-6">
         <Pressable
           onPress={() => router.back()}
-          style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-          })}
+          className="size-11 items-center justify-center rounded-full bg-white/5 active:bg-white/10"
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={22} color="#E8EEFF" />
+          <Ionicons name="chevron-back" size={22} color="#ffffff" />
         </Pressable>
 
-        <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 16 }}>{headerTitle}</Text>
+        <View className="min-w-0 flex-1 items-center px-2">
+          <Text
+            className="text-center text-sm font-bold text-white sm:text-base"
+            numberOfLines={2}
+          >
+            {headerTitle}
+          </Text>
+          <Text className="mt-0.5 text-center text-xs font-semibold text-white/55 sm:text-sm">
+            Phlegm sample
+          </Text>
+        </View>
 
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-          })}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
-        >
-          <Ionicons name="close" size={22} color="#E8EEFF" />
-        </Pressable>
+        <View className="size-11" />
       </View>
 
-      {/* Preview / Camera */}
-      <View style={{ flex: 1, paddingHorizontal: 18, paddingBottom: 16 }}>
-        <View
-          style={{
-            flex: 1,
-            borderRadius: 18,
-            overflow: "hidden",
-            backgroundColor: "rgba(255,255,255,0.06)",
-            borderWidth: 1,
-            borderColor: "rgba(255,255,255,0.10)",
-          }}
-        >
+      <View className="min-h-0 flex-1 px-4 pb-4 sm:px-5 md:px-6">
+        <View className="flex-1 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
           {mode === "preview" && photoUri ? (
             <Image source={{ uri: photoUri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
           ) : canShowCamera ? (
@@ -171,151 +147,117 @@ export default function PhlegmCaptureScreen() {
               facing="back"
             />
           ) : (
-            <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 20 }}>
-              <Ionicons name="camera" size={36} color="rgba(232,238,255,0.8)" />
-              <Text
-                style={{
-                  marginTop: 10,
-                  color: "#E8EEFF",
-                  fontWeight: "800",
-                  fontSize: 16,
-                  textAlign: "center",
-                }}
-              >
+            <View className="flex-1 items-center justify-center px-5">
+              <Ionicons name="camera" size={windowWidth < 380 ? 32 : 36} color="rgba(255,255,255,0.8)" />
+              <Text className="mt-2.5 text-center text-base font-bold text-white sm:text-lg">
                 Camera unavailable
               </Text>
-              <Text style={{ marginTop: 8, color: "rgba(232,238,255,0.70)", fontSize: 13, textAlign: "center", lineHeight: 18 }}>
+              <Text className="mt-2 max-w-sm text-center text-xs leading-5 text-white/70 sm:text-sm">
                 {helperText}
               </Text>
 
-              <View style={{ height: 14 }} />
+              <View className="h-3.5" />
 
               <Pressable
                 onPress={() => requestCameraPermission()}
-                style={({ pressed }) => ({
-                  backgroundColor: pressed ? "rgba(255,255,255,0.92)" : "#FFFFFF",
-                  borderRadius: 14,
-                  paddingVertical: 12,
-                  paddingHorizontal: 16,
-                  alignItems: "center",
-                  justifyContent: "center",
-                })}
+                className="items-center justify-center rounded-2xl bg-white px-4 py-3 active:bg-white/90"
                 accessibilityRole="button"
               >
-                <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 13 }}>Enable camera</Text>
+                <Text className="text-sm font-bold text-navy">Enable camera</Text>
               </Pressable>
             </View>
           )}
         </View>
 
-        {/* Helper text */}
-        <Text style={{ marginTop: 12, color: "rgba(232,238,255,0.75)", fontSize: 13, textAlign: "center", lineHeight: 18 }}>
+        <Text className="mt-3 max-w-md self-center text-center text-xs leading-5 text-white/75 sm:text-sm">
           {helperText}
         </Text>
         {!!errorText && (
-          <Text style={{ marginTop: 8, color: "rgba(255,120,120,0.95)", fontSize: 12, textAlign: "center", fontWeight: "700" }}>
-            {errorText}
-          </Text>
+          <Text className="mt-2 text-center text-xs font-bold text-red-400 sm:text-sm">{errorText}</Text>
         )}
       </View>
 
-      {/* Bottom actions */}
-      <View
-        style={{
-          paddingHorizontal: 18,
-          paddingTop: 10,
-          paddingBottom: Math.max(insets.bottom, 16) + 18,
-        }}
-      >
+      <View className="px-4 pt-3 pb-6 sm:px-5 sm:pb-8 md:px-6">
         {mode === "preview" ? (
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <Pressable
-              onPress={retake}
-              style={({ pressed }) => ({
-                flex: 1,
-                backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-                borderRadius: 14,
-                paddingVertical: 16,
-                alignItems: "center",
-                justifyContent: "center",
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.10)",
-              })}
-              accessibilityRole="button"
-            >
-              <Text style={{ color: "#E8EEFF", fontWeight: "800", fontSize: 14 }}>Retake</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                if (!photoUri) return;
-                goToReview(photoUri);
-              }}
-              style={({ pressed }) => ({
-                flex: 1,
-                backgroundColor: pressed ? "rgba(255,255,255,0.92)" : "#FFFFFF",
-                borderRadius: 14,
-                paddingVertical: 16,
-                alignItems: "center",
-                justifyContent: "center",
-              })}
-              accessibilityRole="button"
-            >
-              <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 14 }}>Use photo</Text>
-            </Pressable>
-          </View>
+          fromLibraryPreview ? (
+            <View className="gap-3">
+              <Text className="text-center text-xs text-white/70 sm:text-sm">
+                Image uploaded — review and proceed when ready.
+              </Text>
+              <Pressable
+                onPress={() => {
+                  if (!photoUri) return;
+                  goToReview(photoUri);
+                }}
+                className="items-center justify-center rounded-2xl bg-white py-3.5 active:bg-white/90 sm:py-4"
+                accessibilityRole="button"
+                accessibilityLabel="Proceed to review"
+              >
+                <Text className="text-sm font-bold text-navy sm:text-base">Proceed</Text>
+              </Pressable>
+              <Pressable
+                onPress={retake}
+                className="items-center justify-center rounded-2xl border border-white/10 bg-white/5 py-3.5 active:bg-white/10 sm:py-4"
+                accessibilityRole="button"
+              >
+                <Text className="text-sm font-bold text-white sm:text-base">Choose another</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={retake}
+                className="flex-1 items-center justify-center rounded-2xl border border-white/10 bg-white/5 py-3.5 active:bg-white/10 sm:py-4"
+                accessibilityRole="button"
+              >
+                <Text className="text-sm font-bold text-white sm:text-base">Retake</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (!photoUri) return;
+                  goToReview(photoUri);
+                }}
+                className="flex-1 items-center justify-center rounded-2xl bg-white py-3.5 active:bg-white/90 sm:py-4"
+                accessibilityRole="button"
+                accessibilityLabel="Proceed to review"
+              >
+                <Text className="text-sm font-bold text-navy sm:text-base">Proceed</Text>
+              </Pressable>
+            </View>
+          )
         ) : (
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            {/* Upload (side) */}
+          <View className="flex-row items-center justify-between gap-2">
             <Pressable
               onPress={pickFromLibrary}
-              style={({ pressed }) => ({
-                width: 92,
-                height: 56,
-                borderRadius: 16,
-                backgroundColor: pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-                alignItems: "center",
-                justifyContent: "center",
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.10)",
-              })}
+              className="h-14 w-24 items-center justify-center rounded-2xl border border-white/10 bg-white/5 active:bg-white/10 sm:h-14"
               accessibilityRole="button"
             >
-              <Ionicons name="cloud-upload-outline" size={20} color="#E8EEFF" />
-              <Text style={{ marginTop: 4, color: "#E8EEFF", fontWeight: "800", fontSize: 12 }}>Upload</Text>
+              <Ionicons name="cloud-upload-outline" size={20} color="#ffffff" />
+              <Text className="mt-1 text-xs font-bold text-white">Upload</Text>
             </Pressable>
 
-            {/* Shutter */}
             <Pressable
               onPress={takePhoto}
-              style={({ pressed }) => ({
-                width: 78,
-                height: 78,
-                borderRadius: 39,
-                backgroundColor: pressed ? "rgba(255,255,255,0.92)" : "#FFFFFF",
-                alignItems: "center",
-                justifyContent: "center",
-              })}
+              className="items-center justify-center rounded-full bg-white active:bg-white/90"
+              style={{ width: shutterSize, height: shutterSize, borderRadius: shutterSize / 2 }}
               accessibilityRole="button"
               accessibilityLabel="Take photo"
             >
               <View
+                className="rounded-full border-2 border-navy/15 bg-navy/5"
                 style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 32,
-                  backgroundColor: "rgba(11,21,48,0.06)",
-                  borderWidth: 2,
-                  borderColor: "rgba(11,21,48,0.12)",
+                  width: shutterRing,
+                  height: shutterRing,
+                  borderRadius: shutterRing / 2,
                 }}
               />
             </Pressable>
 
-            {/* Spacer / hint */}
-            <View style={{ width: 92, height: 56, borderRadius: 16, opacity: 0 }} />
+            <View className="h-14 w-24 opacity-0 sm:h-14" pointerEvents="none" />
           </View>
         )}
       </View>
-    </View>
+    </SafeAreaView>
+    </>
   );
 }
-

@@ -153,10 +153,10 @@ function InfoCard({
   children: React.ReactNode;
 }) {
   return (
-    <View className="rounded-2xl border border-[#efefef] bg-white p-5" style={learnCardShadow}>
+    <View className="rounded-3xl border border-[#efefef] bg-white p-5" style={learnCardShadow}>
       <View className="mb-4 flex-row items-center gap-2.5">
         <View
-          className="h-10 w-10 items-center justify-center rounded-2xl"
+          className="h-10 w-10 items-center justify-center rounded-3xl"
           style={{ backgroundColor: iconBackground }}
         >
           <Text className="text-lg">{icon}</Text>
@@ -273,10 +273,10 @@ export function LearnContent() {
         </View>
 
         <View
-          className="flex-row items-center gap-3.5 rounded-2xl border border-[#efefef] bg-white p-5"
+          className="flex-row items-center gap-3.5 rounded-3xl border border-[#efefef] bg-white p-5"
           style={learnCardShadow}
         >
-          <View className="size-14 shrink-0 items-center justify-center rounded-2xl bg-[#E6F3FB]">
+          <View className="size-14 shrink-0 items-center justify-center rounded-3xl bg-[#E6F3FB]">
             <Ionicons name="medkit-outline" size={26} color="#1D6FA4" />
           </View>
           <View className="flex-1">

@@ -1,5 +1,6 @@
 import { ActivityIndicator, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
 import NetInfo from "@react-native-community/netinfo";
@@ -54,7 +55,6 @@ async function uploadAudioForPredict(base: string, uri: string): Promise<any> {
 }
 
 export default function ProcessingScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string; imageUri?: string }>();
 
@@ -74,7 +74,7 @@ export default function ProcessingScreen() {
     const tbProbToRisk = (p: number): "low" | "moderate" | "high" => {
       if (!Number.isFinite(p)) return "low";
       if (p >= 0.75) return "high";
-      if (p >= 0.50) return "moderate";
+      if (p >= 0.5) return "moderate";
       return "low";
     };
 
@@ -212,25 +212,17 @@ export default function ProcessingScreen() {
   }, []);
 
   return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: "#0B1530",
-        paddingTop: Math.max(insets.top, 16) + 8,
-        paddingBottom: Math.max(insets.bottom, 16) + 18,
-        paddingHorizontal: 18,
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 20,
-      }}
-    >
-      <ActivityIndicator size="large" color="#FFFFFF" />
-      <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "900", textAlign: "center" }}>
-        Analyzing data… Please wait
-      </Text>
-      <Text style={{ color: "rgba(255,255,255,0.55)", fontSize: 13, textAlign: "center" }}>
-        This may take a few seconds
-      </Text>
-    </View>
+    <>
+      <StatusBar style="light" backgroundColor="#0B1530" translucent={false} />
+      <SafeAreaView className="flex-1 bg-navy" edges={["top", "right", "bottom", "left"]}>
+        <View className="flex-1 items-center justify-center gap-5 px-5 sm:px-6">
+          <ActivityIndicator size="large" color="#FFFFFF" />
+          <Text className="text-center text-base font-bold text-white sm:text-lg">
+            Analyzing data… Please wait
+          </Text>
+          <Text className="text-center text-xs text-white/55 sm:text-sm">This may take a few seconds</Text>
+        </View>
+      </SafeAreaView>
+    </>
   );
 }

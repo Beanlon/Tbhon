@@ -41,7 +41,7 @@ export default function Login() {
 
         <View className="flex-1 justify-start">
           <TextInput
-            className="mb-3 h-12 w-full rounded-xl border border-[#EDEDED] bg-[#F8F8F8] px-3 py-0 text-base font-medium leading-5 text-[#111111] sm:mb-4 md:mb-5"
+            className="mb-3 h-14 w-full rounded-3xl border border-[#EDEDED] bg-[#F8F8F8] px-4 py-0 text-lg font-medium leading-6 text-[#111111] sm:mb-4 md:mb-5"
             placeholder="Email"
             placeholderTextColor="#999999"
             keyboardType="email-address"
@@ -52,7 +52,7 @@ export default function Login() {
           />
 
           <TextInput
-            className="mb-3 h-12 w-full rounded-xl border border-[#EDEDED] bg-[#F8F8F8] px-3 py-0 text-base font-medium leading-5 text-[#111111] sm:mb-4 md:mb-5"
+            className="mb-3 h-14 w-full rounded-3xl border border-[#EDEDED] bg-[#F8F8F8] px-4 py-0 text-lg font-medium leading-6 text-[#111111] sm:mb-4 md:mb-5"
             placeholder="Password"
             placeholderTextColor="#999999"
             secureTextEntry
@@ -63,7 +63,7 @@ export default function Login() {
           />
 
           <Pressable
-            className="mt-5 mb-5 w-full items-center justify-center rounded-xl bg-[#1a1a4d] py-3.5 sm:mt-6 sm:mb-6 sm:py-4"
+            className="mt-5 mb-5 w-full items-center justify-center rounded-2xl bg-[#1a1a4d] py-3.5 sm:mt-6 sm:mb-6 sm:py-4"
             onPress={handleSignIn}
           >
             <Text className="text-base font-bold text-white" style={{ letterSpacing: 0.5 }}>

@@ -1,7 +1,9 @@
+import { type ReactNode, useMemo } from "react";
 import { ScrollView, Text, View, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type RiskLevel = "low" | "moderate" | "high";
 
@@ -54,7 +56,6 @@ function parseAudioUris(raw: unknown): string[] {
 
 export default function ScreeningDetailsScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ risk?: string; probTb?: string; audioUris?: string; imageUri?: string; invalidAudio?: string; invalidLabel?: string; invalidReasons?: string }>();
 
   const risk: RiskLevel =
@@ -72,214 +73,168 @@ export default function ScreeningDetailsScreen() {
   const imageUri = typeof params.imageUri === "string" ? params.imageUri : "";
   const imageProvided = imageUri.length > 0;
 
-  // Transparency: image is collected but not yet included in the ML score.
   const imageAnalyzed = false;
 
   const invalidAudio = params.invalidAudio === "1";
   const invalidLabel = typeof params.invalidLabel === "string" ? params.invalidLabel : "";
-  let invalidReasons: string[] = [];
-  if (typeof params.invalidReasons === "string" && params.invalidReasons.length) {
+  const invalidReasons = useMemo(() => {
+    if (typeof params.invalidReasons !== "string" || !params.invalidReasons.length) return [];
     try {
       const v = JSON.parse(params.invalidReasons);
-      if (Array.isArray(v)) invalidReasons = v.filter((x) => typeof x === "string");
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
     } catch {
-      invalidReasons = [];
+      return [];
     }
-  }
+  }, [params.invalidReasons]);
 
   const copy = RISK_COPY[risk];
 
-  const Card = ({ title, children }: { title: string; children: React.ReactNode }) => (
-    <View
-      style={{
-        backgroundColor: "#FFFFFF",
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: "#EEF2F7",
-        marginBottom: 12,
-      }}
-    >
-      <Text style={{ fontSize: 14, fontWeight: "900", color: "#0B1530", marginBottom: 10 }}>
-        {title}
-      </Text>
+  const Card = ({ title, children }: { title: string; children: ReactNode }) => (
+    <View className="mb-3 rounded-3xl border border-slate-200 bg-white p-5">
+      <Text className="mb-3 text-base font-bold text-slate-900">{title}</Text>
       {children}
     </View>
   );
 
   const Bullet = ({ text }: { text: string }) => (
-    <View style={{ flexDirection: "row", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
-      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: copy.color, marginTop: 6 }} />
-      <Text style={{ flex: 1, color: "#334155", fontSize: 13, lineHeight: 19 }}>{text}</Text>
+    <View className="mb-2 flex-row items-start gap-3">
+      <View className="mt-2 size-2 rounded-full" style={{ backgroundColor: copy.color }} />
+      <Text className="flex-1 text-base leading-6 text-slate-700">{text}</Text>
     </View>
   );
 
   const CheckRow = ({ ok, label, sub }: { ok: boolean; label: string; sub?: string }) => (
-    <View style={{ flexDirection: "row", gap: 10, marginBottom: 10, alignItems: "flex-start" }}>
-      <Ionicons name={ok ? "checkmark-circle" : "information-circle"} size={18} color={ok ? "#10B981" : "#64748B"} />
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: "#0B1530", fontWeight: "800", fontSize: 13 }}>{label}</Text>
-        {sub ? <Text style={{ color: "#64748B", fontSize: 12, marginTop: 2, lineHeight: 16 }}>{sub}</Text> : null}
+    <View className="mb-3 flex-row items-start gap-3">
+      <Ionicons name={ok ? "checkmark-circle" : "information-circle"} size={22} color={ok ? "#059669" : "#64748b"} />
+      <View className="min-w-0 flex-1">
+        <Text className="text-base font-bold text-slate-900">{label}</Text>
+        {sub ? <Text className="mt-1 text-sm leading-5 text-slate-500">{sub}</Text> : null}
       </View>
     </View>
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
-      {/* Header */}
-      <View
-        style={{
-          paddingTop: Math.max(insets.top, 16) + 8,
-          paddingHorizontal: 18,
-          paddingBottom: 12,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderBottomWidth: 1,
-          borderBottomColor: "rgba(15,23,42,0.06)",
-          backgroundColor: "#F8FAFC",
-        }}
-      >
+    <>
+      <StatusBar style="dark" backgroundColor="#f8fafc" translucent={false} />
+      <SafeAreaView className="flex-1 bg-slate-50" edges={["top", "right", "bottom", "left"]}>
+      <View className="flex-row items-center justify-between border-b border-slate-900/10 bg-slate-50 px-4 pb-3 pt-2 sm:px-5 md:px-6">
         <Pressable
           onPress={() => router.back()}
-          style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: pressed ? "rgba(11,21,48,0.06)" : "rgba(11,21,48,0.04)",
-          })}
+          className="size-11 items-center justify-center rounded-full bg-slate-900/5 active:bg-slate-900/10"
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={22} color="#0B1530" />
+          <Ionicons name="chevron-back" size={22} color="#0f172a" />
         </Pressable>
 
-        <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 16 }}>
-          Result Details
-        </Text>
+        <View className="min-w-0 flex-1 items-center px-2">
+          <Text className="text-center text-lg font-bold text-slate-900 sm:text-xl" numberOfLines={2}>
+            Result Details
+          </Text>
+          <Text className="mt-1 text-center text-sm font-semibold text-slate-500 sm:text-base">
+            Inputs & insights
+          </Text>
+        </View>
 
-        <View style={{ width: 44, height: 44 }} />
+        <View className="size-11" />
       </View>
 
       <ScrollView
+        className="min-h-0 flex-1"
+        contentContainerStyle={{ flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16) + 22 }}
       >
-        {invalidAudio && (
-          <View
-            style={{
-              backgroundColor: "#FFFBEB",
-              borderRadius: 16,
-              padding: 16,
-              borderWidth: 1,
-              borderColor: "#FCD34D",
-              marginBottom: 12,
-            }}
-          >
-            <Text style={{ fontSize: 14, fontWeight: "900", color: "#92400E", marginBottom: 8 }}>
-              Audio authenticity check
-            </Text>
-            <Text style={{ color: "#92400E", fontSize: 13, lineHeight: 19 }}>
-              {invalidLabel === "silence"
-                ? "The recording was too quiet / silent. Please cough once clearly within 3–10 seconds."
-                : invalidLabel === "speech"
-                  ? "This sounded more like speech/throat-clearing than a cough. Please record a single clear cough."
-                  : invalidLabel === "replay"
-                    ? "This may be playback/replay audio. Please record directly from the phone microphone."
-                    : invalidLabel === "noise"
-                      ? "This sounded like steady background noise. Please move to a quieter place and re-record."
-                      : "We couldn’t confidently detect a real cough signal. Please re-record in a quiet environment and cough once clearly."}
-            </Text>
-            {invalidReasons.length > 0 && (
-              <View style={{ marginTop: 10 }}>
-                <Text style={{ color: "#92400E", fontSize: 12, fontWeight: "800", marginBottom: 6 }}>
-                  Detected issues
-                </Text>
-                {invalidReasons.map((r) => (
-                  <Text key={r} style={{ color: "#92400E", fontSize: 12, lineHeight: 17 }}>
-                    - {r}
-                  </Text>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* 1) Risk Breakdown */}
-        <Card title="Risk Breakdown">
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <View
-              style={{
-                paddingVertical: 8,
-                paddingHorizontal: 12,
-                borderRadius: 999,
-                backgroundColor: copy.pillBg,
-                borderWidth: 1,
-                borderColor: "rgba(15,23,42,0.08)",
-              }}
-            >
-              <Text style={{ color: copy.color, fontWeight: "900", fontSize: 13 }}>{copy.title}</Text>
+        <View className="px-4 pb-8 pt-4 sm:px-5 md:px-6">
+          {invalidAudio && (
+            <View className="mb-3 rounded-3xl border border-amber-300 bg-amber-50 p-5">
+              <Text className="mb-2 text-base font-bold text-amber-900">Audio authenticity check</Text>
+              <Text className="text-base leading-6 text-amber-900">
+                {invalidLabel === "silence"
+                  ? "The recording was too quiet / silent. Please cough once clearly within 3–10 seconds."
+                  : invalidLabel === "speech"
+                    ? "This sounded more like speech/throat-clearing than a cough. Please record a single clear cough."
+                    : invalidLabel === "replay"
+                      ? "This may be playback/replay audio. Please record directly from the phone microphone."
+                      : invalidLabel === "noise"
+                        ? "This sounded like steady background noise. Please move to a quieter place and re-record."
+                        : "We couldn’t confidently detect a real cough signal. Please re-record in a quiet environment and cough once clearly."}
+              </Text>
+              {invalidReasons.length > 0 && (
+                <View className="mt-2.5">
+                  <Text className="mb-2 text-sm font-bold text-amber-900">Detected issues</Text>
+                  {invalidReasons.map((r) => (
+                    <Text key={r} className="text-sm leading-5 text-amber-900">
+                      - {r}
+                    </Text>
+                  ))}
+                </View>
+              )}
             </View>
-            {hasProb ? (
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={{ color: "#0B1530", fontWeight: "900", fontSize: 13 }}>
-                  Confidence: {(confidence * 100).toFixed(0)}%
-                </Text>
-                <Text style={{ color: "#64748B", fontSize: 12 }}>
-                  TB probability: {(probTb * 100).toFixed(1)}%
+          )}
+
+          <Card title="Risk Breakdown">
+            <View className="mb-3 flex-row items-center justify-between gap-3">
+              <View
+                className="rounded-full border border-slate-900/10 px-4 py-2.5"
+                style={{ backgroundColor: copy.pillBg }}
+              >
+                <Text className="text-base font-bold" style={{ color: copy.color }}>
+                  {copy.title}
                 </Text>
               </View>
-            ) : (
-              <Text style={{ color: "#64748B", fontSize: 12, fontWeight: "700" }}>Confidence: —</Text>
+              {hasProb ? (
+                <View className="min-w-0 items-end">
+                  <Text className="text-base font-bold text-slate-900">
+                    Confidence: {(confidence * 100).toFixed(0)}%
+                  </Text>
+                  <Text className="text-sm text-slate-500">TB probability: {(probTb * 100).toFixed(1)}%</Text>
+                </View>
+              ) : (
+                <Text className="text-sm font-bold text-slate-500">Confidence: —</Text>
+              )}
+            </View>
+
+            <Text className="text-base leading-6 text-slate-700">{copy.simple}</Text>
+          </Card>
+
+          <Card title="Input Summary">
+            <CheckRow ok={audioAnalyzed} label="Cough audio analyzed" sub={audioAnalyzed ? `Clips: ${audioUris.length}` : "No recorded audio was provided."} />
+            <CheckRow
+              ok={imageProvided}
+              label={imageProvided ? "Phlegm image received" : "Phlegm image not provided"}
+              sub={
+                imageProvided
+                  ? imageAnalyzed
+                    ? "Image analysis included in this result."
+                    : "Image is collected for transparency, but analysis is not yet included in the score."
+                  : undefined
+              }
+            />
+          </Card>
+
+          <Card title="Factor Insights">
+            {copy.factors.map((t) => (
+              <Bullet key={t} text={t} />
+            ))}
+            {!imageAnalyzed && imageProvided && (
+              <Bullet text="No visible high-risk indicators in phlegm: not evaluated yet (image model not connected)." />
             )}
-          </View>
+          </Card>
 
-          <Text style={{ color: "#334155", fontSize: 13, lineHeight: 19 }}>{copy.simple}</Text>
-        </Card>
+          <Card title="Recommendations">
+            {copy.recommendations.map((t) => (
+              <Bullet key={t} text={t} />
+            ))}
+          </Card>
 
-        {/* 2) Input Summary */}
-        <Card title="Input Summary">
-          <CheckRow ok={audioAnalyzed} label="Cough audio analyzed" sub={audioAnalyzed ? `Clips: ${audioUris.length}` : "No recorded audio was provided."} />
-          <CheckRow
-            ok={imageProvided}
-            label={imageProvided ? "Phlegm image received" : "Phlegm image not provided"}
-            sub={
-              imageProvided
-                ? imageAnalyzed
-                  ? "Image analysis included in this result."
-                  : "Image is collected for transparency, but analysis is not yet included in the score."
-                : undefined
-            }
-          />
-        </Card>
-
-        {/* 3) Factor Insights */}
-        <Card title="Factor Insights">
-          {copy.factors.map((t) => (
-            <Bullet key={t} text={t} />
-          ))}
-          {!imageAnalyzed && imageProvided && (
-            <Bullet text="No visible high-risk indicators in phlegm: not evaluated yet (image model not connected)." />
-          )}
-        </Card>
-
-        {/* 4) Recommendations */}
-        <Card title="Recommendations">
-          {copy.recommendations.map((t) => (
-            <Bullet key={t} text={t} />
-          ))}
-        </Card>
-
-        {/* 5) Disclaimer */}
-        <Card title="Disclaimer">
-          <Text style={{ color: "#475569", fontSize: 13, lineHeight: 19, fontStyle: "italic" }}>
-            This result is not a medical diagnosis.
-          </Text>
-        </Card>
+          <Card title="Disclaimer">
+            <Text className="text-base italic leading-6 text-slate-600">
+              This result is not a medical diagnosis.
+            </Text>
+          </Card>
+        </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
+    </>
   );
 }
-
