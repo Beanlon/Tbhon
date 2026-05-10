@@ -11,12 +11,21 @@ import {
   StyleSheet,
   ScrollView,
   useWindowDimensions,
+  Alert,
+  ActivityIndicator,
   type LayoutChangeEvent,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import CachedImage from "../components/CachedImage";
 import { useRouter } from "expo-router";
+import { ApiError, postRegister } from "../../services/backendApi";
+import { saveAuthToken } from "../../utils/authStorage";
+import {
+  normalizeGenderForApi,
+  normalizePhilippineMobile,
+  signupBirthdateToIso,
+} from "../../utils/signupHelpers";
 
 const inputClass =
   "h-12 w-full rounded-3xl border border-[#EDEDED] bg-[#F8F8F8] px-4 py-0 text-base font-medium leading-5 text-[#111111]";
@@ -58,6 +67,7 @@ export default function SignUp() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [genderPickerOpen, setGenderPickerOpen] = useState(false);
+  const [submittingAccount, setSubmittingAccount] = useState(false);
   const [genderAnchor, setGenderAnchor] = useState<WindowRect | null>(null);
   const genderTriggerRef = useRef<View>(null);
   const [scrollViewportH, setScrollViewportH] = useState(0);
@@ -97,22 +107,81 @@ export default function SignUp() {
     setStep(1);
   };
 
-  const handleCreateAccount = () => {
-    if (password.length < 6) {
-      setPasswordError("Password must be at least 6 characters.");
+  const handleCreateAccount = async () => {
+    const missingPersonal =
+      !firstName.trim() ||
+      !lastName.trim() ||
+      !birthdate.trim() ||
+      !gender.trim() ||
+      !street.trim() ||
+      !barangay.trim() ||
+      !city.trim();
+    if (missingPersonal) {
+      Alert.alert(
+        "Complete your profile",
+        "Please finish Step 1 (all fields including address) before creating an account.",
+      );
+      return;
+    }
+
+    const birthIso = signupBirthdateToIso(birthdate);
+    if (!birthIso) {
+      Alert.alert(
+        "Birthdate",
+        "Use MM / DD / YYYY (e.g. 01 / 15 / 1995) or YYYY-MM-DD.",
+      );
+      return;
+    }
+
+    if (password.length < 8) {
+      setPasswordError("Password must be at least 8 characters.");
       return;
     }
     if (password !== confirmPassword) {
       setPasswordError("Passwords do not match.");
       return;
     }
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      Alert.alert("Email required", "Please enter your email.");
+      return;
+    }
+
     setPasswordError("");
-    console.log("Sign up:", email, password);
-    setStep(3);
+    setSubmittingAccount(true);
+    try {
+      const phoneNumber = normalizePhilippineMobile(phoneLocal);
+      const { token } = await postRegister({
+        email: trimmedEmail,
+        password,
+        phoneNumber: phoneNumber ?? null,
+        profile: {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          birthdate: birthIso,
+          gender: normalizeGenderForApi(gender),
+          street: street.trim() || null,
+          barangay: barangay.trim() || null,
+          city: city.trim() || null,
+        },
+      });
+      await saveAuthToken(token);
+      setStep(3);
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Could not reach the server. Check API URL / network.";
+      Alert.alert("Create account failed", message);
+    } finally {
+      setSubmittingAccount(false);
+    }
   };
 
   const handleGetStarted = () => {
-    router.push("/home/HomeScreen");
+    router.replace("/home/HomeScreen");
   };
 
   return (
@@ -373,7 +442,7 @@ export default function SignUp() {
                 </Text>
                 <TextInput
                   className={`${inputClass} mb-0`}
-                  placeholder="Min. 6 characters"
+                  placeholder="Min. 8 characters"
                   placeholderTextColor="#999999"
                   secureTextEntry
                   textAlignVertical="center"
@@ -409,7 +478,7 @@ export default function SignUp() {
                 <Text className="mb-1 text-xs text-red-600 sm:mb-4">{passwordError}</Text>
               ) : (
                 <Text className="mb-1 text-xs text-[#888888] sm:mb-4">
-                  Password must be at least 6 characters and match confirmation.
+                  Password must be at least 8 characters and match confirmation.
                 </Text>
               )}
 
@@ -421,15 +490,20 @@ export default function SignUp() {
                   <Text className="text-sm font-semibold text-[#666666]">← Back</Text>
                 </Pressable>
                 <Pressable
-                  className="min-w-0 flex-1 items-center justify-center rounded-2xl bg-[#1a1a4d] py-3 sm:py-4"
-                  onPress={handleCreateAccount}
+                  className="min-w-0 flex-1 flex-row items-center justify-center rounded-2xl bg-[#1a1a4d] py-3 sm:py-4"
+                  onPress={() => void handleCreateAccount()}
+                  disabled={submittingAccount}
                 >
-                  <Text
-                    className="text-base font-bold text-white"
-                    style={{ letterSpacing: 0.5 }}
-                  >
-                    CREATE ACCOUNT
-                  </Text>
+                  {submittingAccount ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text
+                      className="text-base font-bold text-white"
+                      style={{ letterSpacing: 0.5 }}
+                    >
+                      CREATE ACCOUNT
+                    </Text>
+                  )}
                 </Pressable>
               </View>
             </View>

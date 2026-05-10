@@ -8,6 +8,8 @@ import {
   Platform,
   ScrollView,
   useWindowDimensions,
+  Alert,
+  ActivityIndicator,
   type LayoutChangeEvent,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -36,6 +38,7 @@ export default function Login() {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [scrollViewportH, setScrollViewportH] = useState(0);
   const [innerContentH, setInnerContentH] = useState(0);
 
@@ -64,9 +67,28 @@ export default function Login() {
     return Math.min(168, Math.max(76, Math.round(d * 0.27)));
   }, [windowWidth, windowHeight]);
 
-  const handleSignIn = () => {
-    console.log("Sign in:", email, password);
-    router.push("/home/HomeScreen");
+  const handleSignIn = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      Alert.alert("Sign in", "Please enter email and password.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { token } = await postLogin(trimmedEmail, password);
+      await saveAuthToken(token);
+      router.replace("/home/HomeScreen");
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Could not reach the server. Check API URL / network.";
+      Alert.alert("Sign in failed", message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleSignUp = () => {
@@ -169,13 +191,18 @@ export default function Login() {
               </View>
 
               <Pressable
-                className="w-full items-center justify-center rounded-2xl bg-[#1a1a4d] py-3 sm:py-4 active:opacity-90"
+                className="w-full flex-row items-center justify-center rounded-2xl bg-[#1a1a4d] py-3 sm:py-4 active:opacity-90"
                 onPress={handleSignIn}
+                disabled={submitting}
                 android_ripple={{ color: "rgba(255,255,255,0.2)" }}
               >
-                <Text className="text-base font-bold text-white" style={{ letterSpacing: 0.5 }}>
-                  SIGN IN
-                </Text>
+                {submitting ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text className="text-base font-bold text-white" style={{ letterSpacing: 0.5 }}>
+                    SIGN IN
+                  </Text>
+                )}
               </Pressable>
             </View>
 
