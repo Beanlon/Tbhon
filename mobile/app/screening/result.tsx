@@ -6,6 +6,19 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type RiskLevel = "low" | "moderate" | "high";
+type PhlegmTone = { color: string; bg: string; border: string; label: string };
+
+const PHLEGM_TONE: Record<string, PhlegmTone> = {
+  none: { color: "#16A34A", bg: "#F0FDF4", border: "#BBF7D0", label: "None" },
+  low: { color: "#059669", bg: "#ECFDF5", border: "#A7F3D0", label: "Low" },
+  moderate: { color: "#D97706", bg: "#FFFBEB", border: "#FCD34D", label: "Moderate" },
+  high: { color: "#DC2626", bg: "#FEF2F2", border: "#FCA5A5", label: "High" },
+};
+
+function phlegmTone(load: string): PhlegmTone {
+  const k = load.toLowerCase();
+  return PHLEGM_TONE[k] ?? { color: "#475569", bg: "#F1F5F9", border: "#E2E8F0", label: load || "—" };
+}
 
 const RISK_CONFIG: Record<
   RiskLevel,
@@ -82,6 +95,12 @@ export default function ResultScreen() {
     uploadError?: string;
     apiAttempt?: string;
     wifiRequired?: string;
+    phlegmAnalyzed?: string;
+    phlegmLoad?: string;
+    phlegmConfidence?: string;
+    phlegmProbs?: string;
+    phlegmError?: string;
+    phlegmErrorDetail?: string;
   }>();
 
   const risk: RiskLevel =
@@ -94,6 +113,14 @@ export default function ResultScreen() {
   const uploadError = params.uploadError === "1";
   const apiAttempt = typeof params.apiAttempt === "string" ? params.apiAttempt : "";
   const wifiRequired = params.wifiRequired === "1";
+
+  const phlegmAnalyzed = params.phlegmAnalyzed === "1";
+  const phlegmLoad = typeof params.phlegmLoad === "string" ? params.phlegmLoad : "";
+  const phlegmConfidence =
+    typeof params.phlegmConfidence === "string" && params.phlegmConfidence.length > 0
+      ? Number(params.phlegmConfidence)
+      : null;
+  const phlegmFailed = params.phlegmError === "1";
 
   return (
     <>
@@ -183,14 +210,6 @@ export default function ResultScreen() {
               </Text>
             </View>
           )}
-          {typeof probTb === "number" && Number.isFinite(probTb) && (
-            <View className="mb-5 items-center">
-              <Text className="text-xs font-bold text-slate-500">
-                TB probability (avg): {(probTb * 100).toFixed(1)}%
-              </Text>
-            </View>
-          )}
-
           <View className="mb-6 w-full max-w-md items-center self-center sm:mb-8">
             <View
               className="items-center justify-center overflow-hidden rounded-full"
@@ -234,6 +253,99 @@ export default function ResultScreen() {
             </Text>
           </View>
 
+          {(() => {
+            const hasCough = typeof probTb === "number" && Number.isFinite(probTb);
+            const hasPhlegm = phlegmAnalyzed && phlegmLoad.length > 0;
+            if (!hasCough && !hasPhlegm && !phlegmFailed) return null;
+
+            const tone = hasPhlegm ? phlegmTone(phlegmLoad) : null;
+            const probPct = hasCough ? Math.round((probTb as number) * 1000) / 10 : null;
+            const probWidth = hasCough ? Math.max(2, Math.min(100, (probTb as number) * 100)) : 0;
+
+            return (
+              <View className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+                <View className="mb-3 flex-row items-center gap-2">
+                  <Ionicons name="pulse-outline" size={16} color="#475569" />
+                  <Text className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                    Signals analyzed
+                  </Text>
+                </View>
+
+                <View className="flex-row flex-wrap gap-3">
+                  {hasCough ? (
+                    <View
+                      className="flex-1 rounded-xl border border-slate-100 bg-slate-50 p-3"
+                      style={{ minWidth: 150 }}
+                    >
+                      <View className="mb-1.5 flex-row items-center gap-1.5">
+                        <Ionicons name="mic-outline" size={14} color="#64748B" />
+                        <Text className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                          Cough audio
+                        </Text>
+                      </View>
+                      <View className="flex-row items-baseline gap-1">
+                        <Text className="text-2xl font-bold text-slate-900">{probPct?.toFixed(1)}</Text>
+                        <Text className="text-sm font-bold text-slate-500">%</Text>
+                      </View>
+                      <Text className="text-[11px] text-slate-500">TB probability</Text>
+                      <View className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                        <View
+                          className="h-1.5 rounded-full"
+                          style={{ width: `${probWidth}%`, backgroundColor: cfg.color }}
+                        />
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {hasPhlegm && tone ? (
+                    <View
+                      className="flex-1 rounded-xl border border-slate-100 bg-slate-50 p-3"
+                      style={{ minWidth: 150 }}
+                    >
+                      <View className="mb-1.5 flex-row items-center gap-1.5">
+                        <Ionicons name="image-outline" size={14} color="#64748B" />
+                        <Text className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                          Phlegm image
+                        </Text>
+                      </View>
+                      <View className="self-start rounded-full border px-2.5 py-1" style={{ backgroundColor: tone.bg, borderColor: tone.border }}>
+                        <Text className="text-xs font-bold" style={{ color: tone.color }}>
+                          {tone.label}
+                        </Text>
+                      </View>
+                      <Text className="mt-1.5 text-[11px] text-slate-500">
+                        AFB load
+                        {typeof phlegmConfidence === "number" && Number.isFinite(phlegmConfidence)
+                          ? ` · ${(phlegmConfidence * 100).toFixed(0)}% conf.`
+                          : ""}
+                      </Text>
+                    </View>
+                  ) : phlegmFailed ? (
+                    <View
+                      className="flex-1 rounded-xl border border-amber-200 bg-amber-50 p-3"
+                      style={{ minWidth: 150 }}
+                    >
+                      <View className="mb-1.5 flex-row items-center gap-1.5">
+                        <Ionicons name="alert-circle-outline" size={14} color="#B45309" />
+                        <Text className="text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                          Phlegm image
+                        </Text>
+                      </View>
+                      <Text className="text-sm font-bold text-amber-900">Unavailable</Text>
+                      <Text className="mt-0.5 text-[11px] text-amber-800">
+                        Could not analyze the image. Open Details for the error.
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <Text className="mt-3 text-[11px] italic leading-4 text-slate-400">
+                  Combined risk uses the higher of the two signals. Not a diagnosis.
+                </Text>
+              </View>
+            );
+          })()}
+
           <View className="mb-7 rounded-2xl border p-5" style={{ backgroundColor: cfg.bg, borderColor: cfg.ringColor }}>
             <View className="mb-2.5 flex-row items-center gap-2">
               <Ionicons name="information-circle" size={20} color={cfg.color} />
@@ -256,6 +368,12 @@ export default function ResultScreen() {
                   invalidAudio: invalidAudio ? "1" : "0",
                   invalidLabel,
                   invalidReasons: typeof params.invalidReasons === "string" ? params.invalidReasons : "[]",
+                  phlegmAnalyzed: params.phlegmAnalyzed ?? "0",
+                  phlegmLoad: params.phlegmLoad ?? "",
+                  phlegmConfidence: params.phlegmConfidence ?? "",
+                  phlegmProbs: params.phlegmProbs ?? "{}",
+                  phlegmError: params.phlegmError ?? "0",
+                  phlegmErrorDetail: params.phlegmErrorDetail ?? "",
                 },
               } as any)
             }
