@@ -17,6 +17,7 @@ export default function ScreeningLayout() {
   return (
     <Stack
       screenOptions={{
+        gestureEnabled: false,
         headerShown: false,
         header: () => null,
         headerShadowVisible: false,

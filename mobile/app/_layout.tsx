@@ -43,7 +43,7 @@ export default function RootLayout() {
   return (
     <>
       <StatusBar style="dark" translucent={false} />
-      <Stack>
+      <Stack screenOptions={{ gestureEnabled: false }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="home/HomeScreen" options={{ headerShown: false }} />
         <Stack.Screen name="learn/learn" options={{ headerShown: false }} />

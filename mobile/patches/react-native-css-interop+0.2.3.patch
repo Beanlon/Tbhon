@@ -1,0 +1,59 @@
+diff --git a/node_modules/react-native-css-interop/dist/css-to-rn/parseDeclaration.js b/node_modules/react-native-css-interop/dist/css-to-rn/parseDeclaration.js
+index 59ea66e..db1bf83 100644
+--- a/node_modules/react-native-css-interop/dist/css-to-rn/parseDeclaration.js
++++ b/node_modules/react-native-css-interop/dist/css-to-rn/parseDeclaration.js
+@@ -1757,17 +1757,17 @@ function parseDisplay(display, options) {
+     }
+ }
+ function parseAspectRatio(aspectRatio) {
+-    if (aspectRatio.auto) {
++    if (!aspectRatio || aspectRatio.auto) {
+         return "auto";
+     }
+-    else {
+-        if (aspectRatio.ratio[0] === aspectRatio.ratio[1]) {
+-            return 1;
+-        }
+-        else {
+-            return aspectRatio.ratio.join(" / ");
+-        }
++    const ratio = aspectRatio.ratio;
++    if (!ratio || !Array.isArray(ratio) || ratio.length < 2) {
++        return "auto";
++    }
++    if (ratio[0] === ratio[1]) {
++        return 1;
+     }
++    return ratio.join(" / ");
+ }
+ function parseDimension({ unit, value }, options) {
+     switch (unit) {
+diff --git a/node_modules/react-native-css-interop/src/css-to-rn/parseDeclaration.ts b/node_modules/react-native-css-interop/src/css-to-rn/parseDeclaration.ts
+index bf095a5..4c9cb70 100644
+--- a/node_modules/react-native-css-interop/src/css-to-rn/parseDeclaration.ts
++++ b/node_modules/react-native-css-interop/src/css-to-rn/parseDeclaration.ts
+@@ -2639,15 +2639,17 @@ function parseAspectRatio(
+   // This is missing types
+   aspectRatio: any,
+ ): RuntimeValueDescriptor {
+-  if (aspectRatio.auto) {
++  if (!aspectRatio || aspectRatio.auto) {
+     return "auto";
+-  } else {
+-    if (aspectRatio.ratio[0] === aspectRatio.ratio[1]) {
+-      return 1;
+-    } else {
+-      return aspectRatio.ratio.join(" / ");
+-    }
+   }
++  const ratio = aspectRatio.ratio;
++  if (!ratio || !Array.isArray(ratio) || ratio.length < 2) {
++    return "auto";
++  }
++  if (ratio[0] === ratio[1]) {
++    return 1;
++  }
++  return ratio.join(" / ");
+ }
+ 
+ function parseDimension(

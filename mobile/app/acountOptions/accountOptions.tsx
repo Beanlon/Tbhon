@@ -31,7 +31,7 @@ export default function AccountOptions() {
     >
       <View className="flex-1 px-5 pt-6 pb-7 sm:px-6 sm:pt-7 sm:pb-8 md:px-8 md:pt-8 md:pb-10">
         <View className="mt-2 mb-3 w-full items-center sm:mb-4">
-          <View className="aspect-square w-3/4 max-w-72">
+          <View className="w-3/4 max-w-72" style={{ aspectRatio: 1 }}>
             <CachedImage
               source={require("../../assets/images/Tbhon assets/Tbhon Logo.png")}
               className="size-full"
