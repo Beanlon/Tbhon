@@ -14,8 +14,9 @@ export default function InstructionsScreen({ onClose }: { onClose?: () => void }
 
   const instructions = [
     "Find a quiet environment",
+    "Answer a quick symptoms & exposure checklist",
     "You will record 3 separate coughs, one at a time",
-    "Have your phlegm sample ready",
+    "Sputum / phlegm photo is optional — add one only if you can",
   ];
 
   return (
@@ -54,11 +55,11 @@ export default function InstructionsScreen({ onClose }: { onClose?: () => void }
             <TouchableOpacity
               onPress={() => {
                 if (onClose) onClose();
-                router.push({ pathname: "/screening/recording" as any });
+                router.push({ pathname: "/screening/checklist" as any, params: { from: "instructions" } as any });
               }}
               className="items-center justify-center rounded-xl bg-navy px-5 py-4"
             >
-              <Text className="text-base font-bold text-white">Start Recording</Text>
+              <Text className="text-base font-bold text-white">Start Screening</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>

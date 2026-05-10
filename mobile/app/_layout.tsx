@@ -3,11 +3,41 @@ import { Stack } from "expo-router";
 import React, { useEffect } from 'react';
 import { Asset } from 'expo-asset';
 import { StatusBar } from "expo-status-bar";
+import { LogBox } from "react-native";
+
+// expo-keep-awake (splash / camera / recording) can reject on some Android + Expo Go
+// builds; the app usually still works — avoid a blocking dev error overlay.
+if (__DEV__) {
+  LogBox.ignoreLogs([
+    "Unable to activate keep awake",
+    /Unable to activate keep awake/i,
+  ]);
+}
 
 export default function RootLayout() {
   useEffect(() => {
     // Warm up the logo asset so it is available immediately when screens mount
     Asset.loadAsync(require('../assets/images/Tbhon assets/Tbhon Logo.png')).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    const g = globalThis as typeof globalThis & {
+      onunhandledrejection?: (e: { reason?: unknown; preventDefault?: () => void }) => void;
+    };
+    const prev = g.onunhandledrejection;
+    g.onunhandledrejection = (event) => {
+      const r = event?.reason as { message?: string } | string | undefined;
+      const msg = typeof r === "string" ? r : String(r?.message ?? r ?? "");
+      if (/keep awake/i.test(msg)) {
+        event?.preventDefault?.();
+        return;
+      }
+      if (typeof prev === "function") prev(event);
+    };
+    return () => {
+      g.onunhandledrejection = prev;
+    };
   }, []);
 
   return (

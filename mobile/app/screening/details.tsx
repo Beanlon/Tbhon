@@ -56,7 +56,22 @@ function parseAudioUris(raw: unknown): string[] {
 
 export default function ScreeningDetailsScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ risk?: string; probTb?: string; audioUris?: string; imageUri?: string; invalidAudio?: string; invalidLabel?: string; invalidReasons?: string }>();
+  const params = useLocalSearchParams<{
+    risk?: string;
+    probTb?: string;
+    audioUris?: string;
+    imageUri?: string;
+    checklist?: string;
+    invalidAudio?: string;
+    invalidLabel?: string;
+    invalidReasons?: string;
+    phlegmAnalyzed?: string;
+    phlegmLoad?: string;
+    phlegmConfidence?: string;
+    phlegmProbs?: string;
+    phlegmError?: string;
+    phlegmErrorDetail?: string;
+  }>();
 
   const risk: RiskLevel =
     params.risk === "moderate" || params.risk === "high"
@@ -73,7 +88,25 @@ export default function ScreeningDetailsScreen() {
   const imageUri = typeof params.imageUri === "string" ? params.imageUri : "";
   const imageProvided = imageUri.length > 0;
 
-  const imageAnalyzed = false;
+  const imageAnalyzed = params.phlegmAnalyzed === "1";
+  const phlegmLoad = typeof params.phlegmLoad === "string" ? params.phlegmLoad : "";
+  const phlegmConfStr = typeof params.phlegmConfidence === "string" ? params.phlegmConfidence : "";
+  const phlegmConf = phlegmConfStr.length > 0 ? Number(phlegmConfStr) : NaN;
+  const phlegmFailed = params.phlegmError === "1";
+  const phlegmDetail = typeof params.phlegmErrorDetail === "string" ? params.phlegmErrorDetail : "";
+
+  const phlegmProbsText = useMemo(() => {
+    if (typeof params.phlegmProbs !== "string" || !params.phlegmProbs.length) return "";
+    try {
+      const v = JSON.parse(params.phlegmProbs) as Record<string, number>;
+      if (!v || typeof v !== "object") return "";
+      return Object.entries(v)
+        .map(([k, n]) => `${k}: ${(Number(n) * 100).toFixed(1)}%`)
+        .join(" · ");
+    } catch {
+      return "";
+    }
+  }, [params.phlegmProbs]);
 
   const invalidAudio = params.invalidAudio === "1";
   const invalidLabel = typeof params.invalidLabel === "string" ? params.invalidLabel : "";
@@ -88,6 +121,17 @@ export default function ScreeningDetailsScreen() {
   }, [params.invalidReasons]);
 
   const copy = RISK_COPY[risk];
+
+  const checklistItems = useMemo(() => {
+    if (typeof params.checklist !== "string" || !params.checklist.length) return [];
+    try {
+      const v = JSON.parse(params.checklist) as { items?: { id?: string; label?: string; value?: boolean }[] };
+      const items = Array.isArray(v?.items) ? v.items : [];
+      return items.filter((x) => x && x.value === true && typeof x.label === "string" && x.label.length > 0);
+    } catch {
+      return [];
+    }
+  }, [params.checklist]);
 
   const Card = ({ title, children }: { title: string; children: ReactNode }) => (
     <View className="mb-3 rounded-3xl border border-slate-200 bg-white p-5">
@@ -201,13 +245,28 @@ export default function ScreeningDetailsScreen() {
             <CheckRow ok={audioAnalyzed} label="Cough audio analyzed" sub={audioAnalyzed ? `Clips: ${audioUris.length}` : "No recorded audio was provided."} />
             <CheckRow
               ok={imageProvided}
-              label={imageProvided ? "Phlegm image received" : "Phlegm image not provided"}
+              label={imageProvided ? "Sputum / phlegm image received" : "Sputum / phlegm skipped (optional)"}
               sub={
                 imageProvided
                   ? imageAnalyzed
-                    ? "Image analysis included in this result."
-                    : "Image is collected for transparency, but analysis is not yet included in the score."
-                  : undefined
+                    ? `AFB load grade: ${phlegmLoad || "—"}${
+                        Number.isFinite(phlegmConf) ? ` (confidence ${(phlegmConf * 100).toFixed(0)}%)` : ""
+                      }${phlegmProbsText ? `. ${phlegmProbsText}` : ""}`
+                    : phlegmFailed
+                      ? phlegmDetail
+                        ? `Analysis failed: ${phlegmDetail.slice(0, 200)}`
+                        : "Analysis failed — check that infer_api can load ml (phlegm) checkpoints."
+                      : "Image captured; analysis not run."
+                  : "No sample photo — results use cough audio (and checklist) only."
+              }
+            />
+            <CheckRow
+              ok={checklistItems.length > 0}
+              label="Symptoms & exposure checklist"
+              sub={
+                checklistItems.length
+                  ? `Selected: ${checklistItems.map((x) => x.label).slice(0, 5).join(" · ")}${checklistItems.length > 5 ? " …" : ""}`
+                  : "No checklist items selected."
               }
             />
           </Card>
@@ -216,8 +275,13 @@ export default function ScreeningDetailsScreen() {
             {copy.factors.map((t) => (
               <Bullet key={t} text={t} />
             ))}
-            {!imageAnalyzed && imageProvided && (
-              <Bullet text="No visible high-risk indicators in phlegm: not evaluated yet (image model not connected)." />
+            {imageAnalyzed && phlegmLoad.length > 0 && (
+              <Bullet
+                text={`Sputum smear model: ${phlegmLoad} AFB load (none / low / moderate / high). This is not a certified diagnosis.`}
+              />
+            )}
+            {!imageAnalyzed && imageProvided && phlegmFailed && (
+              <Bullet text="Phlegm model did not return a result; overall risk may rely on cough audio only." />
             )}
           </Card>
 

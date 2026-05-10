@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
 import io
 import json
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +15,8 @@ import torch.nn as nn
 import torchaudio
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image
+from torchvision import transforms
 
 # Define the FastAPI app
 app = FastAPI(title="TB cough audio inference")
@@ -447,6 +451,138 @@ def load_checkpoint(model_path: Path) -> tuple[nn.Module, InferenceConfig]:
 # Default model path: use the newest run if present, else require env var.
 DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "runs"
 
+# Sputum / phlegm microscopy CNN (see ../ml (phlegm)/train_phlegm_cnn.py)
+PHLEGM_ROOT = Path(__file__).resolve().parent.parent / "ml (phlegm)"
+DEFAULT_PHLEGM_RUNS = PHLEGM_ROOT / "runs"
+
+_phlegm_train_mod: Any | None = None
+_phlegm_bundle: dict[str, Any] | None = None
+
+
+def _load_phlegm_train_module() -> Any:
+  path = PHLEGM_ROOT / "train_phlegm_cnn.py"
+  if not path.is_file():
+    raise RuntimeError(f"Phlegm training module not found at {path}")
+  name = "tbhon_phlegm_train"
+  spec = importlib.util.spec_from_file_location(name, path)
+  if spec is None or spec.loader is None:
+    raise RuntimeError("Could not load phlegm train module spec")
+  mod = importlib.util.module_from_spec(spec)
+  # Required for dataclasses (and similar) under dynamic load, e.g. Python 3.14.
+  sys.modules[name] = mod
+  spec.loader.exec_module(mod)
+  return mod
+
+
+def get_phlegm_train_module() -> Any:
+  global _phlegm_train_mod
+  if _phlegm_train_mod is None:
+    _phlegm_train_mod = _load_phlegm_train_module()
+  return _phlegm_train_mod
+
+
+def _checkpoint_is_afb_load_grade(path: Path) -> bool:
+  """True if checkpoint label_map is AFB load (none/low/moderate/high), not stain-color classes."""
+  try:
+    try:
+      ck = torch.load(path, map_location="cpu", weights_only=False)
+    except TypeError:
+      ck = torch.load(path, map_location="cpu")
+  except Exception:
+    return False
+  lm = ck.get("label_map")
+  if not isinstance(lm, dict):
+    return False
+  keys = {str(k).lower() for k in lm.keys()}
+  return "none" in keys and "high" in keys
+
+
+def resolve_phlegm_model_path() -> Path:
+  import os
+
+  env = os.environ.get("TB_PHLEGM_MODEL_PATH")
+  if env:
+    p = Path(env)
+    if p.is_file():
+      return p
+  if DEFAULT_PHLEGM_RUNS.exists():
+    candidates = sorted(
+      DEFAULT_PHLEGM_RUNS.glob("**/model_best.pt"),
+      key=lambda x: x.stat().st_mtime,
+      reverse=True,
+    )
+    for c in candidates:
+      if _checkpoint_is_afb_load_grade(c):
+        return c
+  raise RuntimeError(
+    "No AFB-load phlegm model found. Set TB_PHLEGM_MODEL_PATH to a phlegm_afb …/model_best.pt, "
+    "or train with: python ml (phlegm)/train_phlegm_cnn.py"
+  )
+
+
+def get_phlegm_bundle() -> dict[str, Any]:
+  """Load CNN + metadata once (CPU)."""
+  global _phlegm_bundle
+  if _phlegm_bundle is not None:
+    return _phlegm_bundle
+  mod = get_phlegm_train_module()
+  mp = resolve_phlegm_model_path()
+  try:
+    ckpt = torch.load(mp, map_location="cpu", weights_only=False)
+  except TypeError:
+    ckpt = torch.load(mp, map_location="cpu")
+  label_map: dict[str, int] = ckpt["label_map"]
+  backbone = str(ckpt.get("backbone", "small_cnn"))
+  img_size = int(ckpt.get("img_size", 224))
+  model = mod.make_model(len(label_map), backbone)
+  # Older runs may include Conv2d bias keys; current SmallPhlegmCNN uses bias=False.
+  model.load_state_dict(ckpt["model_state"], strict=False)
+  model.eval()
+  inv = [k for k, _ in sorted(label_map.items(), key=lambda kv: kv[1])]
+  _phlegm_bundle = {
+    "model": model,
+    "inv_labels": inv,
+    "img_size": img_size,
+    "label_map": label_map,
+    "checkpoint": str(mp),
+    "load_bins": ckpt.get("load_bins"),
+  }
+  return _phlegm_bundle
+
+
+def predict_phlegm_image_bytes(data: bytes) -> dict[str, Any]:
+  if not data:
+    raise ValueError("empty image")
+  bundle = get_phlegm_bundle()
+  model: nn.Module = bundle["model"]
+  inv: list[str] = bundle["inv_labels"]
+  img_size: int = bundle["img_size"]
+  img = Image.open(io.BytesIO(data)).convert("RGB")
+  tfm = transforms.Compose(
+    [
+      transforms.Resize((img_size, img_size)),
+      transforms.ToTensor(),
+      transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ]
+  )
+  x = tfm(img).unsqueeze(0)
+  with torch.no_grad():
+    logits = model(x)
+    prob = torch.softmax(logits, dim=1).squeeze(0).cpu().tolist()
+  idx = int(max(range(len(prob)), key=lambda i: prob[i]))
+  out: dict[str, Any] = {
+    "checkpoint": bundle["checkpoint"],
+    "predicted_load": inv[idx],
+    "confidence": float(prob[idx]),
+    "probabilities": {inv[i]: round(float(prob[i]), 6) for i in range(len(inv))},
+  }
+  if bundle.get("load_bins") is not None:
+    out["load_bins"] = bundle["load_bins"]
+  else:
+    mod = get_phlegm_train_module()
+    out["load_bins"] = [{"name": n, "min": lo, "max": hi} for n, lo, hi in mod.LOAD_BINS]
+  return out
+
 
 def resolve_model_path() -> Path:
   env = Path(str(Path.cwd()))
@@ -476,6 +612,7 @@ def root() -> dict[str, Any]:
       "GET /healthz": "Liveness check",
       "POST /check-quality": "Multipart form field `file` (cough quality only)",
       "POST /predict": "Multipart form field `file` (TB probability + quality gate)",
+      "POST /predict-phlegm": "Multipart form field `file` (sputum image → AFB load grade)",
       "GET /docs": "Interactive API docs (Swagger)",
     },
   }
@@ -543,6 +680,22 @@ async def predict(file: UploadFile = File(...)) -> dict[str, Any]:
     "prob_tb": prob[1],
     "pred": int(np.argmax(prob)),
   }
+
+
+@app.post("/predict-phlegm")
+async def predict_phlegm(file: UploadFile = File(...)) -> dict[str, Any]:
+  """Sputum-smear image → AFB load class (none / low / moderate / high). Requires phlegm CNN checkpoint."""
+  data = await file.read()
+  if not data:
+    raise HTTPException(status_code=400, detail="Empty upload")
+  try:
+    return predict_phlegm_image_bytes(data)
+  except RuntimeError as e:
+    raise HTTPException(status_code=503, detail=str(e)) from e
+  except ValueError as e:
+    raise HTTPException(status_code=400, detail=str(e)) from e
+  except Exception as e:
+    raise HTTPException(status_code=400, detail=f"Could not run phlegm model: {e!s}") from e
 
 
 if __name__ == "__main__":

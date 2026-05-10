@@ -8,38 +8,50 @@ import { Image } from "expo-image";
 
 export default function ReviewInputsScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string; imageUri?: string }>();
+  const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string; imageUri?: string; checklist?: string }>();
 
   const audioDone = params.audioDone === "1";
   const imageDone = typeof params.imageUri === "string" && params.imageUri.length > 0;
   const imageUri = imageDone ? (params.imageUri as string) : null;
   const audioUris = typeof params.audioUris === "string" ? params.audioUris : "[]";
+  const checklist = typeof params.checklist === "string" ? params.checklist : "";
 
   const [audioOpen, setAudioOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
 
-  const canAnalyze = audioDone && imageDone;
+  const canAnalyze = audioDone;
 
-  const StatusPill = ({ done }: { done: boolean }) => (
+  const StatusPill = ({ done, optional }: { done: boolean; optional?: boolean }) => (
     <View className="flex-row items-center gap-2">
-      <Text
-        className={`text-xs font-bold sm:text-sm ${done ? "text-emerald-600" : "text-amber-600"}`}
-      >
-        {done ? "✓" : "—"}
-      </Text>
-      <Ionicons name={done ? "checkmark-circle" : "alert-circle"} size={18} color={done ? "#10B981" : "#F59E0B"} />
+      {optional && !done ? (
+        <>
+          <Text className="text-xs font-bold text-slate-500 sm:text-sm">Optional</Text>
+          <Ionicons name="remove-circle-outline" size={18} color="#94A3B8" />
+        </>
+      ) : (
+        <>
+          <Text
+            className={`text-xs font-bold sm:text-sm ${done ? "text-emerald-600" : "text-amber-600"}`}
+          >
+            {done ? "✓" : "—"}
+          </Text>
+          <Ionicons name={done ? "checkmark-circle" : "alert-circle"} size={18} color={done ? "#10B981" : "#F59E0B"} />
+        </>
+      )}
     </View>
   );
 
   const AccordionRow = ({
     label,
     done,
+    optional,
     open,
     onToggle,
     children,
   }: {
     label: string;
     done: boolean;
+    optional?: boolean;
     open: boolean;
     onToggle: () => void;
     children?: ReactNode;
@@ -54,7 +66,7 @@ export default function ReviewInputsScreen() {
           <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={18} color="#0f172a" />
           <Text className="text-sm font-bold text-slate-900 sm:text-base">{label}</Text>
         </View>
-        <StatusPill done={done} />
+        <StatusPill done={done} optional={optional} />
       </Pressable>
 
       {open ? <View className="pb-3.5 pt-0 sm:pb-4">{children}</View> : null}
@@ -112,8 +124,9 @@ export default function ReviewInputsScreen() {
             </AccordionRow>
 
             <AccordionRow
-              label="Uploaded image"
+              label="Sputum / phlegm photo (optional)"
               done={imageDone}
+              optional
               open={imageOpen}
               onToggle={() => setImageOpen((v) => !v)}
             >
@@ -122,14 +135,21 @@ export default function ReviewInputsScreen() {
                   <Image source={{ uri: imageUri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
                 </View>
               ) : (
-                <Text className="text-xs leading-5 text-slate-600 sm:text-sm">No image selected yet.</Text>
+                <Text className="text-xs leading-5 text-slate-600 sm:text-sm">
+                  No sample provided. Analysis will use your cough recordings (and checklist) only.
+                </Text>
               )}
             </AccordionRow>
           </View>
 
           <View className="mt-4 flex-row gap-3">
             <Pressable
-              onPress={() => router.replace({ pathname: "/screening/recording" as any })}
+              onPress={() =>
+                router.replace({
+                  pathname: "/screening/recording",
+                  params: { checklist },
+                } as any)
+              }
               className="flex-1 items-center justify-center rounded-2xl border border-navy/10 bg-navy/5 py-3.5 active:bg-navy/10 sm:py-4"
               accessibilityRole="button"
             >
@@ -139,13 +159,15 @@ export default function ReviewInputsScreen() {
               onPress={() =>
                 router.replace({
                   pathname: "/screening/phlegm",
-                  params: { audioDone: audioDone ? "1" : "0", audioUris },
+                  params: { audioDone: audioDone ? "1" : "0", audioUris, checklist },
                 } as any)
               }
               className="flex-1 items-center justify-center rounded-2xl border border-navy/10 bg-navy/5 py-3.5 active:bg-navy/10 sm:py-4"
               accessibilityRole="button"
             >
-              <Text className="text-sm font-bold text-navy sm:text-base">Retake</Text>
+              <Text className="text-sm font-bold text-navy sm:text-base">
+                {imageDone ? "Change photo" : "Add sample"}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -156,7 +178,7 @@ export default function ReviewInputsScreen() {
           onPress={() => {
             router.push({
               pathname: "/screening/processing",
-              params: { audioDone: audioDone ? "1" : "0", audioUris, imageUri: imageUri ?? "" },
+                params: { audioDone: audioDone ? "1" : "0", audioUris, imageUri: imageUri ?? "", checklist },
             } as any);
           }}
           disabled={!canAnalyze}
@@ -169,7 +191,7 @@ export default function ReviewInputsScreen() {
           <Text
             className={`text-sm font-bold sm:text-base ${canAnalyze ? "text-white" : "text-neutral-400"}`}
           >
-            Analyze
+            {canAnalyze ? "Analyze" : "Record coughs to analyze"}
           </Text>
         </Pressable>
       </View>
