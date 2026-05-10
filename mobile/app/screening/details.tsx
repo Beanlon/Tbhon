@@ -61,6 +61,7 @@ export default function ScreeningDetailsScreen() {
     probTb?: string;
     audioUris?: string;
     imageUri?: string;
+    checklist?: string;
     invalidAudio?: string;
     invalidLabel?: string;
     invalidReasons?: string;
@@ -120,6 +121,17 @@ export default function ScreeningDetailsScreen() {
   }, [params.invalidReasons]);
 
   const copy = RISK_COPY[risk];
+
+  const checklistItems = useMemo(() => {
+    if (typeof params.checklist !== "string" || !params.checklist.length) return [];
+    try {
+      const v = JSON.parse(params.checklist) as { items?: { id?: string; label?: string; value?: boolean }[] };
+      const items = Array.isArray(v?.items) ? v.items : [];
+      return items.filter((x) => x && x.value === true && typeof x.label === "string" && x.label.length > 0);
+    } catch {
+      return [];
+    }
+  }, [params.checklist]);
 
   const Card = ({ title, children }: { title: string; children: ReactNode }) => (
     <View className="mb-3 rounded-3xl border border-slate-200 bg-white p-5">
@@ -233,7 +245,7 @@ export default function ScreeningDetailsScreen() {
             <CheckRow ok={audioAnalyzed} label="Cough audio analyzed" sub={audioAnalyzed ? `Clips: ${audioUris.length}` : "No recorded audio was provided."} />
             <CheckRow
               ok={imageProvided}
-              label={imageProvided ? "Phlegm image received" : "Phlegm image not provided"}
+              label={imageProvided ? "Sputum / phlegm image received" : "Sputum / phlegm skipped (optional)"}
               sub={
                 imageProvided
                   ? imageAnalyzed
@@ -245,7 +257,16 @@ export default function ScreeningDetailsScreen() {
                         ? `Analysis failed: ${phlegmDetail.slice(0, 200)}`
                         : "Analysis failed — check that infer_api can load ml (phlegm) checkpoints."
                       : "Image captured; analysis not run."
-                  : undefined
+                  : "No sample photo — results use cough audio (and checklist) only."
+              }
+            />
+            <CheckRow
+              ok={checklistItems.length > 0}
+              label="Symptoms & exposure checklist"
+              sub={
+                checklistItems.length
+                  ? `Selected: ${checklistItems.map((x) => x.label).slice(0, 5).join(" · ")}${checklistItems.length > 5 ? " …" : ""}`
+                  : "No checklist items selected."
               }
             />
           </Card>

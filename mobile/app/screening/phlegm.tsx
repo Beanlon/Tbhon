@@ -13,7 +13,7 @@ type CaptureSource = "camera" | "library" | null;
 
 export default function PhlegmCaptureScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string }>();
+  const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string; checklist?: string }>();
   const { width: windowWidth } = useWindowDimensions();
   const cameraRef = useRef<CameraView | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -50,9 +50,15 @@ export default function PhlegmCaptureScreen() {
       params: {
         audioDone: params.audioDone ?? "0",
         audioUris: params.audioUris ?? "[]",
+        checklist: params.checklist ?? "",
         imageUri,
       },
     } as any);
+  };
+
+  const skipPhlegmToReview = () => {
+    setErrorText(null);
+    goToReview("");
   };
 
   const showPreview = (uri: string, source: "camera" | "library") => {
@@ -127,7 +133,7 @@ export default function PhlegmCaptureScreen() {
             {headerTitle}
           </Text>
           <Text className="mt-0.5 text-center text-xs font-semibold text-white/55 sm:text-sm">
-            Phlegm sample
+            Optional sputum / phlegm photo
           </Text>
         </View>
 
@@ -170,7 +176,7 @@ export default function PhlegmCaptureScreen() {
         </View>
 
         <Text className="mt-3 max-w-md self-center text-center text-xs leading-5 text-white/75 sm:text-sm">
-          {helperText}
+          {hasCameraPermission ? "Optional step — add a photo or skip." : helperText}
         </Text>
         {!!errorText && (
           <Text className="mt-2 text-center text-xs font-bold text-red-400 sm:text-sm">{errorText}</Text>
@@ -226,34 +232,48 @@ export default function PhlegmCaptureScreen() {
             </View>
           )
         ) : (
-          <View className="flex-row items-center justify-between gap-2">
-            <Pressable
-              onPress={pickFromLibrary}
-              className="h-14 w-24 items-center justify-center rounded-2xl border border-white/10 bg-white/5 active:bg-white/10 sm:h-14"
-              accessibilityRole="button"
-            >
-              <Ionicons name="cloud-upload-outline" size={20} color="#ffffff" />
-              <Text className="mt-1 text-xs font-bold text-white">Upload</Text>
-            </Pressable>
+          <View className="gap-3">
+            <View className="flex-row items-center justify-between gap-2">
+              <Pressable
+                onPress={pickFromLibrary}
+                className="h-14 w-24 items-center justify-center rounded-2xl border border-white/10 bg-white/5 active:bg-white/10 sm:h-14"
+                accessibilityRole="button"
+              >
+                <Ionicons name="cloud-upload-outline" size={20} color="#ffffff" />
+                <Text className="mt-1 text-xs font-bold text-white">Upload</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={takePhoto}
+                className="items-center justify-center rounded-full bg-white active:bg-white/90"
+                style={{ width: shutterSize, height: shutterSize, borderRadius: shutterSize / 2 }}
+                accessibilityRole="button"
+                accessibilityLabel="Take photo"
+              >
+                <View
+                  className="rounded-full border-2 border-navy/15 bg-navy/5"
+                  style={{
+                    width: shutterRing,
+                    height: shutterRing,
+                    borderRadius: shutterRing / 2,
+                  }}
+                />
+              </Pressable>
+
+              <View className="h-14 w-24 opacity-0 sm:h-14" pointerEvents="none" />
+            </View>
 
             <Pressable
-              onPress={takePhoto}
-              className="items-center justify-center rounded-full bg-white active:bg-white/90"
-              style={{ width: shutterSize, height: shutterSize, borderRadius: shutterSize / 2 }}
+              onPress={skipPhlegmToReview}
+              className="mt-1 self-center rounded-lg py-2 px-3 active:opacity-80"
               accessibilityRole="button"
-              accessibilityLabel="Take photo"
+              accessibilityLabel="Skip phlegm sample, continue with cough only"
+              hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
             >
-              <View
-                className="rounded-full border-2 border-navy/15 bg-navy/5"
-                style={{
-                  width: shutterRing,
-                  height: shutterRing,
-                  borderRadius: shutterRing / 2,
-                }}
-              />
+              <Text className="text-center text-xs font-semibold text-white/55 underline decoration-white/30">
+                Skip — no sample
+              </Text>
             </Pressable>
-
-            <View className="h-14 w-24 opacity-0 sm:h-14" pointerEvents="none" />
           </View>
         )}
       </View>

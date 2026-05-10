@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Audio } from "expo-av";
@@ -153,6 +153,7 @@ function QualityBadge({ status, label }: { status: QualityStatus; label: Quality
 
 export default function RecordingScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ checklist?: string }>();
   const { width: windowWidth } = useWindowDimensions();
   const micIconSize = windowWidth < 380 ? 36 : 42;
   const [coughIndex, setCoughIndex] = useState(1);
@@ -665,6 +666,7 @@ export default function RecordingScreen() {
                     params: {
                       audioDone: recordedUris.length === COUGH_TOTAL ? "1" : "0",
                       audioUris: JSON.stringify(recordedUris),
+                      checklist: typeof params.checklist === "string" ? params.checklist : "",
                     },
                   } as any);
                 }}

@@ -25,6 +25,10 @@ export default function ScreeningLayout() {
       }}
     >
       <Stack.Screen
+        name="checklist"
+        options={{ contentStyle: { backgroundColor: LIGHT } }}
+      />
+      <Stack.Screen
         name="recording"
         options={{ contentStyle: { backgroundColor: NAVY } }}
       />

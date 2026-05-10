@@ -232,7 +232,7 @@ function phlegmNavParams(p: PhlegmPred) {
   };
 }
 
-async function uploadAudioForPredict(base: string, uri: string): Promise<any> {
+async function uploadAudioForPredict(base: string, uri: string, extras?: Record<string, string>): Promise<any> {
   const fileUri = normalizeFileUri(uri);
   const { name, mimeType } = pickMimeAndName(fileUri);
   const url = `${base.replace(/\/$/, "")}/predict`;
@@ -241,7 +241,7 @@ async function uploadAudioForPredict(base: string, uri: string): Promise<any> {
     uploadType: FileSystem.FileSystemUploadType.MULTIPART,
     fieldName: "file",
     mimeType,
-    parameters: { filename: name },
+    parameters: { filename: name, ...(extras ?? {}) },
   });
   if (result.status < 200 || result.status >= 300) {
     throw new Error(`predict failed: HTTP ${result.status} ${result.body?.slice(0, 200) ?? ""}`);
@@ -255,7 +255,7 @@ async function uploadAudioForPredict(base: string, uri: string): Promise<any> {
 
 export default function ProcessingScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string; imageUri?: string }>();
+  const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string; imageUri?: string; checklist?: string }>();
 
   useEffect(() => {
     let cancelled = false;
@@ -285,6 +285,8 @@ export default function ProcessingScreen() {
 
       const uris = parseUris();
       const imageUriStr = typeof params.imageUri === "string" ? params.imageUri : "";
+      const checklistStr = typeof params.checklist === "string" ? params.checklist : "";
+      const uploadExtras = checklistStr.length ? { checklist: checklistStr } : undefined;
       const emptyPhlegm: PhlegmPred = {
         analyzed: false,
         load: "",
@@ -360,7 +362,7 @@ export default function ProcessingScreen() {
           let lastPredictErr: unknown = null;
           for (const base of apiBases) {
             try {
-              data = await uploadAudioForPredict(base, uri);
+              data = await uploadAudioForPredict(base, uri, uploadExtras);
               lastPredictErr = null;
               if (__DEV__) console.log(`[Processing] OK ${base}/predict`);
               break;
@@ -418,6 +420,7 @@ export default function ProcessingScreen() {
               probTb: String(avg),
               audioUris: params.audioUris ?? "[]",
               imageUri: imageUriStr,
+              checklist: checklistStr,
               ...phlegmNavParams(phlegm),
             },
           } as any);
@@ -434,6 +437,7 @@ export default function ProcessingScreen() {
               probTb: "",
               audioUris: params.audioUris ?? "[]",
               imageUri: imageUriStr,
+              checklist: checklistStr,
               uploadError: "1",
               apiAttempt: apiBases.join(" | "),
               ...phlegmNavParams(phlegm),

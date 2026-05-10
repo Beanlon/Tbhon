@@ -89,6 +89,7 @@ export default function ResultScreen() {
     probTb?: string;
     audioUris?: string;
     imageUri?: string;
+    checklist?: string;
     invalidAudio?: string;
     invalidLabel?: string;
     invalidReasons?: string;
@@ -113,6 +114,7 @@ export default function ResultScreen() {
   const uploadError = params.uploadError === "1";
   const apiAttempt = typeof params.apiAttempt === "string" ? params.apiAttempt : "";
   const wifiRequired = params.wifiRequired === "1";
+  const checklist = typeof params.checklist === "string" ? params.checklist : "";
 
   const phlegmAnalyzed = params.phlegmAnalyzed === "1";
   const phlegmLoad = typeof params.phlegmLoad === "string" ? params.phlegmLoad : "";
@@ -365,6 +367,7 @@ export default function ResultScreen() {
                   probTb: typeof probTb === "number" && Number.isFinite(probTb) ? String(probTb) : "",
                   audioUris: typeof params.audioUris === "string" ? params.audioUris : "[]",
                   imageUri: typeof params.imageUri === "string" ? params.imageUri : "",
+                  checklist,
                   invalidAudio: invalidAudio ? "1" : "0",
                   invalidLabel,
                   invalidReasons: typeof params.invalidReasons === "string" ? params.invalidReasons : "[]",
