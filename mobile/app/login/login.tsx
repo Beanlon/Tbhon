@@ -1,10 +1,9 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
   Pressable,
   TextInput,
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
   useWindowDimensions,
@@ -12,9 +11,14 @@ import {
   ActivityIndicator,
   type LayoutChangeEvent,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import CachedImage from "../components/CachedImage";
+import { PasswordVisibilityIcon } from "../components/PasswordVisibilityIcons";
 import { useRouter } from "expo-router";
+import { ApiError, postLogin } from "../../services/backendApi";
+import { saveAuthToken } from "../../utils/authStorage";
+import { setCachedProfile } from "../../utils/profileCache";
+import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
 
 const inputClass =
   "h-12 w-full rounded-3xl border border-[#EDEDED] bg-[#F8F8F8] px-4 py-0 text-base font-medium leading-5 text-[#111111]";
@@ -34,11 +38,13 @@ const SCROLL_FUDGE = 8;
 
 export default function Login() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const loginPasswordRef = useRef<TextInput>(null);
+  useIosPasswordSecureMaskSync(loginPasswordRef, passwordVisible, password);
   const [scrollViewportH, setScrollViewportH] = useState(0);
   const [innerContentH, setInnerContentH] = useState(0);
 
@@ -75,8 +81,9 @@ export default function Login() {
     }
     setSubmitting(true);
     try {
-      const { token } = await postLogin(trimmedEmail, password);
+      const { token, user } = await postLogin(trimmedEmail, password);
       await saveAuthToken(token);
+      setCachedProfile(user);
       router.replace("/home/HomeScreen");
     } catch (error) {
       const message =
@@ -101,27 +108,27 @@ export default function Login() {
       style={{ flex: 1 }}
       edges={["top", "right", "bottom", "left"]}
     >
-      <KeyboardAvoidingView
+      {/*
+       * iOS: avoid KeyboardAvoidingView + SafeArea bottom — duplicates keyboard lift and
+       * shows an extra white band. ScrollView adjusts insets natively instead.
+       */}
+      <ScrollView
         className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+        scrollEnabled={scrollEnabled}
+        bounces={scrollEnabled}
+        alwaysBounceVertical={false}
+        onLayout={onScrollViewLayout}
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: isCompact ? "center" : "flex-start",
+        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={scrollEnabled}
+        {...(Platform.OS === "android"
+          ? { overScrollMode: scrollEnabled ? ("auto" as const) : ("never" as const) }
+          : {})}
       >
-        <ScrollView
-          className="flex-1"
-          scrollEnabled={scrollEnabled}
-          bounces={scrollEnabled}
-          alwaysBounceVertical={false}
-          onLayout={onScrollViewLayout}
-          contentContainerStyle={{
-            flexGrow: 1,
-            justifyContent: isCompact ? "center" : "flex-start",
-          }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={scrollEnabled}
-          {...(Platform.OS === "android"
-            ? { overScrollMode: scrollEnabled ? ("auto" as const) : ("never" as const) }
-            : {})}
-        >
           <View
             onLayout={onInnerLayout}
             collapsable={false}
@@ -164,7 +171,7 @@ export default function Login() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoComplete="email"
-                  textContentType="username"
+                  textContentType="emailAddress"
                   textAlignVertical="center"
                   style={{ includeFontPadding: false }}
                   value={email}
@@ -176,18 +183,30 @@ export default function Login() {
                 <Text className="mb-1 text-xs font-semibold uppercase tracking-wide text-[#888888]">
                   Password
                 </Text>
-                <TextInput
-                  className={`${inputClass} mb-0`}
-                  placeholder="Your password"
-                  placeholderTextColor="#999999"
-                  secureTextEntry
-                  autoComplete="password"
-                  textContentType="password"
-                  textAlignVertical="center"
-                  style={{ includeFontPadding: false }}
-                  value={password}
-                  onChangeText={setPassword}
-                />
+                <View className="relative">
+                  <TextInput
+                    ref={loginPasswordRef}
+                    className={`tbhon-auth-password ${inputClass} mb-0 pr-12`}
+                    placeholder="Your password"
+                    placeholderTextColor="#999999"
+                    secureTextEntry={!passwordVisible}
+                    autoComplete="password"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    spellCheck={false}
+                    textContentType="password"
+                    textAlignVertical="center"
+                    underlineColorAndroid="transparent"
+                    {...(Platform.OS === "ios" ? { clearButtonMode: "never" as const } : {})}
+                    style={{ includeFontPadding: false }}
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+                  <PasswordVisibilityIcon
+                    secureTextEntry={!passwordVisible}
+                    onToggle={() => setPasswordVisible((v) => !v)}
+                  />
+                </View>
               </View>
 
               <Pressable
@@ -223,8 +242,7 @@ export default function Login() {
               </Pressable>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </SafeAreaView>
   );
 }

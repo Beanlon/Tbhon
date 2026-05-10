@@ -17,6 +17,8 @@ export type ApiUserPayload = {
     street: string | null;
     barangay: string | null;
     city: string | null;
+    /** ISO-style or display code (e.g. PH, US, KOR); optional until backend persists it */
+    countryCode?: string | null;
   } | null;
 };
 
@@ -104,6 +106,7 @@ export type RegisterProfile = {
   street?: string | null;
   barangay?: string | null;
   city?: string | null;
+  countryCode?: string | null;
 };
 
 export async function postRegister(args: {

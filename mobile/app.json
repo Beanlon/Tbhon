@@ -17,7 +17,9 @@
       }
     },
     "android": {
-      "permissions": ["WAKE_LOCK"],
+      "permissions": [
+        "WAKE_LOCK"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -52,7 +54,8 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -60,7 +63,7 @@
     },
     "extra": {
       "tbApiUrl": "http://192.168.1.9:8000",
-      "apiBaseUrl": "http://192.168.1.9:4000"
+      "apiBaseUrl": "http://192.168.1.65:4000"
     }
   }
 }

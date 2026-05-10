@@ -86,7 +86,10 @@ export default function LandingPage() {
         >
           <View>
             <View className="mt-2 mb-3 w-full items-center sm:mb-4">
-              <View className="aspect-square w-[66%] max-w-64 sm:w-[58%] sm:max-w-72 md:max-w-80">
+              <View
+                className="w-[66%] max-w-64 sm:w-[58%] sm:max-w-72 md:max-w-80"
+                style={{ aspectRatio: 1 }}
+              >
                 <CachedImage
                   source={require("../../assets/images/Tbhon assets/Tbhon Logo.png")}
                   className="size-full"
