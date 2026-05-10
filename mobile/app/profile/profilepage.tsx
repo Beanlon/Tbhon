@@ -121,30 +121,38 @@ function ProfileCardHeaderOnly({
 function InfoGrid({ rows }: { rows: { label: string; value: string; valueAccent?: boolean }[][] }) {
   return (
     <View>
-      {rows.map((pair, rowIdx) => (
-        <View
-          key={rowIdx}
-          className={`flex-row ${rowIdx < rows.length - 1 ? "border-b border-[#efefef]" : ""}`}
-        >
-          {pair.map((cell, cellIdx) => (
-            <View
-              key={cell.label}
-              className={`flex-1 py-3 ${cellIdx === 0 ? "pr-3" : ""} ${
-                cellIdx === 1 ? "pl-3" : ""
-              } ${cellIdx === 0 && pair.length > 1 ? "border-r border-[#efefef]" : ""}`}
-            >
-              <Text className="text-sm font-semibold text-[#8FA3B1]">{cell.label}</Text>
-              <Text
-                className={`mt-1 text-base font-bold ${
-                  cell.valueAccent ? "text-[#1D6FA4]" : "text-[#111111]"
-                }`}
+      {rows.map((pair, rowIdx) => {
+        const isLastRow = rowIdx === rows.length - 1;
+        const isSingle = pair.length === 1;
+        return (
+          <View
+            key={rowIdx}
+            className={`flex-row ${!isLastRow ? "border-b border-[#efefef]" : ""}`}
+          >
+            {pair.map((cell, cellIdx) => (
+              <View
+                key={cell.label}
+                className={
+                  isSingle
+                    ? "w-full shrink py-3"
+                    : `min-w-0 flex-1 py-3 ${cellIdx === 0 ? "pr-3" : "pl-3"} ${
+                        cellIdx === 0 ? "border-r border-[#efefef]" : ""
+                      }`
+                }
               >
-                {cell.value}
-              </Text>
-            </View>
-          ))}
-        </View>
-      ))}
+                <Text className="text-sm font-semibold text-[#8FA3B1]">{cell.label}</Text>
+                <Text
+                  className={`mt-1 text-base font-bold ${
+                    cell.valueAccent ? "text-[#1D6FA4]" : "text-[#111111]"
+                  }`}
+                >
+                  {cell.value}
+                </Text>
+              </View>
+            ))}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -199,18 +207,14 @@ const personalRows: { label: string; value: string; valueAccent?: boolean }[][] 
     { label: 'Sex', value: 'Female' },
   ],
   [
-    { label: 'Location', value: 'Quezon City, PH' },
-    { label: 'Blood type', value: 'O+' },
-  ],
-  [
     { label: 'Phone number', value: '+63 917 xxx xxxx' },
     { label: 'Email address', value: 'maria.a@email.com' },
   ],
+  [{ label: 'Location', value: 'Quezon City, PH' }],
 ];
 
 export function ProfilePage() {
   const [darkMode, setDarkMode] = useState(false);
-  const [dataSharing, setDataSharing] = useState(true);
 
   return (
     <>
@@ -247,11 +251,6 @@ export function ProfilePage() {
             <Text className="text-xl font-extrabold text-[#111111]">Maria Alcantara</Text>
             <View className="mt-2.5 flex-row flex-wrap items-center justify-center gap-2 px-2">
               <View className="flex-row items-center gap-1">
-                <Ionicons name="location-outline" size={12} color="#5D6D7E" />
-                <Text className="text-sm text-[#5D6D7E]">Quezon City, PH</Text>
-              </View>
-              <View className="size-1 rounded-full bg-[#ccc]" />
-              <View className="flex-row items-center gap-1">
                 <Ionicons name="calendar-outline" size={12} color="#5D6D7E" />
                 <Text className="text-sm text-[#5D6D7E]">28 years old</Text>
               </View>
@@ -259,6 +258,11 @@ export function ProfilePage() {
               <View className="flex-row items-center gap-1">
                 <Ionicons name="person-outline" size={12} color="#5D6D7E" />
                 <Text className="text-sm text-[#5D6D7E]">Female</Text>
+              </View>
+              <View className="size-1 rounded-full bg-[#ccc]" />
+              <View className="flex-row items-center gap-1">
+                <Ionicons name="location-outline" size={12} color="#5D6D7E" />
+                <Text className="text-sm text-[#5D6D7E]">Quezon City, PH</Text>
               </View>
             </View>
             <TouchableOpacity
@@ -290,7 +294,7 @@ export function ProfilePage() {
             iconBackground="#E6F3FB"
             iconColor="#1D6FA4"
             title="App Settings"
-            subtitle="Notifications & preferences"
+            subtitle="Theme"
           >
             <SettingRow
               icon="moon-outline"
@@ -298,6 +302,7 @@ export function ProfilePage() {
               iconColor="#E67E22"
               title="Dark mode"
               subtitle="Easy on the eyes at night"
+              isLast
               right={
                 <Switch
                   value={darkMode}
@@ -305,22 +310,6 @@ export function ProfilePage() {
                   trackColor={{ false: '#CBD5E0', true: '#fdba74' }}
                   thumbColor={darkMode ? '#E67E22' : '#f4f4f5'}
                 />
-              }
-            />
-            <SettingRow
-              icon="globe-outline"
-              iconBg="#f8f8f8"
-              iconColor="#5D6D7E"
-              title="Language"
-              subtitle="App display language"
-              isLast
-              right={
-                <View className="flex-row items-center gap-2">
-                  <View className="rounded-full bg-[#E6F3FB] px-2.5 py-1">
-                    <Text className="text-sm font-bold text-[#0C447C]">English</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color="#8FA3B1" />
-                </View>
               }
             />
           </ProfileCardHeaderOnly>
@@ -359,21 +348,6 @@ export function ProfilePage() {
                 }
               />
             </TouchableOpacity>
-            <SettingRow
-              icon="share-social-outline"
-              iconBg="#f8f8f8"
-              iconColor="#5D6D7E"
-              title="Data sharing"
-              subtitle="Share data with your doctor"
-              right={
-                <Switch
-                  value={dataSharing}
-                  onValueChange={setDataSharing}
-                  trackColor={{ false: '#CBD5E0', true: '#93c5e8' }}
-                  thumbColor={dataSharing ? '#1D6FA4' : '#f4f4f5'}
-                />
-              }
-            />
             <TouchableOpacity activeOpacity={0.7}>
               <SettingRow
                 icon="download-outline"

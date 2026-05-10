@@ -1,25 +1,69 @@
-import React from "react";
-import { View, Text, TouchableOpacity, Platform } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import React, { useMemo } from "react";
+import { View, Text, Pressable, Platform, ScrollView, useWindowDimensions } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import CachedImage from "../components/CachedImage";
 import { useRouter } from "expo-router";
 
-const buttonElevation =
+const cardShadow =
   Platform.OS === "ios"
     ? {
         shadowColor: "#000000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.12,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
         shadowRadius: 8,
       }
-    : { elevation: 6 };
+    : { elevation: 2 };
+
+function OptionRow({
+  title,
+  description,
+  icon,
+  iconBgClass,
+  iconBorderClass,
+  iconColor,
+  onPress,
+}: {
+  title: string;
+  description: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconBgClass: string;
+  iconBorderClass: string;
+  iconColor: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      className={`mb-4 flex-row items-center gap-4 rounded-3xl border border-[#EDEDED] bg-[#FAFAFA] p-4 active:bg-[#F3F3F3] sm:mb-5 sm:gap-5 sm:p-5`}
+      style={cardShadow}
+      onPress={onPress}
+      android_ripple={{ color: "#E8E8E8" }}
+    >
+      <View
+        className={`size-14 shrink-0 items-center justify-center rounded-2xl border sm:size-16 ${iconBgClass} ${iconBorderClass}`}
+      >
+        <Ionicons name={icon} size={28} color={iconColor} />
+      </View>
+      <View className="min-w-0 flex-1 pr-1">
+        <Text className="text-lg font-bold text-[#111111] sm:text-xl">{title}</Text>
+        <Text className="mt-1 text-sm leading-6 text-[#666666] sm:text-base sm:leading-6">
+          {description}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={24} color="#8FA3B1" style={{ flexShrink: 0 }} />
+    </Pressable>
+  );
+}
 
 export default function LandingPage() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
 
-  const handleContinue = () => {
-    router.replace("/acountOptions/accountOptions");
-  };
+  const scrollMinHeight = useMemo(
+    () => Math.max(0, windowHeight - insets.top - insets.bottom),
+    [windowHeight, insets.top, insets.bottom],
+  );
 
   return (
     <SafeAreaView
@@ -27,37 +71,69 @@ export default function LandingPage() {
       style={{ flex: 1 }}
       edges={["top", "right", "bottom", "left"]}
     >
-      <View className="flex-1 px-8 pt-6 pb-7 sm:px-10 sm:pb-8 md:px-12">
-        <View className="mt-2 mb-12 w-full items-center sm:mb-14 md:mb-16">
-          <View className="aspect-square w-3/4 max-w-72">
-            <CachedImage
-              source={require("../../assets/images/Tbhon assets/Tbhon Logo.png")}
-              className="size-full"
-              resizeMode="contain"
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          flexGrow: 1,
+          minHeight: scrollMinHeight,
+        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View
+          className="justify-between px-5 pt-6 pb-7 sm:px-6 sm:pt-7 sm:pb-8 md:px-8 md:pt-8 md:pb-10"
+          style={{ minHeight: scrollMinHeight }}
+        >
+          <View>
+            <View className="mt-2 mb-3 w-full items-center sm:mb-4">
+              <View className="aspect-square w-[66%] max-w-64 sm:w-[58%] sm:max-w-72 md:max-w-80">
+                <CachedImage
+                  source={require("../../assets/images/Tbhon assets/Tbhon Logo.png")}
+                  className="size-full"
+                  resizeMode="contain"
+                />
+              </View>
+            </View>
+
+            <Text className="mb-4 mt-5 text-sm font-semibold uppercase tracking-[1.2px] text-[#888888] sm:mb-5 sm:mt-6 sm:text-base">
+              Get started
+            </Text>
+
+            <OptionRow
+              title="Existing user"
+              description="Sign in to access your scan history and health data"
+              icon="person-circle-outline"
+              iconBgClass="bg-[#F3EEFF]"
+              iconBorderClass="border-[#E4D9FF]"
+              iconColor="#5B5BFF"
+              onPress={() => router.push("/login/login")}
+            />
+
+            <View className="mb-4 flex-row items-center gap-3 sm:mb-5">
+              <View className="h-px flex-1 bg-[#E0E0E0]" />
+              <Text className="text-xs font-medium text-[#999999] sm:text-sm">or</Text>
+              <View className="h-px flex-1 bg-[#E0E0E0]" />
+            </View>
+
+            <OptionRow
+              title="New user"
+              description="Create your account with personal info, email and password"
+              icon="person-add-outline"
+              iconBgClass="bg-[#E8FAF5]"
+              iconBorderClass="border-[#C8EDE0]"
+              iconColor="#0F766E"
+              onPress={() => router.push("/signUp/signUp")}
             />
           </View>
-        </View>
 
-        <Text className="mb-4 text-left text-4xl font-bold text-black">Welcome</Text>
-
-        <Text className="text-left text-base font-normal leading-relaxed text-black">
-          Tbhon helps you take the first step toward better lung health with early tuberculosis 
-          detection powered by smart technology. Quick, accessible, and reliable monitor your symptoms anytime, anywhere.
-        </Text>
-
-        <View className="min-h-2 flex-1" />
-
-        <TouchableOpacity
-          className="mt-4 w-full items-center justify-center rounded-xl bg-[#050533] py-3.5 sm:py-4 md:py-5"
-          style={buttonElevation}
-          onPress={handleContinue}
-          activeOpacity={0.85}
-        >
-          <Text className="text-base font-bold uppercase tracking-wider text-white">
-            CONTINUE
+          <Text className="px-2 pt-4 text-center text-xs leading-6 text-[#888888] sm:pt-5 sm:text-sm">
+            By continuing you agree to our{" "}
+            <Text className="font-medium text-[#5B5BFF]">Terms of Service</Text>
+            {" & "}
+            <Text className="font-medium text-[#5B5BFF]">Privacy Policy</Text>
           </Text>
-        </TouchableOpacity>
-      </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

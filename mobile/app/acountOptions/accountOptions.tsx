@@ -20,7 +20,7 @@ export default function AccountOptions() {
   };
 
   const handleNewUser = () => {
-    router.push("/signUp/signUpPersonal");
+    router.push("/signUp/signUp");
   };
 
   return (
