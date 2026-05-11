@@ -1,12 +1,28 @@
-import React, { useState } from "react";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import React, { useCallback, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  ApiError,
+  listMyScreenings,
+  type ScreeningHistoryRow,
+} from "../../services/backendApi";
+import { getAuthToken } from "../../utils/authStorage";
 
 type RiskLevel = "low" | "moderate" | "high";
 
 interface ScreeningRecord {
-  id: string;
+  sessionId: string;
   dateMs: number;
   date: string;
   time: string;
@@ -20,48 +36,37 @@ const RISK_META: Record<RiskLevel, { label: string; color: string; bg: string; i
   high: { label: "High Risk", color: "#DC2626", bg: "#FEF2F2", icon: "alert-circle" },
 };
 
-const MOCK_HISTORY: ScreeningRecord[] = [
-  {
-    id: "1",
-    dateMs: new Date("2026-05-03").getTime(),
-    date: "May 3, 2026",
-    time: "1:00 AM",
-    risk: "low",
-    tagline: "Low TB Risk – Monitor symptoms.",
-  },
-  {
-    id: "2",
-    dateMs: new Date("2026-04-28").getTime(),
-    date: "Apr 28, 2026",
-    time: "3:22 PM",
-    risk: "moderate",
-    tagline: "Moderate TB Risk – Further evaluation needed.",
-  },
-  {
-    id: "3",
-    dateMs: new Date("2026-04-15").getTime(),
-    date: "Apr 15, 2026",
-    time: "10:45 AM",
-    risk: "low",
-    tagline: "Low TB Risk – Monitor symptoms.",
-  },
-  {
-    id: "4",
-    dateMs: new Date("2026-03-30").getTime(),
-    date: "Mar 30, 2026",
-    time: "8:10 AM",
-    risk: "high",
-    tagline: "High TB Risk – Seek medical attention.",
-  },
-  {
-    id: "5",
-    dateMs: new Date("2026-03-10").getTime(),
-    date: "Mar 10, 2026",
-    time: "2:55 PM",
-    risk: "low",
-    tagline: "Low TB Risk – Monitor symptoms.",
-  },
-];
+const TAGLINE: Record<RiskLevel, string> = {
+  low: "Low TB Risk – Monitor symptoms.",
+  moderate: "Moderate TB Risk – Further evaluation needed.",
+  high: "High TB Risk – Seek medical attention.",
+};
+
+function coerceRisk(raw: string | null | undefined): RiskLevel {
+  const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (s === "moderate" || s === "high") return s;
+  return "low";
+}
+
+function rowToRecord(row: ScreeningHistoryRow): ScreeningRecord {
+  const risk = coerceRisk(row.finalRiskLevel ?? row.result?.riskLevel);
+  const iso = row.completedAt ?? row.startedAt;
+  const d = new Date(iso);
+  const dateMs = Number.isFinite(d.getTime()) ? d.getTime() : Date.now();
+  const display = new Date(dateMs);
+  return {
+    sessionId: row.sessionId,
+    dateMs,
+    date: display.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }),
+    time: display.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
+    risk,
+    tagline: TAGLINE[risk],
+  };
+}
 
 const RISK_FILTERS: { key: "all" | RiskLevel; label: string }[] = [
   { key: "all", label: "All" },
@@ -97,8 +102,9 @@ function daysAgoMs(days: number) {
   return Date.now() - days * 24 * 60 * 60 * 1000;
 }
 
-export default function HistoryScreen({ onTabChange }: { onTabChange?: (idx: number) => void }) {
+export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChange?: (idx: number) => void }) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const [riskFilter, setRiskFilter] = useState<"all" | RiskLevel>("all");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
@@ -107,6 +113,49 @@ export default function HistoryScreen({ onTabChange }: { onTabChange?: (idx: num
 
   const [tmpSort, setTmpSort] = useState<SortKey>("newest");
   const [tmpDateRange, setTmpDateRange] = useState<DateRange>("all");
+
+  const [rows, setRows] = useState<ScreeningHistoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(true);
+
+  const load = useCallback(async (mode: "initial" | "refresh") => {
+    setLoadError(null);
+    const token = await getAuthToken();
+    if (!token) {
+      setSignedIn(false);
+      setRows([]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    setSignedIn(true);
+    if (mode === "initial") setLoading(true);
+    if (mode === "refresh") setRefreshing(true);
+    try {
+      const { screenings } = await listMyScreenings(100);
+      setRows(screenings);
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "Could not load history.";
+      setLoadError(message);
+      setRows([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void load("initial");
+    }, [load]),
+  );
 
   const openFilter = () => {
     setTmpSort(sortKey);
@@ -123,14 +172,25 @@ export default function HistoryScreen({ onTabChange }: { onTabChange?: (idx: num
   const minMs =
     dateRange === "7d" ? daysAgoMs(7) : dateRange === "30d" ? daysAgoMs(30) : dateRange === "90d" ? daysAgoMs(90) : 0;
 
-  const records = MOCK_HISTORY.filter((r) => riskFilter === "all" || r.risk === riskFilter)
-    .filter((r) => r.dateMs >= minMs)
-    .sort((a, b) => (sortKey === "newest" ? b.dateMs - a.dateMs : a.dateMs - b.dateMs));
+  const records = useMemo(() => {
+    return rows
+      .map(rowToRecord)
+      .filter((r) => riskFilter === "all" || r.risk === riskFilter)
+      .filter((r) => r.dateMs >= minMs)
+      .sort((a, b) => (sortKey === "newest" ? b.dateMs - a.dateMs : a.dateMs - b.dateMs));
+  }, [rows, riskFilter, minMs, sortKey]);
 
   const hasActiveFilters = sortKey !== "newest" || dateRange !== "all";
 
   const headerPadTop = Math.max(insets.top, 16) + 10;
   const modalPadBottom = Math.max(insets.bottom, 16) + 16;
+
+  const openDetails = (sessionId: string) => {
+    router.push({
+      pathname: "/screening/details",
+      params: { sessionId },
+    });
+  };
 
   return (
     <View className="flex-1 bg-white">
@@ -139,7 +199,6 @@ export default function HistoryScreen({ onTabChange }: { onTabChange?: (idx: num
         style={{ paddingTop: headerPadTop }}
       >
         <View className="flex-row items-center">
-          {/* Keeps title centered vs. filter (same width slot as trailing button — no back arrow) */}
           <View className="h-10 w-10" />
 
           <View className="min-w-0 flex-1">
@@ -214,52 +273,84 @@ export default function HistoryScreen({ onTabChange }: { onTabChange?: (idx: num
             </Pressable>
           </View>
         )}
+
+        {loadError ? (
+          <Text className="mt-3 rounded-xl bg-[#FDEDEC] px-3 py-2 text-sm text-[#C0392B]">
+            {loadError}
+          </Text>
+        ) : null}
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ padding: 20, gap: 14 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {records.length === 0 && (
-          <View className="items-center pt-16">
-            <Ionicons name="folder-open-outline" size={48} color="#D1D5DB" />
-            <Text className="mt-3 text-base font-bold text-[#9CA3AF]">No records found</Text>
-            <Text className="mt-1 text-center text-base text-[#D1D5DB]">Try changing your filters</Text>
+      {loading ? (
+        <View className="flex-1 items-center justify-center pt-10">
+          <ActivityIndicator size="large" color="#0B1530" />
+          <Text className="mt-3 text-base text-[#9CA3AF]">Loading your screenings…</Text>
+        </View>
+      ) : !signedIn ? (
+        <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 48 }} showsVerticalScrollIndicator={false}>
+          <View className="items-center">
+            <Ionicons name="lock-closed-outline" size={48} color="#D1D5DB" />
+            <Text className="mt-3 text-center text-base font-bold text-[#6B7280]">
+              Sign in to see screening history
+            </Text>
+            <Text className="mt-2 text-center text-base leading-6 text-[#9CA3AF]">
+              Completed screenings are saved to your account when you finish a session while signed in.
+            </Text>
           </View>
-        )}
+        </ScrollView>
+      ) : (
+        <ScrollView
+          contentContainerStyle={{ padding: 20, gap: 14 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} tintColor="#0B1530" />
+          }
+        >
+          {records.length === 0 && (
+            <View className="items-center pt-16">
+              <Ionicons name="folder-open-outline" size={48} color="#D1D5DB" />
+              <Text className="mt-3 text-base font-bold text-[#9CA3AF]">No records found</Text>
+              <Text className="mt-1 text-center text-base text-[#D1D5DB]">
+                {hasActiveFilters ? "Try changing your filters" : "Complete a screening to build your history"}
+              </Text>
+            </View>
+          )}
 
-        {records.map((record) => {
-          const meta = RISK_META[record.risk];
-          return (
-            <Pressable
-              key={record.id}
-              className="rounded-2xl border border-[#F1F1F1] bg-white p-4 active:bg-gray-100"
-              style={historyCardShadow}
-              accessibilityRole="button"
-            >
-              <View className="flex-row items-center justify-between">
-                <View className="mr-3 flex-1">
-                  <View
-                    className="mb-2 flex-row items-center gap-1.5 self-start rounded-full px-2.5 py-1"
-                    style={{ backgroundColor: meta.bg }}
-                  >
-                    <Ionicons name={meta.icon as any} size={14} color={meta.color} />
-                    <Text className="text-base font-extrabold" style={{ color: meta.color }}>
-                      {meta.label}
+          {records.map((record) => {
+            const meta = RISK_META[record.risk];
+            return (
+              <Pressable
+                key={record.sessionId}
+                onPress={() => openDetails(record.sessionId)}
+                className="rounded-2xl border border-[#F1F1F1] bg-white p-4 active:bg-gray-100"
+                style={historyCardShadow}
+                accessibilityRole="button"
+                accessibilityLabel={`Screening summary, ${meta.label}`}
+              >
+                <View className="flex-row items-center justify-between">
+                  <View className="mr-3 flex-1">
+                    <View
+                      className="mb-2 flex-row items-center gap-1.5 self-start rounded-full px-2.5 py-1"
+                      style={{ backgroundColor: meta.bg }}
+                    >
+                      <Ionicons name={meta.icon as any} size={14} color={meta.color} />
+                      <Text className="text-base font-extrabold" style={{ color: meta.color }}>
+                        {meta.label}
+                      </Text>
+                    </View>
+                    <Text className="mb-1 text-base font-bold text-[#0B1530]">{record.tagline}</Text>
+                    <Text className="text-base text-[#9CA3AF]">
+                      {record.date} · {record.time}
                     </Text>
                   </View>
-                  <Text className="mb-1 text-base font-bold text-[#0B1530]">{record.tagline}</Text>
-                  <Text className="text-base text-[#9CA3AF]">
-                    {record.date} · {record.time}
-                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
-              </View>
-            </Pressable>
-          );
-        })}
-        <View className="h-2" />
-      </ScrollView>
+              </Pressable>
+            );
+          })}
+          <View className="h-2" />
+        </ScrollView>
+      )}
 
       <Modal visible={showFilter} transparent animationType="slide" onRequestClose={() => setShowFilter(false)}>
         <Pressable

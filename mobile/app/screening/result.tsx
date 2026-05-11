@@ -1,9 +1,11 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ApiError, postCompleteScreening } from "../../services/backendApi";
+import { getAuthToken } from "../../utils/authStorage";
 
 type RiskLevel = "low" | "moderate" | "high";
 type PhlegmTone = { color: string; bg: string; border: string; label: string };
@@ -123,6 +125,79 @@ export default function ResultScreen() {
       ? Number(params.phlegmConfidence)
       : null;
   const phlegmFailed = params.phlegmError === "1";
+
+  const persistScreeningAttempted = useRef(false);
+  useEffect(() => {
+    if (persistScreeningAttempted.current) return;
+    persistScreeningAttempted.current = true;
+
+    const run = async () => {
+      const token = await getAuthToken();
+      if (!token) return;
+
+      let audioList: string[] = [];
+      if (typeof params.audioUris === "string") {
+        try {
+          const parsed = JSON.parse(params.audioUris) as unknown;
+          if (Array.isArray(parsed)) {
+            audioList = parsed.filter((x): x is string => typeof x === "string" && x.length > 0);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      let invalidReasonList: string[] | undefined;
+      if (typeof params.invalidReasons === "string") {
+        try {
+          const parsed = JSON.parse(params.invalidReasons) as unknown;
+          if (Array.isArray(parsed)) {
+            invalidReasonList = parsed.filter((x): x is string => typeof x === "string");
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      const avgProb = typeof probTb === "number" && Number.isFinite(probTb) ? probTb : null;
+
+      try {
+        await postCompleteScreening({
+          riskLevel: risk,
+          recommendation: cfg.recommendation,
+          ...(checklist.length > 0 ? { checklist } : {}),
+          audioUris: audioList,
+          ...(typeof params.imageUri === "string" && params.imageUri.trim().length > 0
+            ? { imageUri: params.imageUri }
+            : {}),
+          ...(uploadError ? { uploadError: true } : {}),
+          ...(invalidAudio ? { invalidAudio: true } : {}),
+          ...(invalidLabel.length > 0 ? { invalidAudioLabel: invalidLabel } : {}),
+          ...(invalidReasonList && invalidReasonList.length > 0
+            ? { invalidAudioReasons: invalidReasonList }
+            : {}),
+          ...(apiAttempt.length > 0 ? { apiAttempt } : {}),
+          averageTbProbability: avgProb,
+          ...(phlegmAnalyzed ? { phlegmAnalyzed: true } : {}),
+          ...(phlegmLoad.length > 0 ? { phlegmLoad } : {}),
+          ...(phlegmConfidence !== null && Number.isFinite(phlegmConfidence)
+            ? { phlegmConfidence }
+            : {}),
+          ...(typeof params.phlegmProbs === "string" && params.phlegmProbs.length > 0
+            ? { phlegmProbs: params.phlegmProbs }
+            : {}),
+        });
+      } catch (e) {
+        if (__DEV__) {
+          const msg =
+            e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+          console.warn("[Screening] Could not persist screening:", msg);
+        }
+      }
+    };
+
+    void run();
+  }, []);
 
   return (
     <>
