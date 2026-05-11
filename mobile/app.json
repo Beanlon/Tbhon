@@ -62,8 +62,8 @@
       "reactCompiler": true
     },
     "extra": {
-      "tbApiUrl": "http://192.168.1.9:8000",
-      "apiBaseUrl": "http://192.168.1.65:4000"
+      "tbApiUrl": "http://172.20.10.7:8000",
+      "apiBaseUrl": "http://172.20.10.7:4000"
     }
   }
 }

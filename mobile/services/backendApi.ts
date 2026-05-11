@@ -133,3 +133,92 @@ export async function postRegister(args: {
 export async function getMe() {
   return apiRequest<{ user: ApiUserPayload }>("/users/me", { method: "GET" });
 }
+
+export type CompleteScreeningPayload = {
+  riskLevel: "low" | "moderate" | "high";
+  recommendation: string;
+  checklist?: string;
+  audioUris: string[];
+  imageUri?: string;
+  uploadError?: boolean;
+  invalidAudio?: boolean;
+  invalidAudioLabel?: string;
+  invalidAudioReasons?: string[];
+  apiAttempt?: string;
+  averageTbProbability?: number | null;
+  phlegmAnalyzed?: boolean;
+  phlegmLoad?: string;
+  phlegmConfidence?: number | null;
+  phlegmProbs?: string;
+};
+
+/** Persist a finished screening run for the authenticated user (no-op token required). */
+export async function postCompleteScreening(payload: CompleteScreeningPayload) {
+  return apiRequest<{ session: unknown }>("/screenings", {
+    method: "POST",
+    json: { ...payload } as JsonBody,
+  });
+}
+
+/** Row returned by GET /screenings (list). */
+export type ScreeningHistoryRow = {
+  sessionId: string;
+  startedAt: string;
+  completedAt: string | null;
+  finalRiskLevel: string | null;
+  averageTbProbability: number | null;
+  uploadError: boolean;
+  result: {
+    riskLevel: string;
+    invalidAudio: boolean;
+    createdAt: string;
+  } | null;
+  _count: { coughRecordings: number; symptomResponses: number };
+};
+
+/** Session payload from GET /screenings/:sessionId (detail). */
+export type ScreeningSessionDetail = {
+  sessionId: string;
+  completedAt: string | null;
+  finalRiskLevel: string | null;
+  averageTbProbability: number | null;
+  uploadError: boolean;
+  result: {
+    riskLevel: string;
+    recommendation: string;
+    invalidAudio: boolean;
+    invalidAudioLabel: string | null;
+    invalidAudioReasonsJson: unknown;
+  } | null;
+  symptomResponses: Array<{
+    answerValue: boolean;
+    question: { questionId: string; category: string; questionText: string };
+  }>;
+  coughRecordings: Array<{
+    fileUri: string;
+    qualityCheck: { ok: boolean; label: string | null; reasonsJson: unknown } | null;
+    audioPrediction: { probTb: number; probNoTb: number } | null;
+  }>;
+  sputumImage: {
+    fileUri: string;
+    phlegmPrediction: {
+      predictedLoad: string;
+      confidence: number;
+      probabilitiesJson: unknown;
+    } | null;
+  } | null;
+};
+
+export async function listMyScreenings(limit = 50) {
+  const q = limit !== 50 ? `?limit=${encodeURIComponent(String(limit))}` : "";
+  return apiRequest<{ screenings: ScreeningHistoryRow[] }>(`/screenings${q}`, { method: "GET" });
+}
+
+export async function getScreening(sessionId: string) {
+  return apiRequest<{ session: ScreeningSessionDetail }>(
+    `/screenings/${encodeURIComponent(sessionId)}`,
+    {
+      method: "GET",
+    },
+  );
+}

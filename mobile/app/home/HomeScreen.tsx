@@ -16,6 +16,7 @@ import HistoryScreen from "../history/HistoryScreen";
 import { ProfilePage } from "../profile/profilepage";
 import BottomNav, { BottomNavTab } from "../components/BottomNav";
 import CachedImage from "../components/CachedImage";
+import { QuickResultPreviewCard } from "./quickResultPreview";
 
 /** iOS/Android shadows — Tailwind shadows don’t match 1:1 on native. */
 const homeCardShadow = {
@@ -32,96 +33,6 @@ const serviceTileShadow = {
   shadowOpacity: 0.05,
   shadowRadius: 8,
   elevation: 2,
-};
-
-/* ─── Gauge (proper semicircle speedometer) ─────────────────── */
-const GaugeChart = ({ size = 150 }: { size?: number }) => {
-  const S = size;
-  const scale = S / 150;
-  const T = 26 * scale;
-  const needleL = 64 * scale;
-  const needleTh = 5 * scale;
-
-  return (
-    <View style={{ width: S, height: S / 2 + 22 * scale, alignItems: "center" }}>
-      <View style={{ width: S, height: S / 2, overflow: "hidden" }}>
-        <View
-          style={{
-            position: "absolute",
-            width: S,
-            height: S,
-            borderRadius: S / 2,
-            borderWidth: T,
-            borderTopColor: "#EF4444",
-            borderRightColor: "#EF4444",
-            borderBottomColor: "#EF4444",
-            borderLeftColor: "#EF4444",
-          }}
-        />
-        <View
-          style={{
-            position: "absolute",
-            width: S,
-            height: S,
-            borderRadius: S / 2,
-            borderWidth: T,
-            borderTopColor: "#FDB913",
-            borderLeftColor: "#FDB913",
-            borderRightColor: "transparent",
-            borderBottomColor: "transparent",
-          }}
-        />
-        <View
-          style={{
-            position: "absolute",
-            width: S,
-            height: S,
-            borderRadius: S / 2,
-            borderWidth: T,
-            borderTopColor: "transparent",
-            borderRightColor: "transparent",
-            borderBottomColor: "transparent",
-            borderLeftColor: "#22C55E",
-          }}
-        />
-      </View>
-
-      <View
-        style={{
-          position: "absolute",
-          left: S / 2,
-          bottom: 21 * scale,
-          width: 0,
-          height: 0,
-        }}
-      >
-        <View
-          style={{
-            position: "absolute",
-            left: 0,
-            top: -needleTh / 2,
-            width: needleL,
-            height: needleTh,
-            backgroundColor: "#1E293B",
-            borderRadius: needleTh / 2,
-            transform: [{ rotate: "-35deg" }],
-            transformOrigin: "left center",
-          }}
-        />
-      </View>
-      <View
-        style={{
-          position: "absolute",
-          bottom: 13 * scale,
-          left: S / 2 - 8 * scale,
-          width: 16 * scale,
-          height: 16 * scale,
-          borderRadius: 8 * scale,
-          backgroundColor: "#1E293B",
-        }}
-      />
-    </View>
-  );
 };
 
 const BrandMark = () => (
@@ -320,36 +231,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View className="mb-6 px-5">
-            <Text className="mb-3.5 text-base font-bold leading-6 text-black">
-              Quick Result Preview
-            </Text>
-            <View
-              className="flex-row items-center justify-between rounded-3xl border border-[#E8E8E8] bg-white p-4"
-              style={homeCardShadow}
-            >
-              <View>
-                <Text className="mb-1.5 text-md font-bold text-black">
-                  Low TB Risk - Monitor symptoms.
-                </Text>
-                <Text className="text-sm italic text-[#888]">
-                  {"“This is not a medical diagnosis”"}
-                </Text>
-                <Text className="text-sm text-[#bbb]">5/2/2026 · 1:00 AM</Text>
-              </View>
-              <View
-                style={{
-                  width: 95,
-                  height: 64,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  overflow: "hidden",
-                }}
-              >
-                <GaugeChart size={95} />
-              </View>
-            </View>
-          </View>
+          <QuickResultPreviewCard isActive={activeTab === "home"} />
 
           <View className="h-5" />
         </ScrollView>
