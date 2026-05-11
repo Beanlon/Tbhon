@@ -286,6 +286,8 @@ export default function ProcessingScreen() {
       const uris = parseUris();
       const imageUriStr = typeof params.imageUri === "string" ? params.imageUri : "";
       const checklistStr = typeof params.checklist === "string" ? params.checklist : "";
+      /** Forward to every path so result/details persist + display checklist after analysis */
+      const checklistNavParams = checklistStr.length > 0 ? ({ checklist: checklistStr } as const) : {};
       const uploadExtras = checklistStr.length ? { checklist: checklistStr } : undefined;
       const emptyPhlegm: PhlegmPred = {
         analyzed: false,
@@ -303,6 +305,7 @@ export default function ProcessingScreen() {
             risk: "low",
             audioUris: params.audioUris ?? "[]",
             imageUri: "",
+            ...checklistNavParams,
             ...phlegmNavParams(emptyPhlegm),
           },
         } as any);
@@ -329,6 +332,7 @@ export default function ProcessingScreen() {
             uploadError: "1",
             wifiRequired: "1",
             apiAttempt: apiBases.join(" | "),
+            ...checklistNavParams,
             ...phlegmNavParams(emptyPhlegm),
           },
         } as any);
@@ -346,6 +350,7 @@ export default function ProcessingScreen() {
             probTb: "",
             audioUris: params.audioUris ?? "[]",
             imageUri: imageUriStr,
+            ...checklistNavParams,
             ...phlegmNavParams(phlegm),
           },
         } as any);
@@ -402,6 +407,7 @@ export default function ProcessingScreen() {
                 invalidAudio: "1",
                 invalidLabel: spoofLabel ?? "",
                 invalidReasons: JSON.stringify(spoofReasons),
+                ...checklistNavParams,
                 ...phlegmNavParams(phlegm),
               },
             } as any);
@@ -420,7 +426,7 @@ export default function ProcessingScreen() {
               probTb: String(avg),
               audioUris: params.audioUris ?? "[]",
               imageUri: imageUriStr,
-              checklist: checklistStr,
+              ...checklistNavParams,
               ...phlegmNavParams(phlegm),
             },
           } as any);
@@ -437,7 +443,7 @@ export default function ProcessingScreen() {
               probTb: "",
               audioUris: params.audioUris ?? "[]",
               imageUri: imageUriStr,
-              checklist: checklistStr,
+              ...checklistNavParams,
               uploadError: "1",
               apiAttempt: apiBases.join(" | "),
               ...phlegmNavParams(phlegm),

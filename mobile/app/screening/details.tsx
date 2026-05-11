@@ -1,5 +1,14 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Animated,
+  Easing,
+  LayoutChangeEvent,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -9,10 +18,17 @@ import {
   getScreening,
   type ScreeningSessionDetail,
 } from "../../services/backendApi";
+import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
 
 type RiskLevel = "low" | "moderate" | "high";
 
-type ChecklistDisplayItem = { id?: string; label: string; value?: boolean };
+/** One row per canonical question; null = no saved answer for that question */
+type ChecklistAnswerRow = {
+  questionId: string;
+  questionText: string;
+  category: string;
+  answerYes: boolean | null;
+};
 
 const RISK_COPY: Record<
   RiskLevel,
@@ -96,6 +112,123 @@ function formatPhlegmProbsJson(raw: unknown): string {
     .join(" · ");
 }
 
+function categorySectionLabel(category: string): string {
+  return category.toLowerCase() === "risk" ? "Exposure & risk" : "Symptoms";
+}
+
+function coerceBoolish(v: unknown): boolean | undefined {
+  if (v === true || v === "true" || v === 1 || v === "1") return true;
+  if (v === false || v === "false" || v === 0 || v === "0") return false;
+  return undefined;
+}
+
+function readSessionChecklistPayload(session: unknown): unknown {
+  if (!session || typeof session !== "object") return undefined;
+  const s = session as Record<string, unknown>;
+  return s.checklistPayload ?? s.checklist_payload;
+}
+
+/** Parses symptom_responses whether nested `question` exists or IDs are flat on each row. */
+function symptomAnswerMapFromApi(session: unknown): Map<string, boolean> {
+  const map = new Map<string, boolean>();
+  if (!session || typeof session !== "object") return map;
+  const s = session as Record<string, unknown>;
+  const raw = s.symptomResponses ?? s.symptom_responses;
+  if (!Array.isArray(raw)) return map;
+
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+
+    const answerParsed =
+      coerceBoolish(rec.answerValue) ??
+      coerceBoolish(rec.answer_value);
+    if (answerParsed === undefined) continue;
+
+    let questionId = "";
+    const qRaw = rec.question;
+    if (qRaw && typeof qRaw === "object") {
+      const q = qRaw as Record<string, unknown>;
+      questionId =
+        typeof q.questionId === "string"
+          ? q.questionId
+          : typeof q.question_id === "string"
+            ? q.question_id
+            : "";
+    }
+    if (!questionId) {
+      questionId =
+        typeof rec.questionId === "string"
+          ? rec.questionId
+          : typeof rec.question_id === "string"
+            ? rec.question_id
+            : "";
+    }
+
+    if (!questionId) continue;
+    map.set(questionId, answerParsed);
+  }
+  return map;
+}
+
+function checklistAnswerMapFromPayload(payload: unknown): Map<string, boolean> {
+  const map = new Map<string, boolean>();
+  if (!payload || typeof payload !== "object") return map;
+  const p = payload as Record<string, unknown>;
+  const raw = p.items;
+  if (!Array.isArray(raw)) return map;
+
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const id =
+      typeof rec.id === "string"
+        ? rec.id
+        : typeof rec.question_id === "string"
+          ? rec.question_id
+          : "";
+    if (!id) continue;
+    const answerParsed = coerceBoolish(rec.value);
+    if (answerParsed === undefined) continue;
+    map.set(id, answerParsed);
+  }
+  return map;
+}
+
+/** Prefer normalized symptom rows from DB; fill gaps from saved checklist JSON */
+function mergeAnswerMaps(primary: Map<string, boolean>, fallback: Map<string, boolean>): Map<string, boolean> {
+  const out = new Map(fallback);
+  for (const [k, v] of primary) out.set(k, v);
+  return out;
+}
+
+function buildChecklistRowsFromAnswerMap(map: Map<string, boolean>): ChecklistAnswerRow[] {
+  const used = new Set<string>();
+  const ordered: ChecklistAnswerRow[] = [];
+
+  for (const q of SCREENING_CHECKLIST_QUESTIONS) {
+    used.add(q.id);
+    ordered.push({
+      questionId: q.id,
+      questionText: q.question,
+      category: q.category,
+      answerYes: map.has(q.id) ? map.get(q.id)! : null,
+    });
+  }
+
+  for (const [id, val] of map) {
+    if (used.has(id)) continue;
+    const canonical = SCREENING_CHECKLIST_QUESTIONS.find((x) => x.id === id);
+    ordered.push({
+      questionId: id,
+      questionText: canonical?.question ?? id,
+      category: canonical?.category ?? (id.startsWith("risk_") ? "risk" : "symptom"),
+      answerYes: val,
+    });
+  }
+  return ordered;
+}
+
 function mapSessionToViewModel(s: ScreeningSessionDetail): {
   risk: RiskLevel;
   probTb: number | null;
@@ -110,7 +243,7 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
   invalidAudio: boolean;
   invalidLabel: string;
   invalidReasons: string[];
-  checklistItems: ChecklistDisplayItem[];
+  checklistRows: ChecklistAnswerRow[];
   savedRecommendation: string | null;
   headerSubtitle: string;
 } {
@@ -149,13 +282,10 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
     ? rawReasons.filter((x): x is string => typeof x === "string")
     : [];
 
-  const checklistItems: ChecklistDisplayItem[] = s.symptomResponses
-    .filter((x) => x.answerValue === true)
-    .map((x) => ({
-      id: x.question.questionId,
-      label: x.question.questionText,
-      value: true,
-    }));
+  const fromResponses = symptomAnswerMapFromApi(s);
+  const fromPayload = checklistAnswerMapFromPayload(readSessionChecklistPayload(s));
+  const merged = mergeAnswerMaps(fromResponses, fromPayload);
+  const checklistRows = buildChecklistRowsFromAnswerMap(merged);
 
   const completed = s.completedAt ? new Date(s.completedAt) : null;
   const headerSubtitle =
@@ -177,7 +307,7 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
     invalidAudio: Boolean(s.result?.invalidAudio),
     invalidLabel: s.result?.invalidAudioLabel ?? "",
     invalidReasons,
-    checklistItems,
+    checklistRows,
     savedRecommendation: s.result?.recommendation ?? null,
     headerSubtitle,
   };
@@ -208,6 +338,21 @@ export default function ScreeningDetailsScreen() {
   const [remoteLoading, setRemoteLoading] = useState(Boolean(sessionId));
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [remoteVm, setRemoteVm] = useState<ReturnType<typeof mapSessionToViewModel> | null>(null);
+  const [checklistOpen, setChecklistOpen] = useState(false);
+  const [checklistBodyMounted, setChecklistBodyMounted] = useState(false);
+  const [checklistContentHeight, setChecklistContentHeight] = useState(0);
+  const checklistHeightAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    setChecklistOpen(false);
+    setChecklistBodyMounted(false);
+    setChecklistContentHeight(0);
+    checklistHeightAnim.setValue(0);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (checklistOpen) setChecklistBodyMounted(true);
+  }, [checklistOpen]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -284,19 +429,27 @@ export default function ScreeningDetailsScreen() {
       }
     }
 
-    let checklistItems: ChecklistDisplayItem[] = [];
+    let checklistRows: ChecklistAnswerRow[] = [];
     if (typeof params.checklist === "string" && params.checklist.length > 0) {
       try {
         const v = JSON.parse(params.checklist) as {
           items?: { id?: string; label?: string; value?: boolean }[];
         };
         const items = Array.isArray(v?.items) ? v.items : [];
-        checklistItems = items.filter(
-          (x): x is ChecklistDisplayItem & { label: string } =>
-            Boolean(x && x.value === true && typeof x.label === "string" && x.label.length > 0),
-        );
+        const byId = new Map<string, boolean>();
+        for (const x of items) {
+          if (!x || typeof x.id !== "string" || x.id.length === 0) continue;
+          if (typeof x.value !== "boolean") continue;
+          byId.set(x.id, x.value);
+        }
+        checklistRows = SCREENING_CHECKLIST_QUESTIONS.map((q) => ({
+          questionId: q.id,
+          questionText: q.question,
+          category: q.category,
+          answerYes: byId.has(q.id) ? byId.get(q.id)! : null,
+        }));
       } catch {
-        checklistItems = [];
+        checklistRows = [];
       }
     }
 
@@ -314,7 +467,7 @@ export default function ScreeningDetailsScreen() {
       invalidAudio,
       invalidLabel,
       invalidReasons,
-      checklistItems,
+      checklistRows,
       savedRecommendation: null as string | null,
       headerSubtitle: "Inputs & insights",
     };
@@ -342,9 +495,50 @@ export default function ScreeningDetailsScreen() {
   const invalidAudio = vm?.invalidAudio ?? false;
   const invalidLabel = vm?.invalidLabel ?? "";
   const invalidReasons = vm?.invalidReasons ?? [];
-  const checklistItems = vm?.checklistItems ?? [];
+  const checklistRows = vm?.checklistRows ?? [];
+  const checklistAnswered = checklistRows.filter((r) => r.answerYes !== null);
+  const checklistYesCount = checklistAnswered.filter((r) => r.answerYes === true).length;
+  const checklistNoCount = checklistAnswered.filter((r) => r.answerYes === false).length;
+  const hasSavedChecklist = checklistAnswered.length > 0;
   const savedRecommendation = vm?.savedRecommendation ?? null;
   const headerSubtitle = vm?.headerSubtitle ?? "Inputs & insights";
+
+  const checklistCollapsedSubtitle = useMemo(() => {
+    if (checklistRows.length === 0) {
+      return "Tap to expand checklist details.";
+    }
+    if (hasSavedChecklist) {
+      return `${checklistYesCount} Yes · ${checklistNoCount} No (${checklistAnswered.length} answers)`;
+    }
+    return `${checklistRows.length} questions · answers not stored`;
+  }, [
+    checklistAnswered.length,
+    checklistNoCount,
+    checklistRows.length,
+    checklistYesCount,
+    hasSavedChecklist,
+  ]);
+
+  const toggleChecklistOpen = () => {
+    setChecklistOpen((open) => !open);
+  };
+
+  const onChecklistContentLayout = (e: LayoutChangeEvent) => {
+    const h = Math.ceil(e.nativeEvent.layout.height);
+    setChecklistContentHeight((prev) => (h > 0 && prev !== h ? h : prev));
+  };
+
+  useEffect(() => {
+    const target = checklistOpen ? checklistContentHeight : 0;
+    if (checklistOpen && checklistContentHeight === 0) return;
+    checklistHeightAnim.stopAnimation();
+    Animated.timing(checklistHeightAnim, {
+      toValue: target,
+      duration: checklistOpen ? 320 : 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [checklistOpen, checklistContentHeight]);
 
   const copy = RISK_COPY[risk];
 
@@ -477,6 +671,98 @@ export default function ScreeningDetailsScreen() {
                   <Text className="text-base leading-6 text-slate-700">{copy.simple}</Text>
                 </Card>
 
+                <View className="mb-3 rounded-3xl border border-slate-200 bg-white p-5">
+                  <Pressable
+                    onPress={toggleChecklistOpen}
+                    className="flex-row items-start justify-between gap-3 active:opacity-75"
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      checklistOpen ? "Collapse symptoms and exposure checklist" : "Expand symptoms and exposure checklist"
+                    }
+                    accessibilityState={{ expanded: checklistOpen }}
+                  >
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-base font-bold text-slate-900">Symptoms & exposure checklist</Text>
+                      {!checklistOpen ? (
+                        <Text className="mt-1 text-sm leading-5 text-slate-500">{checklistCollapsedSubtitle}</Text>
+                      ) : null}
+                    </View>
+                    <Ionicons
+                      name={checklistOpen ? "chevron-up" : "chevron-down"}
+                      size={22}
+                      color="#64748b"
+                      style={{ marginTop: 2 }}
+                    />
+                  </Pressable>
+
+                  {checklistBodyMounted ? (
+                    <Animated.View
+                      pointerEvents={checklistOpen ? "auto" : "none"}
+                      style={{
+                        height: checklistHeightAnim,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <View
+                        className="mt-4 border-t border-slate-100 pt-4"
+                        style={{ position: "absolute", left: 0, right: 0, top: 0 }}
+                        onLayout={onChecklistContentLayout}
+                      >
+                        {checklistRows.length === 0 ? (
+                          <Text className="text-base leading-6 text-slate-600">
+                            No checklist data for this view. Complete the symptom checklist before recording, finish while
+                            signed in so answers save with your screening, then open Details from results or History.
+                          </Text>
+                        ) : (
+                          <>
+                            <Text className="mb-4 text-base leading-6 text-slate-600">
+                              {hasSavedChecklist
+                                ? "Answers stored with this session (Yes / No)."
+                                : sessionId
+                                  ? "No checklist answers were stored for this screening. Questions are shown for reference."
+                                  : "Answer each question during screening; responses appear here after you finish."}
+                            </Text>
+                            <View className="gap-3">
+                              {checklistRows.map((row) => (
+                                <View
+                                  key={row.questionId}
+                                  className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4"
+                                >
+                                  <Text className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-500">
+                                    {categorySectionLabel(row.category)}
+                                  </Text>
+                                  <Text className="text-base leading-6 text-slate-900">{row.questionText}</Text>
+                                  <View className="mt-3 flex-row flex-wrap items-center gap-2">
+                                    {row.answerYes === null ? (
+                                      <Text className="text-sm font-semibold text-slate-400">Not recorded</Text>
+                                    ) : (
+                                      <View
+                                        className="rounded-full px-3 py-1"
+                                        style={{
+                                          backgroundColor: row.answerYes
+                                            ? "rgba(220,38,38,0.10)"
+                                            : "rgba(15,23,42,0.06)",
+                                        }}
+                                      >
+                                        <Text
+                                          className="text-sm font-bold"
+                                          style={{ color: row.answerYes ? "#B91C1C" : "#475569" }}
+                                        >
+                                          {row.answerYes ? "Yes" : "No"}
+                                        </Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                </View>
+                              ))}
+                            </View>
+                          </>
+                        )}
+                      </View>
+                    </Animated.View>
+                  ) : null}
+                </View>
+
                 <Card title="Input Summary">
                   <CheckRow
                     ok={audioAnalyzed}
@@ -505,12 +791,12 @@ export default function ScreeningDetailsScreen() {
                     }
                   />
                   <CheckRow
-                    ok={checklistItems.length > 0}
+                    ok={hasSavedChecklist}
                     label="Symptoms & exposure checklist"
                     sub={
-                      checklistItems.length
-                        ? `Selected: ${checklistItems.map((x) => x.label).slice(0, 5).join(" · ")}${checklistItems.length > 5 ? " …" : ""}`
-                        : "No checklist items selected."
+                      hasSavedChecklist
+                        ? `${checklistYesCount} Yes · ${checklistNoCount} No (${checklistAnswered.length} answers)`
+                        : "No checklist responses for this session."
                     }
                   />
                 </Card>

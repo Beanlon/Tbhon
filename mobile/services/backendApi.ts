@@ -183,6 +183,7 @@ export type ScreeningSessionDetail = {
   finalRiskLevel: string | null;
   averageTbProbability: number | null;
   uploadError: boolean;
+  checklistPayload?: unknown | null;
   result: {
     riskLevel: string;
     recommendation: string;
