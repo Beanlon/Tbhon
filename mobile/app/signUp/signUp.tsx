@@ -332,7 +332,7 @@ export default function SignUp() {
             Create your account
           </Text>
 
-          {step !== 3 && (
+          {step <= 2 && (
             <>
               <View className="mb-1.5 flex-row items-center justify-center gap-1.5 sm:mb-2">
                 <View

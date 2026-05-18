@@ -18,15 +18,14 @@ function devPackagerLanHost(): string | null {
 
 /**
  * Base URL for the TB cough inference API (no trailing slash).
- * 1) EXPO_PUBLIC_TB_API_URL or app.json extra.tbApiUrl
+ * 1) EXPO_PUBLIC_TB_API_URL (see mobile/.env.example)
  * 2) Expo dev hostUri → http://<same-host>:8000 (fixes phone + Expo Go using 127.0.0.1)
  * 3) Android emulator → 10.0.2.2
  * 4) 127.0.0.1 (simulator / web on same PC)
  */
 export function resolveTbApiBaseUrl(): string {
   const fromEnv =
-    (typeof process !== "undefined" && (process.env.EXPO_PUBLIC_TB_API_URL as string | undefined)) ||
-    ((Constants.expoConfig as any)?.extra?.tbApiUrl as string | undefined);
+    typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_TB_API_URL as string | undefined) : undefined;
   if (fromEnv && String(fromEnv).trim().length > 0) {
     return String(fromEnv).replace(/\/$/, "");
   }
@@ -99,8 +98,7 @@ export function resolveTbApiBaseUrls(): string[] {
   };
 
   const fromEnv =
-    (typeof process !== "undefined" && (process.env.EXPO_PUBLIC_TB_API_URL as string | undefined)) ||
-    ((Constants.expoConfig as any)?.extra?.tbApiUrl as string | undefined);
+    typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_TB_API_URL as string | undefined) : undefined;
   // In dev, always include Metro proxy candidates even when an explicit URL exists.
   // This avoids hard failures when direct :8000 is blocked but Expo's port is reachable.
   for (const proxy of devMetroTbProxyBases()) add(proxy);

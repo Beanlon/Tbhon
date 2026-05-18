@@ -18,6 +18,14 @@ import {
   type ScreeningHistoryRow,
 } from "../../services/backendApi";
 import { getAuthToken } from "../../utils/authStorage";
+import {
+  clearScreeningCache,
+  isScreeningCacheFresh,
+  peekScreenings,
+  setCachedScreenings,
+} from "../../utils/screeningHistoryCache";
+
+const SCREENING_LIST_LIMIT = 100;
 
 type RiskLevel = "low" | "moderate" | "high";
 
@@ -114,8 +122,8 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
   const [tmpSort, setTmpSort] = useState<SortKey>("newest");
   const [tmpDateRange, setTmpDateRange] = useState<DateRange>("all");
 
-  const [rows, setRows] = useState<ScreeningHistoryRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<ScreeningHistoryRow[]>(() => peekScreenings() ?? []);
+  const [loading, setLoading] = useState(() => !peekScreenings());
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(true);
@@ -124,6 +132,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
     setLoadError(null);
     const token = await getAuthToken();
     if (!token) {
+      clearScreeningCache();
       setSignedIn(false);
       setRows([]);
       setLoading(false);
@@ -131,11 +140,47 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
       return;
     }
     setSignedIn(true);
+
+    const forceNetwork = mode === "refresh";
+
+    if (!forceNetwork && isScreeningCacheFresh()) {
+      const fresh = peekScreenings();
+      if (fresh) {
+        setRows(fresh);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+    }
+
+    if (!forceNetwork && mode === "initial") {
+      const stale = peekScreenings();
+      if (stale) {
+        setRows(stale);
+        setLoading(false);
+        try {
+          const { screenings } = await listMyScreenings(SCREENING_LIST_LIMIT);
+          setRows(screenings);
+          setCachedScreenings(screenings);
+        } catch (e) {
+          const message =
+            e instanceof ApiError
+              ? e.message
+              : e instanceof Error
+                ? e.message
+                : "Could not load history.";
+          setLoadError(message);
+        }
+        return;
+      }
+    }
+
     if (mode === "initial") setLoading(true);
     if (mode === "refresh") setRefreshing(true);
     try {
-      const { screenings } = await listMyScreenings(100);
+      const { screenings } = await listMyScreenings(SCREENING_LIST_LIMIT);
       setRows(screenings);
+      setCachedScreenings(screenings);
     } catch (e) {
       const message =
         e instanceof ApiError
@@ -144,7 +189,9 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
             ? e.message
             : "Could not load history.";
       setLoadError(message);
-      setRows([]);
+      if (!peekScreenings()) {
+        setRows([]);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
