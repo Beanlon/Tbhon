@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   Platform,
 } from "react-native";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -17,6 +17,10 @@ import { ProfilePage } from "../profile/profilepage";
 import BottomNav, { BottomNavTab } from "../components/BottomNav";
 import CachedImage from "../components/CachedImage";
 import { QuickResultPreviewCard } from "./quickResultPreview";
+import { getMe } from "../../services/backendApi";
+import { getAuthToken } from "../../utils/authStorage";
+import { peekProfile, setCachedProfile } from "../../utils/profileCache";
+import { profileFirstName } from "../../utils/profileDisplay";
 
 /** iOS/Android shadows — Tailwind shadows don’t match 1:1 on native. */
 const homeCardShadow = {
@@ -46,8 +50,41 @@ const BrandMark = () => (
 export default function HomeScreen() {
   const [showInstructions, setShowInstructions] = useState(false);
   const [activeTab, setActiveTab] = useState<BottomNavTab>("home");
+  const [greetingFirstName, setGreetingFirstName] = useState<string | null>(() =>
+    profileFirstName(peekProfile()),
+  );
 
   const headerPadTop = Platform.select({ ios: 12, android: 10, default: 10 });
+
+  const refreshGreetingName = useCallback(async () => {
+    const cached = peekProfile();
+    const cachedFirst = profileFirstName(cached);
+    if (cachedFirst) {
+      setGreetingFirstName(cachedFirst);
+    }
+
+    const token = await getAuthToken();
+    if (!token) {
+      setGreetingFirstName(null);
+      return;
+    }
+
+    try {
+      const { user } = await getMe();
+      setCachedProfile(user);
+      setGreetingFirstName(profileFirstName(user));
+    } catch {
+      if (!cachedFirst) {
+        setGreetingFirstName(null);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "home") {
+      void refreshGreetingName();
+    }
+  }, [activeTab, refreshGreetingName]);
 
   const handleTabPress = (tab: BottomNavTab) => {
     if (tab === "home") {
@@ -134,13 +171,26 @@ export default function HomeScreen() {
       <StatusBar style="dark" backgroundColor="#fff" translucent={false} />
       <SafeAreaView className="flex-1 bg-white" style={{ flex: 1 }} edges={["top", "left", "right"]}>
         <ScrollView showsVerticalScrollIndicator={false}>
-          <View className="px-5 pb-5" style={{ paddingTop: headerPadTop }}>
+          <View className="px-5 pb-3" style={{ paddingTop: headerPadTop }}>
             <View className="flex-row items-center justify-between">
-              <View>
-                <Text className="mb-1 text-base leading-5 text-[#666]">👋 Hello!</Text>
-                <Text className="text-3xl font-extrabold leading-9 text-black">
-                  Martin Shah
-                </Text>
+              <View className="min-w-0 flex-1 pr-3">
+                {greetingFirstName ? (
+                  <Text
+                    className="text-2xl font-bold leading-9 text-black"
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    <Text className="text-2xl font-normal leading-9 text-[#666]">
+                      👋 Hello!{" "}
+                    </Text>
+                    {greetingFirstName}
+                  </Text>
+                ) : (
+                  <Text className="text-3xl font-extrabold leading-9 text-black">
+                    <Text className="text-base font-normal leading-9 text-[#666]">👋 </Text>
+                    Hello!
+                  </Text>
+                )}
               </View>
               <BrandMark />
             </View>

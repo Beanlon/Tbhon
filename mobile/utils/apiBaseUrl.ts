@@ -20,17 +20,14 @@ const DEFAULT_BACKEND_PORT = 4000;
 
 /**
  * Base URL for REST API (no trailing slash).
- * 1) EXPO_PUBLIC_API_URL or app.json extra.apiBaseUrl
+ * 1) EXPO_PUBLIC_API_URL (see mobile/.env.example)
  * 2) Expo dev LAN host → http://<host>:4000
  * 3) Android emulator → http://10.0.2.2:4000
  * 4) http://127.0.0.1:4000
  */
 export function resolveApiBaseUrl(): string {
   const fromEnv =
-    (typeof process !== "undefined" && (process.env.EXPO_PUBLIC_API_URL as string | undefined)) ||
-    ((Constants.expoConfig?.extra as { apiBaseUrl?: string } | undefined)?.apiBaseUrl as
-      | string
-      | undefined);
+    typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_API_URL as string | undefined) : undefined;
   if (fromEnv && String(fromEnv).trim().length > 0) {
     return String(fromEnv).replace(/\/$/, "");
   }

@@ -14,7 +14,16 @@ import {
   type ScreeningHistoryRow,
 } from "../../../services/backendApi";
 import { getAuthToken } from "../../../utils/authStorage";
+import {
+  isScreeningCacheFresh,
+  peekLatestScreening,
+  peekScreenings,
+  setCachedScreenings,
+  clearScreeningCache,
+} from "../../../utils/screeningHistoryCache";
 import { GaugeChart, type GaugeRiskLevel } from "./GaugeChart";
+
+const SCREENING_LIST_LIMIT = 100;
 
 const cardShadow: ViewStyle = {
   shadowColor: "#000",
@@ -59,24 +68,54 @@ type Props = {
 export function QuickResultPreviewCard({ isActive }: Props) {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !peekLatestScreening());
   const [signedIn, setSignedIn] = useState(true);
-  const [latest, setLatest] = useState<ScreeningHistoryRow | null>(null);
+  const [latest, setLatest] = useState<ScreeningHistoryRow | null>(() => peekLatestScreening());
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setError(null);
     const token = await getAuthToken();
     if (!token) {
+      clearScreeningCache();
       setSignedIn(false);
       setLatest(null);
       setLoading(false);
       return;
     }
     setSignedIn(true);
+
+    if (!force && isScreeningCacheFresh()) {
+      const cached = peekScreenings();
+      setLatest(cached?.[0] ?? null);
+      setLoading(false);
+      return;
+    }
+
+    const stale = peekScreenings();
+    if (!force && stale) {
+      setLatest(stale[0] ?? null);
+      setLoading(false);
+      try {
+        const { screenings } = await listMyScreenings(SCREENING_LIST_LIMIT);
+        setCachedScreenings(screenings);
+        setLatest(screenings[0] ?? null);
+      } catch (e) {
+        const message =
+          e instanceof ApiError
+            ? e.message
+            : e instanceof Error
+              ? e.message
+              : "Could not load your latest result.";
+        setError(message);
+      }
+      return;
+    }
+
     setLoading(true);
     try {
-      const { screenings } = await listMyScreenings(1);
+      const { screenings } = await listMyScreenings(SCREENING_LIST_LIMIT);
+      setCachedScreenings(screenings);
       setLatest(screenings[0] ?? null);
     } catch (e) {
       const message =

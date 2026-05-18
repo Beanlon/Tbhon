@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError, postCompleteScreening } from "../../services/backendApi";
+import { clearScreeningCache } from "../../utils/screeningHistoryCache";
 import { getAuthToken } from "../../utils/authStorage";
 
 type RiskLevel = "low" | "moderate" | "high";
@@ -187,6 +188,7 @@ export default function ResultScreen() {
             ? { phlegmProbs: params.phlegmProbs }
             : {}),
         });
+        clearScreeningCache();
       } catch (e) {
         if (__DEV__) {
           const msg =

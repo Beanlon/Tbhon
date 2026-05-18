@@ -10,7 +10,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "open-api-firewall": "powershell -ExecutionPolicy Bypass -File ..\\ml\\scripts\\open_firewall_port_8000.ps1"
+    "open-api-firewall": "powershell -ExecutionPolicy Bypass -File ..\\ml\\scripts\\open_firewall_port_8000.ps1",
+    "tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File ..\\infra\\cloudflare\\tunnel.ps1"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

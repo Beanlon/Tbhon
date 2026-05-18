@@ -30,3 +30,9 @@ Thumbs.db
 
 # Local env files
 .env*.local
+
+# Cloudflare tunnel secrets + generated team URL snapshot
+infra/cloudflare/config.yml
+infra/cloudflare/team-urls.env
+infra/cloudflare/tunnel-*.log
+infra/cloudflare/tunnel-*.err.log

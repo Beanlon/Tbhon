@@ -112,6 +112,12 @@ export function profileAvatarInitials(user: ApiUserPayload): string {
   return "?";
 }
 
+/** First name for greetings (e.g. home header). */
+export function profileFirstName(user: ApiUserPayload | null | undefined): string | null {
+  const first = user?.profile?.firstName?.trim();
+  return first || null;
+}
+
 export function displayFullName(user: ApiUserPayload): string {
   const p = user.profile;
   if (p && (p.firstName?.trim() || p.lastName?.trim())) {

@@ -22,6 +22,7 @@ import {
   peekProfile,
   setCachedProfile,
 } from "../../utils/profileCache";
+import { clearScreeningCache } from "../../utils/screeningHistoryCache";
 import {
   buildPersonalInfoRows,
   displayFullName,
@@ -279,6 +280,7 @@ export function ProfilePage() {
     const token = await getAuthToken();
     if (!token) {
       clearProfileCache();
+      clearScreeningCache();
       setUser(null);
       setIsLoading(false);
       router.replace("/landingpage/landingpage");
@@ -310,6 +312,7 @@ export function ProfilePage() {
         setLoadError(message);
         if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
           clearProfileCache();
+          clearScreeningCache();
           await clearAuthToken();
           setUser(null);
           router.replace("/landingpage/landingpage");
@@ -333,6 +336,7 @@ export function ProfilePage() {
       setLoadError(message);
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
         clearProfileCache();
+        clearScreeningCache();
         await clearAuthToken();
         router.replace("/landingpage/landingpage");
       }
@@ -356,6 +360,7 @@ export function ProfilePage() {
         onPress: () => {
           void (async () => {
             clearProfileCache();
+            clearScreeningCache();
             await clearAuthToken();
             router.replace("/landingpage/landingpage");
           })();
@@ -583,11 +588,11 @@ export function ProfilePage() {
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.7}>
               <SettingRow
-                icon="download-outline"
+                icon="mail-outline"
                 iconBg="#E6F3FB"
-                iconColor="#1D6FA4"
-                title="Download my data"
-                subtitle="Export your health records"
+                iconColor="#1E8449"
+                title="Email Verification"
+                subtitle="Verify your email address"
                 isLast
                 right={<Ionicons name="chevron-forward" size={16} color="#8FA3B1" />}
               />

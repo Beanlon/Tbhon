@@ -1,0 +1,13 @@
+# Copy to config.yml (gitignored). Named tunnel for a stable hostname on your domain.
+# Setup: cloudflared tunnel login → cloudflared tunnel create tbhon-api
+# DNS: Zero Trust → Networks → Tunnels, or: cloudflared tunnel route dns tbhon-api api.yourdomain.com
+
+tunnel: YOUR_TUNNEL_UUID
+credentials-file: C:\Users\YOUR_USER\.cloudflared\YOUR_TUNNEL_UUID.json
+
+ingress:
+  - hostname: api.yourdomain.com
+    service: http://127.0.0.1:4000
+  # - hostname: ml.yourdomain.com
+  #   service: http://127.0.0.1:8000
+  - service: http_status:404
