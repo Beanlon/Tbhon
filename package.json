@@ -3,6 +3,8 @@
   "private": true,
   "description": "Tbhon monorepo (mobile + ml + infra)",
   "scripts": {
+    "mobile:start": "npm --prefix mobile run start",
+    "mobile:start:tunnel": "npm --prefix mobile run start:tunnel",
     "tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1",
     "tunnel:api": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1 -ApiOnly",
     "tunnel:ml": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1 -MlOnly"
