@@ -68,6 +68,20 @@ const tk = {
 const GENDERS = ["Male", "Female", "Intersex"] as const;
 type Gender = (typeof GENDERS)[number] | "";
 
+const COUNTRIES = [
+  { name: "Philippines", code: "PH", dialCode: "+63", flag: "🇵🇭" },
+  { name: "United States", code: "US", dialCode: "+1", flag: "🇺🇸" },
+  { name: "Canada", code: "CA", dialCode: "+1", flag: "🇨🇦" },
+  { name: "United Kingdom", code: "GB", dialCode: "+44", flag: "🇬🇧" },
+  { name: "Australia", code: "AU", dialCode: "+61", flag: "🇦🇺" },
+  { name: "Singapore", code: "SG", dialCode: "+65", flag: "🇸🇬" },
+  { name: "Malaysia", code: "MY", dialCode: "+60", flag: "🇲🇾" },
+  { name: "Thailand", code: "TH", dialCode: "+66", flag: "🇹🇭" },
+  { name: "Vietnam", code: "VN", dialCode: "+84", flag: "🇻🇳" },
+  { name: "Indonesia", code: "ID", dialCode: "+62", flag: "🇮🇩" },
+] as const;
+type Country = (typeof COUNTRIES)[number];
+
 interface FieldProps {
   label: string;
   value: string;
@@ -290,6 +304,7 @@ export default function SignUp() {
   // UI state
   const [genderPickerOpen, setGenderPickerOpen] = useState(false);
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
+  const [selectedCountry, setSelectedCountry] = useState<Country>(COUNTRIES[0]);
   const [birthdatePickerOpen, setBirthdatePickerOpen] = useState(false);
   const [birthdatePickerDate, setBirthdatePickerDate] = useState(() =>
     defaultSignupBirthdateDate(),
@@ -950,7 +965,7 @@ export default function SignUp() {
                             { color: tk.textPrimary },
                           ]}
                         >
-                          PH +63
+                          {selectedCountry.code} {selectedCountry.dialCode}
                         </Text>
                         <Ionicons name="chevron-down" size={16} color={tk.textMuted} style={{ marginLeft: 8 }} />
                       </Pressable>
@@ -1278,6 +1293,7 @@ export default function SignUp() {
                         left,
                         top,
                         width: menuW,
+                        maxHeight: 300,
                         borderColor: tk.border,
                         backgroundColor: tk.white,
                         ...(Platform.OS === "android"
@@ -1291,32 +1307,43 @@ export default function SignUp() {
                       },
                     ]}
                   >
-                    <Pressable
-                      onPress={closeCountryPicker}
-                      style={{
-                        paddingHorizontal: 12,
-                        minHeight: GENDER_ROW_H,
-                        justifyContent: "center",
-                        borderBottomWidth: 0,
-                      }}
-                    >
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                        }}
-                      >
-                        <Text style={{ color: tk.textPrimary, fontSize: 16 }}>
-                          Philippines
-                        </Text>
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={20}
-                          color={tk.navy}
-                        />
-                      </View>
-                    </Pressable>
+                    <ScrollView showsVerticalScrollIndicator={false} scrollEnabled={COUNTRIES.length > 4}>
+                      {COUNTRIES.map((country) => (
+                        <Pressable
+                          key={country.code}
+                          onPress={() => {
+                            setSelectedCountry(country);
+                            closeCountryPicker();
+                          }}
+                          style={{
+                            paddingHorizontal: 12,
+                            minHeight: GENDER_ROW_H,
+                            justifyContent: "center",
+                            borderBottomWidth: country.code !== COUNTRIES[COUNTRIES.length - 1].code ? 1 : 0,
+                            borderBottomColor: tk.border,
+                          }}
+                        >
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                            }}
+                          >
+                            <Text style={{ color: tk.textPrimary, fontSize: 16 }}>
+                              {country.flag} {country.name} {country.dialCode}
+                            </Text>
+                            {selectedCountry.code === country.code && (
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={20}
+                                color={tk.navy}
+                              />
+                            )}
+                          </View>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
                   </View>
                 );
               })()}
@@ -1662,6 +1689,7 @@ const styles = StyleSheet.create({
   primaryButtonGrow: {
     flex: 1,
     marginLeft: 12,
+    maxWidth: 200,
   },
   primaryButtonText: {
     color: tk.white,
@@ -1688,10 +1716,6 @@ const styles = StyleSheet.create({
   },
   phoneFieldGroup: {
     marginBottom: 20,
-  },
-  phoneFieldInline: {
-    flex: 1,
-    marginBottom: 0,
   },
   countryChip: {
     paddingVertical: 14,
