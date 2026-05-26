@@ -7,6 +7,7 @@
     "start": "expo start",
     "start:tunnel": "expo start --tunnel",
     "start:lan": "expo start --lan",
+    "mobile:start:remote": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel-expo.ps1", 
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
