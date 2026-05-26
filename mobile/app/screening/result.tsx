@@ -4,7 +4,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ApiError, postCompleteScreening } from "../../services/backendApi";
+import {
+  ApiError,
+  postCompleteScreening,
+  uploadCoughRecordingRaw,
+  uploadSputumImageRaw,
+} from "../../services/backendApi";
 import { clearScreeningCache } from "../../utils/screeningHistoryCache";
 import { getAuthToken } from "../../utils/authStorage";
 
@@ -163,14 +168,17 @@ export default function ResultScreen() {
       const avgProb = typeof probTb === "number" && Number.isFinite(probTb) ? probTb : null;
 
       try {
-        await postCompleteScreening({
+        const imageUriParam =
+          typeof params.imageUri === "string" && params.imageUri.trim().length > 0
+            ? params.imageUri.trim()
+            : "";
+
+        const response = await postCompleteScreening({
           riskLevel: risk,
           recommendation: cfg.recommendation,
           ...(checklist.length > 0 ? { checklist } : {}),
           audioUris: audioList,
-          ...(typeof params.imageUri === "string" && params.imageUri.trim().length > 0
-            ? { imageUri: params.imageUri }
-            : {}),
+          ...(imageUriParam.length > 0 ? { imageUri: imageUriParam } : {}),
           ...(uploadError ? { uploadError: true } : {}),
           ...(invalidAudio ? { invalidAudio: true } : {}),
           ...(invalidLabel.length > 0 ? { invalidAudioLabel: invalidLabel } : {}),
@@ -189,6 +197,49 @@ export default function ResultScreen() {
             : {}),
         });
         clearScreeningCache();
+
+        // Upload the raw audio + image bytes so any device on this account
+        // can replay/view the originals — not just this phone. Failures here
+        // are best-effort; the screening metadata is already saved.
+        const sessionId = response?.session?.sessionId;
+        if (typeof sessionId === "string" && sessionId.length > 0) {
+          const recordings = Array.isArray(response.session.coughRecordings)
+            ? response.session.coughRecordings
+            : [];
+          const pairs = recordings
+            .map((r, i) => ({ recordingId: r.recordingId, uri: audioList[i] }))
+            .filter(
+              (p): p is { recordingId: string; uri: string } =>
+                typeof p.recordingId === "string" &&
+                p.recordingId.length > 0 &&
+                typeof p.uri === "string" &&
+                p.uri.length > 0,
+            );
+          for (const { recordingId, uri } of pairs) {
+            try {
+              await uploadCoughRecordingRaw({ sessionId, recordingId, localUri: uri });
+            } catch (e) {
+              if (__DEV__) {
+                const msg =
+                  e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+                console.warn(`[Screening] cough raw upload failed for ${recordingId}:`, msg);
+              }
+            }
+          }
+
+          if (imageUriParam.length > 0) {
+            try {
+              await uploadSputumImageRaw({ sessionId, localUri: imageUriParam });
+            } catch (e) {
+              if (__DEV__) {
+                const msg =
+                  e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+                console.warn("[Screening] sputum raw upload failed:", msg);
+              }
+            }
+          }
+          clearScreeningCache();
+        }
       } catch (e) {
         if (__DEV__) {
           const msg =

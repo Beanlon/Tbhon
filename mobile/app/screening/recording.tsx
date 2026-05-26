@@ -11,6 +11,7 @@ import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
 const COUGH_TOTAL = 3;
 const MIN_RECORD_SECONDS = 3;
 const MAX_RECORD_SECONDS = 10;
+const QUALITY_CHECK_TIMEOUT_MS = 8000;
 
 type QualityStatus = "checking" | "ok" | "bad" | "skipped";
 type QualityLabel = "silence" | "speech" | "replay" | "noise" | "invalid" | "";
@@ -56,13 +57,18 @@ async function uploadAudioForCheck(base: string, uri: string): Promise<any | nul
   const fileUri = normalizeFileUri(uri);
   const { name, mimeType } = pickMimeAndName(fileUri);
   const url = `${base.replace(/\/$/, "")}/check-quality`;
-  const result = await FileSystem.uploadAsync(url, fileUri, {
-    httpMethod: "POST",
-    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-    fieldName: "file",
-    mimeType,
-    parameters: { filename: name },
-  });
+  const result = await Promise.race([
+    FileSystem.uploadAsync(url, fileUri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType,
+      parameters: { filename: name },
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("check-quality timed out")), QUALITY_CHECK_TIMEOUT_MS),
+    ),
+  ]);
   if (result.status < 200 || result.status >= 300) return null;
   try {
     return JSON.parse(result.body || "{}");
@@ -600,13 +606,15 @@ export default function RecordingScreen() {
         )}
 
         {phase === "done" && !allDone && (() => {
-          const advanceDisabled = qualityStatus !== "ok";
+          const advanceDisabled = qualityStatus === "checking" || qualityStatus === "bad";
           const advanceLabel =
             qualityStatus === "checking"
               ? "Checking…"
               : qualityStatus === "ok"
                 ? "Next cough"
-                : "Redo to continue";
+                : qualityStatus === "skipped"
+                  ? "Next cough"
+                  : "Redo to continue";
           return (
             <View className="flex-row gap-3">
               <Pressable
@@ -641,9 +649,9 @@ export default function RecordingScreen() {
         })()}
 
         {phase === "done" && allDone && (() => {
-          const allOk = qualityStatus === "ok";
-          const continueDisabled = !allOk;
-          const continueLabel = qualityStatus === "checking" ? "Checking…" : allOk ? "Continue" : "Redo to continue";
+          const canContinue = qualityStatus === "ok" || qualityStatus === "skipped";
+          const continueDisabled = !canContinue;
+          const continueLabel = qualityStatus === "checking" ? "Checking…" : canContinue ? "Continue" : "Redo to continue";
           return (
             <View className="flex-row gap-3">
               <Pressable

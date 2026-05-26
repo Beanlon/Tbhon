@@ -13,11 +13,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Image } from "expo-image";
+import { Audio } from "expo-av";
 import {
   ApiError,
   getScreening,
+  resolveMediaUrl,
   type ScreeningSessionDetail,
 } from "../../services/backendApi";
+import { getAuthToken } from "../../utils/authStorage";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
 
 type RiskLevel = "low" | "moderate" | "high";
@@ -263,10 +267,21 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
     }
   }
 
-  const audioUris = s.coughRecordings.map((r) => r.fileUri).filter((u) => u.length > 0);
+  // Prefer the server-managed media URL (cross-device) and fall back to the
+  // legacy phone-local `file://` path (only meaningful on the original
+  // device that recorded it).
+  const audioUris = s.coughRecordings
+    .map((r) => {
+      if (r.hasRawData && typeof r.fileUrl === "string" && r.fileUrl.length > 0) return r.fileUrl;
+      return typeof r.fileUri === "string" ? r.fileUri : "";
+    })
+    .filter((u) => u.length > 0);
 
   const img = s.sputumImage;
-  const imageUri = img?.fileUri ?? "";
+  const imageUri =
+    img?.hasRawData && typeof img.fileUrl === "string" && img.fileUrl.length > 0
+      ? img.fileUrl
+      : (img?.fileUri ?? "");
   const pp = img?.phlegmPrediction ?? null;
   const imageAnalyzed = Boolean(pp);
   const phlegmLoad = pp?.predictedLoad ?? "";

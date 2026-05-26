@@ -5,6 +5,7 @@
   "scripts": {
     "mobile:start": "npm --prefix mobile run start",
     "mobile:start:tunnel": "npm --prefix mobile run start:tunnel",
+    "mobile:start:remote": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel-expo.ps1",
     "tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1",
     "tunnel:api": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1 -ApiOnly",
     "tunnel:ml": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1 -MlOnly"
