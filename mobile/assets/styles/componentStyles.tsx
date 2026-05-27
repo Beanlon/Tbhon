@@ -1,9 +1,10 @@
 import { StyleSheet } from 'react-native';
+import { APP_SCREEN_BACKGROUND } from '../../constants/palette';
 
 export const GlobalStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: APP_SCREEN_BACKGROUND,
   },
   content: {
     flex: 1,
@@ -27,7 +28,7 @@ export const GlobalStyles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   input: {
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
     paddingHorizontal: 15,
     paddingVertical: '4.5%',
@@ -79,7 +80,7 @@ export const GlobalStyles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: APP_SCREEN_BACKGROUND,
   },
   signUpContainer: {
     flexDirection: 'row',

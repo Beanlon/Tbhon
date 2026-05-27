@@ -16,6 +16,7 @@ import HistoryScreen from "../history/HistoryScreen";
 import { ProfilePage } from "../profile/profilepage";
 import BottomNav, { BottomNavTab } from "../components/BottomNav";
 import CachedImage from "../components/CachedImage";
+import { TBHON_ICON } from "../../constants/branding";
 import { QuickResultPreviewCard } from "./quickResultPreview";
 import { getMe } from "../../services/backendApi";
 import { getAuthToken } from "../../utils/authStorage";
@@ -41,7 +42,7 @@ const serviceTileShadow = {
 
 const BrandMark = () => (
   <CachedImage
-    source={require("../../assets/images/Tbhon assets/TBhon icon.png")}
+    source={TBHON_ICON}
     className="size-12"
     resizeMode="contain"
   />

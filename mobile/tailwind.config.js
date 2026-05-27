@@ -10,6 +10,8 @@ module.exports = {
       colors: {
         /** TBhon screening / primary actions — matches legacy `#0B1530` */
         navy: "#0B1530",
+        /** App-wide screen background — matches `palette.lavender` */
+        lavender: "#EAE8FA",
       },
       // Mobile-first: default = small phones; these fire at min logical width (see NativeWind docs).
       screens: {

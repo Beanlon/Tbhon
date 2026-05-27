@@ -3,6 +3,8 @@ import { View, Text, Pressable, Platform, ScrollView, useWindowDimensions } from
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import CachedImage from "../components/CachedImage";
+import { TBHON_LOGO } from "../../constants/branding";
+import { getBrandLogoLayout } from "../../utils/brandLogoLayout";
 import { useRouter } from "expo-router";
 
 const cardShadow =
@@ -58,11 +60,16 @@ function OptionRow({
 export default function LandingPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
 
   const scrollMinHeight = useMemo(
     () => Math.max(0, windowHeight - insets.top - insets.bottom),
     [windowHeight, insets.top, insets.bottom],
+  );
+
+  const brandLogo = useMemo(
+    () => getBrandLogoLayout(windowHeight, windowWidth, 40),
+    [windowHeight, windowWidth],
   );
 
   return (
@@ -85,13 +92,16 @@ export default function LandingPage() {
           style={{ minHeight: scrollMinHeight }}
         >
           <View>
-            <View className="mt-2 mb-3 w-full items-center sm:mb-4">
-              <View
-                className="w-[66%] max-w-64 sm:w-[58%] sm:max-w-72 md:max-w-80"
-                style={{ aspectRatio: 1 }}
-              >
+            <View
+              className="w-full items-center"
+              style={{
+                marginTop: brandLogo.topMargin,
+                marginBottom: brandLogo.bottomMargin,
+              }}
+            >
+              <View style={{ width: brandLogo.boxWidth, aspectRatio: 1 }}>
                 <CachedImage
-                  source={require("../../assets/images/Tbhon assets/Tbhon Logo.png")}
+                  source={TBHON_LOGO}
                   className="size-full"
                   resizeMode="contain"
                 />

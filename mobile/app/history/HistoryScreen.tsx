@@ -240,7 +240,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
   };
 
   return (
-    <View className="flex-1 bg-white">
+    <View className="flex-1 bg-lavender">
       <View
         className="border-b border-[#F1F1F1] px-5 pb-3.5"
         style={{ paddingTop: headerPadTop }}

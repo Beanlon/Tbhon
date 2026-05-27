@@ -75,8 +75,8 @@ export default function ReviewInputsScreen() {
 
   return (
     <>
-      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
-      <SafeAreaView className="flex-1 bg-white" edges={["top", "right", "bottom", "left"]}>
+      <StatusBar style="dark" backgroundColor="#EAE8FA" translucent={false} />
+      <SafeAreaView className="flex-1 bg-lavender" edges={["top", "right", "bottom", "left"]}>
       <View className="flex-row items-center justify-between border-b border-neutral-100 px-4 pb-3.5 pt-2 sm:px-5 md:px-6">
         <Pressable
           onPress={() => router.back()}
@@ -131,7 +131,7 @@ export default function ReviewInputsScreen() {
               onToggle={() => setImageOpen((v) => !v)}
             >
               {imageUri ? (
-                <View className="h-52 overflow-hidden rounded-2xl border border-neutral-200 bg-slate-50 sm:h-56 md:h-60">
+                <View className="h-52 overflow-hidden rounded-2xl border border-neutral-200 bg-white sm:h-56 md:h-60">
                   <Image source={{ uri: imageUri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
                 </View>
               ) : (

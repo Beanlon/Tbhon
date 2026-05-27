@@ -2,8 +2,12 @@ import "../global.css";
 import { Stack } from "expo-router";
 import React, { useEffect } from 'react';
 import { Asset } from 'expo-asset';
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { LogBox } from "react-native";
+import { TBHON_ICON, TBHON_LOGO } from "../constants/branding";
+
+void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // expo-keep-awake (splash / camera / recording) can reject on some Android + Expo Go
 // builds; the app usually still works — avoid a blocking dev error overlay.
@@ -17,7 +21,7 @@ if (__DEV__) {
 export default function RootLayout() {
   useEffect(() => {
     // Warm up the logo asset so it is available immediately when screens mount
-    Asset.loadAsync(require('../assets/images/Tbhon assets/Tbhon Logo.png')).catch(() => {});
+    Asset.loadAsync([TBHON_LOGO, TBHON_ICON]).catch(() => {});
   }, []);
 
   useEffect(() => {

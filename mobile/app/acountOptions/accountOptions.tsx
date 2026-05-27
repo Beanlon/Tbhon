@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import CachedImage from "../components/CachedImage";
+import { TBHON_LOGO } from "../../constants/branding";
 import { useRouter } from "expo-router";
 
 const cardShadow = {
@@ -33,7 +34,7 @@ export default function AccountOptions() {
         <View className="mt-2 mb-3 w-full items-center sm:mb-4">
           <View className="w-3/4 max-w-72" style={{ aspectRatio: 1 }}>
             <CachedImage
-              source={require("../../assets/images/Tbhon assets/Tbhon Logo.png")}
+              source={TBHON_LOGO}
               className="size-full"
               resizeMode="contain"
             />
