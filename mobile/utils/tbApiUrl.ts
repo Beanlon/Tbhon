@@ -1,9 +1,14 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 
+function isRemoteTunnelHost(host: string): boolean {
+  const lower = host.toLowerCase();
+  return lower.includes("trycloudflare.com") || lower.includes("exp.direct") || lower.includes("expo.dev");
+}
+
 /**
  * Metro / dev server host from Expo (e.g. "192.168.1.9:8081").
- * Same machine as your ML API when you run both on the PC — use for phone + Expo Go on LAN.
+ * Same machine as your ML API when you run both on the PC - use for phone + Expo Go on LAN.
  */
 function devPackagerLanHost(): string | null {
   const uri = Constants.expoConfig?.hostUri;
@@ -11,8 +16,7 @@ function devPackagerLanHost(): string | null {
   const host = uri.split(":")[0]?.trim();
   if (!host) return null;
   if (host === "localhost" || host === "127.0.0.1") return null;
-  const lower = host.toLowerCase();
-  if (lower.includes("exp.direct") || lower.includes("expo.dev")) return null;
+  if (isRemoteTunnelHost(host)) return null;
   return host;
 }
 
@@ -38,7 +42,7 @@ export function resolveTbApiBaseUrl(): string {
   }
   if (Constants.isDevice && __DEV__) {
     console.warn(
-      "[TB API] Using http://127.0.0.1:8000 on a physical device — connection will fail unless the API runs ON the phone. Set EXPO_PUBLIC_TB_API_URL=http://<PC_LAN_IP>:8000 or open Expo in LAN mode (not tunnel)."
+      "[TB API] Using http://127.0.0.1:8000 on a physical device - connection will fail unless the API runs ON the phone. Set EXPO_PUBLIC_TB_API_URL=http://<PC_LAN_IP>:8000 or open Expo in LAN mode (not tunnel)."
     );
   }
   return "http://127.0.0.1:8000";
@@ -53,8 +57,7 @@ function devMetroHost(): string | null {
   if (!uri || typeof uri !== "string") return null;
   const [host] = uri.split(":").map((s) => s.trim());
   if (!host) return null;
-  const lower = host.toLowerCase();
-  if (lower.includes("exp.direct") || lower.includes("expo.dev")) return null;
+  if (isRemoteTunnelHost(host)) return null;
   return host;
 }
 
@@ -82,9 +85,10 @@ function devMetroTbProxyBases(): string[] {
 
 /**
  * Ordered list of base URLs to try for /predict and /check-quality.
- * 1) Metro `/_tb_infer` proxy (same port as Expo — usually not firewall-blocked)
- * 2) Direct :8000 from resolveTbApiBaseUrl()
- * 3) On physical Android, http://127.0.0.1:8000 (adb reverse tcp:8000 tcp:8000)
+ * 1) Explicit EXPO_PUBLIC_TB_API_URL when present (Cloudflare / LAN direct)
+ * 2) Metro `/_tb_infer` proxy on LAN (same port as Expo)
+ * 3) Direct :8000 from resolveTbApiBaseUrl()
+ * 4) On physical Android, http://127.0.0.1:8000 (adb reverse tcp:8000 tcp:8000)
  */
 export function resolveTbApiBaseUrls(): string[] {
   const seen = new Set<string>();
@@ -99,14 +103,13 @@ export function resolveTbApiBaseUrls(): string[] {
 
   const fromEnv =
     typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_TB_API_URL as string | undefined) : undefined;
-  // In dev, always include Metro proxy candidates even when an explicit URL exists.
-  // This avoids hard failures when direct :8000 is blocked but Expo's port is reachable.
-  for (const proxy of devMetroTbProxyBases()) add(proxy);
   if (fromEnv && String(fromEnv).trim().length > 0) {
     add(String(fromEnv));
-  } else {
-    add(resolveTbApiBaseUrl());
   }
+  // Metro proxy only works for LAN/dev-server hosts. Remote Expo tunnels expose
+  // HTTPS :443, not the local Metro port, so those proxy URLs would hang phones.
+  for (const proxy of devMetroTbProxyBases()) add(proxy);
+  if (!fromEnv || String(fromEnv).trim().length === 0) add(resolveTbApiBaseUrl());
   if (Platform.OS === "android" && Constants.isDevice === true) {
     add(LOOPBACK_API);
   }

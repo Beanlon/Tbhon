@@ -1,5 +1,9 @@
+import * as FileSystem from "expo-file-system/legacy";
 import { resolveApiBaseUrl } from "../utils/apiBaseUrl";
 import { getAuthToken } from "../utils/authStorage";
+
+const API_REQUEST_TIMEOUT_MS = 15000;
+const RAW_UPLOAD_TIMEOUT_MS = 20000;
 
 export type ApiUserPayload = {
   userId: string;
@@ -34,6 +38,15 @@ export class ApiError extends Error {
 
 type JsonBody = Record<string, unknown>;
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs),
+    ),
+  ]);
+}
+
 async function parseErrorMessage(response: Response): Promise<string> {
   try {
     const data = (await response.json()) as unknown;
@@ -67,11 +80,19 @@ export async function apiRequest<T>(
     (headers as Record<string, string>)["Authorization"] = `Bearer ${authHeader}`;
   }
   const { json: bodyJson, ...rest } = options;
-  const response = await fetch(url, {
-    ...rest,
-    headers,
-    body: bodyJson !== undefined ? JSON.stringify(bodyJson) : rest.body,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...rest,
+      headers,
+      signal: controller.signal,
+      body: bodyJson !== undefined ? JSON.stringify(bodyJson) : rest.body,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new ApiError(response.status, await parseErrorMessage(response));
   }
@@ -152,12 +173,127 @@ export type CompleteScreeningPayload = {
   phlegmProbs?: string;
 };
 
-/** Persist a finished screening run for the authenticated user (no-op token required). */
+/** Returned from POST /screenings with the rows the server just created. */
+export type CompleteScreeningResponse = {
+  session: {
+    sessionId: string;
+    coughRecordings: Array<{ recordingId: string; mimeType: string; byteSize: number | null }>;
+    sputumImage: { imageId: string; mimeType: string; byteSize: number | null } | null;
+  };
+};
+
+/** Persist a finished screening run for the authenticated user. */
 export async function postCompleteScreening(payload: CompleteScreeningPayload) {
-  return apiRequest<{ session: unknown }>("/screenings", {
+  return apiRequest<CompleteScreeningResponse>("/screenings", {
     method: "POST",
     json: { ...payload } as JsonBody,
   });
+}
+
+/* ------------------------------------------------------------------------
+ * Raw media uploads
+ *
+ * After `postCompleteScreening` the backend has metadata rows but the actual
+ * audio / image bytes still live on this phone. These helpers upload those
+ * bytes so the same account can replay the cough or view the sputum image on
+ * any other device. The backend stores the bytes in the same `cough_recordings`
+ * / `sputum_images` tables (LONGBLOB columns).
+ * ----------------------------------------------------------------------- */
+
+function pickAudioMimeAndName(uri: string): { name: string; mimeType: string } {
+  const lower = uri.toLowerCase();
+  if (lower.endsWith(".m4a") || lower.endsWith(".mp4") || lower.endsWith(".aac")) {
+    return { name: "cough.m4a", mimeType: "audio/mp4" };
+  }
+  if (lower.endsWith(".3gp") || lower.endsWith(".3gpp")) {
+    return { name: "cough.3gp", mimeType: "audio/3gpp" };
+  }
+  if (lower.endsWith(".caf")) return { name: "cough.caf", mimeType: "audio/x-caf" };
+  if (lower.endsWith(".ogg") || lower.endsWith(".opus")) {
+    return { name: "cough.ogg", mimeType: "audio/ogg" };
+  }
+  return { name: "cough.wav", mimeType: "audio/wav" };
+}
+
+function pickImageMimeAndName(uri: string): { name: string; mimeType: string } {
+  const lower = uri.toLowerCase();
+  if (lower.endsWith(".png")) return { name: "sputum.png", mimeType: "image/png" };
+  if (lower.endsWith(".webp")) return { name: "sputum.webp", mimeType: "image/webp" };
+  if (lower.endsWith(".heic") || lower.endsWith(".heif")) {
+    return { name: "sputum.heic", mimeType: "image/heic" };
+  }
+  return { name: "sputum.jpg", mimeType: "image/jpeg" };
+}
+
+function normalizeLocalUri(uri: string): string {
+  const trimmed = uri.trim();
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
+  return hasScheme ? trimmed : `file://${trimmed}`;
+}
+
+/** POST /screenings/:sessionId/cough-recordings/:recordingId/raw (multipart). */
+export async function uploadCoughRecordingRaw(args: {
+  sessionId: string;
+  recordingId: string;
+  localUri: string;
+}): Promise<void> {
+  const token = await getAuthToken();
+  if (!token) throw new ApiError(401, "Not signed in");
+
+  const base = resolveApiBaseUrl();
+  const url = `${base}/screenings/${encodeURIComponent(args.sessionId)}/cough-recordings/${encodeURIComponent(args.recordingId)}/raw`;
+  const { name, mimeType } = pickAudioMimeAndName(args.localUri);
+  const result = await withTimeout(
+    FileSystem.uploadAsync(url, normalizeLocalUri(args.localUri), {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType,
+      parameters: { filename: name },
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    RAW_UPLOAD_TIMEOUT_MS,
+    "Cough upload",
+  );
+  if (result.status < 200 || result.status >= 300) {
+    throw new ApiError(result.status, `Cough upload failed: HTTP ${result.status}`);
+  }
+}
+
+/** POST /screenings/:sessionId/sputum-image/raw (multipart). */
+export async function uploadSputumImageRaw(args: {
+  sessionId: string;
+  localUri: string;
+}): Promise<void> {
+  const token = await getAuthToken();
+  if (!token) throw new ApiError(401, "Not signed in");
+
+  const base = resolveApiBaseUrl();
+  const url = `${base}/screenings/${encodeURIComponent(args.sessionId)}/sputum-image/raw`;
+  const { name, mimeType } = pickImageMimeAndName(args.localUri);
+  const result = await withTimeout(
+    FileSystem.uploadAsync(url, normalizeLocalUri(args.localUri), {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType,
+      parameters: { filename: name },
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    RAW_UPLOAD_TIMEOUT_MS,
+    "Sputum upload",
+  );
+  if (result.status < 200 || result.status >= 300) {
+    throw new ApiError(result.status, `Sputum upload failed: HTTP ${result.status}`);
+  }
+}
+
+/** Build an absolute URL for a media-stream endpoint returned by the API. */
+export function resolveMediaUrl(pathOrUrl: string | null | undefined): string | null {
+  if (!pathOrUrl) return null;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  const base = resolveApiBaseUrl();
+  return `${base}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
 }
 
 /** Row returned by GET /screenings (list). */
@@ -196,12 +332,28 @@ export type ScreeningSessionDetail = {
     question: { questionId: string; category: string; questionText: string };
   }>;
   coughRecordings: Array<{
-    fileUri: string;
+    recordingId?: string;
+    fileUri: string | null;
+    /** Server-relative URL to stream the raw audio bytes (with Bearer auth). */
+    fileUrl?: string | null;
+    /** True when the backend has the original audio bytes for this row. */
+    hasRawData?: boolean;
+    mimeType?: string;
+    byteSize?: number | null;
+    source?: string | null;
     qualityCheck: { ok: boolean; label: string | null; reasonsJson: unknown } | null;
     audioPrediction: { probTb: number; probNoTb: number } | null;
   }>;
   sputumImage: {
-    fileUri: string;
+    imageId?: string;
+    fileUri: string | null;
+    /** Server-relative URL to stream the raw image bytes (with Bearer auth). */
+    fileUrl?: string | null;
+    /** True when the backend has the original photo bytes for this row. */
+    hasRawData?: boolean;
+    mimeType?: string;
+    byteSize?: number | null;
+    source?: string | null;
     phlegmPrediction: {
       predictedLoad: string;
       confidence: number;

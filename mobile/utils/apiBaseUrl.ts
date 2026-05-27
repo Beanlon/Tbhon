@@ -1,6 +1,11 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 
+function isRemoteTunnelHost(host: string): boolean {
+  const lower = host.toLowerCase();
+  return lower.includes("trycloudflare.com") || lower.includes("exp.direct") || lower.includes("expo.dev");
+}
+
 /**
  * Metro / dev server host from Expo (same machine as LAN backend).
  */
@@ -10,8 +15,7 @@ function devPackagerLanHost(): string | null {
   const host = uri.split(":")[0]?.trim();
   if (!host) return null;
   if (host === "localhost" || host === "127.0.0.1") return null;
-  const lower = host.toLowerCase();
-  if (lower.includes("exp.direct") || lower.includes("expo.dev")) return null;
+  if (isRemoteTunnelHost(host)) return null;
   return host;
 }
 

@@ -7,6 +7,8 @@ import NetInfo from "@react-native-community/netinfo";
 import * as FileSystem from "expo-file-system/legacy";
 import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
 
+const ANALYSIS_UPLOAD_TIMEOUT_MS = 12000;
+
 /** URLs that only work on the same LAN as the PC (or USB tricks), not on carrier mobile data. */
 const LAN_OR_LOCALHOST = /https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|127\.0\.0\.1|localhost)(:|\/|$)/i;
 
@@ -47,6 +49,15 @@ function pickImageMimeAndName(uri: string): { name: string; mimeType: string } {
   if (lower.endsWith(".heic") || lower.endsWith(".heif")) return { name: "phlegm.heic", mimeType: "image/heic" };
   if (lower.endsWith(".jpeg") || lower.endsWith(".jpg")) return { name: "phlegm.jpg", mimeType: "image/jpeg" };
   return { name: "phlegm.jpg", mimeType: "image/jpeg" };
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs),
+    ),
+  ]);
 }
 
 type RiskLevel = "low" | "moderate" | "high";
@@ -131,13 +142,17 @@ async function uploadImagePhlegmFs(base: string, uri: string): Promise<any> {
   const fileUri = normalizeFileUri(raw);
   const { name, mimeType } = pickImageMimeAndName(fileUri);
   const url = `${base.replace(/\/$/, "")}/predict-phlegm`;
-  const result = await FileSystem.uploadAsync(url, fileUri, {
-    httpMethod: "POST",
-    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-    fieldName: "file",
-    mimeType,
-    parameters: { filename: name },
-  });
+  const result = await withTimeout(
+    FileSystem.uploadAsync(url, fileUri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType,
+      parameters: { filename: name },
+    }),
+    ANALYSIS_UPLOAD_TIMEOUT_MS,
+    "predict-phlegm",
+  );
   return parsePredictResponseBody(result.status, result.body ?? "");
 }
 
@@ -236,13 +251,17 @@ async function uploadAudioForPredict(base: string, uri: string, extras?: Record<
   const fileUri = normalizeFileUri(uri);
   const { name, mimeType } = pickMimeAndName(fileUri);
   const url = `${base.replace(/\/$/, "")}/predict`;
-  const result = await FileSystem.uploadAsync(url, fileUri, {
-    httpMethod: "POST",
-    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-    fieldName: "file",
-    mimeType,
-    parameters: { filename: name, ...(extras ?? {}) },
-  });
+  const result = await withTimeout(
+    FileSystem.uploadAsync(url, fileUri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType,
+      parameters: { filename: name, ...(extras ?? {}) },
+    }),
+    ANALYSIS_UPLOAD_TIMEOUT_MS,
+    "predict",
+  );
   if (result.status < 200 || result.status >= 300) {
     throw new Error(`predict failed: HTTP ${result.status} ${result.body?.slice(0, 200) ?? ""}`);
   }
