@@ -187,7 +187,7 @@ function TagPill({ label, backgroundColor, color }: Tag) {
 
 function BulletStat({ value, label, color }: Stat) {
   return (
-    <View className="flex-1 items-center rounded-xl bg-[#f8f8f8] px-2.5 py-3.5">
+    <View className="flex-1 items-center rounded-xl bg-white px-2.5 py-3.5">
       <Text className="text-2xl font-extrabold" style={{ color }}>
         {value}
       </Text>
@@ -336,7 +336,7 @@ export function LearnContent() {
             {symptoms.map((symptom) => (
               <View
                 key={symptom.name}
-                className="flex-row items-center gap-2.5 rounded-xl bg-[#f8f8f8] px-3 py-2.5"
+                className="flex-row items-center gap-2.5 rounded-xl bg-white px-3 py-2.5"
               >
                 <View
                   className="h-2 w-2 shrink-0 rounded-full"

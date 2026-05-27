@@ -1,4 +1,5 @@
 import { Stack } from "expo-router";
+import { APP_SCREEN_BACKGROUND } from "../../constants/palette";
 
 /**
  * Per-screen `StatusBar` (see each route) matches home/login: dark icons on light
@@ -10,8 +11,7 @@ import { Stack } from "expo-router";
  * before their `SafeAreaView` with `bg-navy` paints over the stack container.
  */
 const NAVY = "#0B1530";
-const LIGHT = "#FFFFFF";
-const SLATE_50 = "#F8FAFC";
+const LIGHT = APP_SCREEN_BACKGROUND;
 
 export default function ScreeningLayout() {
   return (
@@ -43,7 +43,7 @@ export default function ScreeningLayout() {
       />
       <Stack.Screen
         name="details"
-        options={{ contentStyle: { backgroundColor: SLATE_50 } }}
+        options={{ contentStyle: { backgroundColor: LIGHT } }}
       />
       <Stack.Screen
         name="result"

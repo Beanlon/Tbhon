@@ -26,6 +26,8 @@ import DateTimePicker, {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import CachedImage from "../components/CachedImage";
+import { TBHON_ICON } from "../../constants/branding";
+import { palette } from "../../constants/palette";
 import { useRouter } from "expo-router";
 import { ApiError, postRegister } from "../../services/backendApi";
 import { saveAuthToken } from "../../utils/authStorage";
@@ -37,50 +39,162 @@ import {
   formatBirthdateDisplayFromDate,
   formatSignupBirthdateInput,
   normalizeGenderForApi,
-  normalizePhilippineMobile,
+  normalizeSignupMobile,
   SIGNUP_BIRTHDATE_DISPLAY_MAX_LEN,
   signupBirthdateToIso,
+  signupEmailValidationError,
 } from "../../utils/signupHelpers";
+import {
+  SIGNUP_PASSWORD_REQUIREMENTS,
+  signupPasswordValidationError,
+} from "../../utils/passwordPolicy";
 
-// ─── TOKEN SYSTEM ─────────────────────────────────────────────────────────
+// ─── Sign-up white screen + dark form card ───────────────────────────────
 const tk = {
-  navy: "#1C1F4A",
-  navyDeep: "#13163A",
-  indigo: "#3B3F8C",
-  violet: "#5B5FC7",
-  violetLight: "#7B80E0",
-  violetGlow: "rgba(91,95,199,0.13)",
-  surface: "#F7F7FC",
-  border: "#E2E4F3",
-  textPrimary: "#1C1F4A",
-  textSub: "#6B6F9C",
-  textMuted: "#9498BC",
+  screenBg: "#FFFFFF",
+  cardBg: palette.signupBg,
+  heroTitle: palette.deepNavy,
+  heroSub: "#5C6294",
+  navy: palette.navy,
+  navyDeep: palette.deepNavy,
+  indigo: palette.indigo,
+  violet: palette.softViolet,
+  violetLight: palette.lavender,
+  violetGlow: "rgba(123, 111, 216, 0.14)",
+  textPrimary: "#FFFFFF",
+  textSub: "rgba(255, 255, 255, 0.76)",
+  textMuted: "rgba(255, 255, 255, 0.52)",
+  fieldLabel: "#FFFFFF",
+  icon: palette.lavender,
+  selectionColor: "rgba(255, 255, 255, 0.28)",
+  cursorColor: palette.lavender,
+  surface: "rgba(255, 255, 255, 0.09)",
+  fieldFocusedBg: "rgba(255, 255, 255, 0.14)",
+  border: "rgba(255, 255, 255, 0.22)",
+  dropdownBg: "#2E3272",
+  dropdownBorder: "rgba(255, 255, 255, 0.18)",
   white: "#FFFFFF",
-  error: "#D94040",
-  errorBg: "#FFF1F1",
-  errorBorder: "#F5AAAA",
-  errorGlow: "rgba(217,64,64,0.12)",
-  success: "#1D9E75",
-  successBg: "#F0FAF6",
-  successBorder: "#7DCFB3",
+  primaryBtnBg: palette.lavender,
+  primaryBtnText: palette.deepNavy,
+  error: "#FF8A8A",
+  errorBg: "rgba(217, 64, 64, 0.18)",
+  errorBorder: "#FF9B9B",
+  errorGlow: "rgba(217, 64, 64, 0.2)",
+  success: "#5DD4A8",
+  successBg: "rgba(29, 158, 117, 0.2)",
+  successBorder: "#5DD4A8",
+  secondaryBtnBg: "rgba(255, 255, 255, 0.1)",
+  secondaryBtnBorder: "rgba(255, 255, 255, 0.28)",
 };
 
 const GENDERS = ["Male", "Female", "Intersex"] as const;
 type Gender = (typeof GENDERS)[number] | "";
 
-const COUNTRIES = [
-  { name: "Philippines", code: "PH", dialCode: "+63", flag: "🇵🇭" },
-  { name: "United States", code: "US", dialCode: "+1", flag: "🇺🇸" },
-  { name: "Canada", code: "CA", dialCode: "+1", flag: "🇨🇦" },
-  { name: "United Kingdom", code: "GB", dialCode: "+44", flag: "🇬🇧" },
-  { name: "Australia", code: "AU", dialCode: "+61", flag: "🇦🇺" },
-  { name: "Singapore", code: "SG", dialCode: "+65", flag: "🇸🇬" },
-  { name: "Malaysia", code: "MY", dialCode: "+60", flag: "🇲🇾" },
-  { name: "Thailand", code: "TH", dialCode: "+66", flag: "🇹🇭" },
-  { name: "Vietnam", code: "VN", dialCode: "+84", flag: "🇻🇳" },
-  { name: "Indonesia", code: "ID", dialCode: "+62", flag: "🇮🇩" },
-] as const;
-type Country = (typeof COUNTRIES)[number];
+const SIGNUP_STEP_NUMBERS = [1, 2] as const;
+const SIGNUP_STEP_COUNT = SIGNUP_STEP_NUMBERS.length;
+
+type Country = {
+  name: string;
+  code: string;
+  dialCode: string;
+  flag: string;
+  placeholder: string;
+  invalidMessage: string;
+  validate: (digits: string) => boolean;
+};
+
+const COUNTRIES: readonly Country[] = [
+  {
+    name: "Philippines",
+    code: "PH",
+    dialCode: "+63",
+    flag: "🇵🇭",
+    placeholder: "9XX XXX XXXX",
+    invalidMessage: "Enter a valid Philippine mobile number.",
+    validate: (d) => /^9\d{9}$/.test(d),
+  },
+  {
+    name: "United States",
+    code: "US",
+    dialCode: "+1",
+    flag: "🇺🇸",
+    placeholder: "(555) 555-5555",
+    invalidMessage: "Enter a valid 10-digit US number.",
+    validate: (d) => /^\d{10}$/.test(d),
+  },
+  {
+    name: "Canada",
+    code: "CA",
+    dialCode: "+1",
+    flag: "🇨🇦",
+    placeholder: "(555) 555-5555",
+    invalidMessage: "Enter a valid 10-digit Canadian number.",
+    validate: (d) => /^\d{10}$/.test(d),
+  },
+  {
+    name: "United Kingdom",
+    code: "GB",
+    dialCode: "+44",
+    flag: "🇬🇧",
+    placeholder: "7XXX XXXXXX",
+    invalidMessage: "Enter a valid UK mobile number.",
+    validate: (d) => /^7\d{9}$/.test(d),
+  },
+  {
+    name: "Australia",
+    code: "AU",
+    dialCode: "+61",
+    flag: "🇦🇺",
+    placeholder: "4XX XXX XXX",
+    invalidMessage: "Enter a valid Australian mobile number.",
+    validate: (d) => /^4\d{8}$/.test(d),
+  },
+  {
+    name: "Singapore",
+    code: "SG",
+    dialCode: "+65",
+    flag: "🇸🇬",
+    placeholder: "8XXX XXXX",
+    invalidMessage: "Enter a valid Singapore mobile number.",
+    validate: (d) => /^[89]\d{7}$/.test(d),
+  },
+  {
+    name: "Malaysia",
+    code: "MY",
+    dialCode: "+60",
+    flag: "🇲🇾",
+    placeholder: "1X XXX XXXX",
+    invalidMessage: "Enter a valid Malaysian mobile number.",
+    validate: (d) => /^1\d{8,9}$/.test(d),
+  },
+  {
+    name: "Thailand",
+    code: "TH",
+    dialCode: "+66",
+    flag: "🇹🇭",
+    placeholder: "8X XXX XXXX",
+    invalidMessage: "Enter a valid Thai mobile number.",
+    validate: (d) => /^[689]\d{8}$/.test(d),
+  },
+  {
+    name: "Vietnam",
+    code: "VN",
+    dialCode: "+84",
+    flag: "🇻🇳",
+    placeholder: "9XX XXX XXXX",
+    invalidMessage: "Enter a valid Vietnamese mobile number.",
+    validate: (d) => /^[35789]\d{8}$/.test(d),
+  },
+  {
+    name: "Indonesia",
+    code: "ID",
+    dialCode: "+62",
+    flag: "🇮🇩",
+    placeholder: "8XX XXXX XXXX",
+    invalidMessage: "Enter a valid Indonesian mobile number.",
+    validate: (d) => /^8\d{9,11}$/.test(d),
+  },
+];
 
 interface FieldProps {
   label: string;
@@ -98,6 +212,10 @@ interface FieldProps {
   error?: string;
   touched?: boolean;
   containerStyle?: ViewStyle;
+  onBlur?: () => void;
+  autoCapitalize?: React.ComponentProps<typeof TextInput>["autoCapitalize"];
+  autoCorrect?: boolean;
+  autoComplete?: React.ComponentProps<typeof TextInput>["autoComplete"];
 }
 
 function Field({
@@ -116,20 +234,32 @@ function Field({
   error,
   touched,
   containerStyle,
+  onBlur: onBlurProp,
+  autoCapitalize,
+  autoCorrect,
+  autoComplete,
 }: FieldProps) {
   const [focused, setFocused] = useState(false);
   const hasError = touched && !!error;
   const isValid = touched && !error && value.length > 0;
 
-  const labelColor = hasError ? tk.error : focused ? tk.violet : tk.textMuted;
+  const labelColor = hasError ? tk.error : tk.fieldLabel;
   const borderColor = hasError ? tk.errorBorder : focused ? tk.violetLight : isValid ? tk.successBorder : tk.border;
-  const backgroundColor = hasError ? tk.errorBg : focused ? tk.white : isValid ? tk.successBg : tk.surface;
+  const backgroundColor = hasError
+    ? tk.errorBg
+    : focused
+      ? tk.fieldFocusedBg
+      : isValid
+        ? tk.successBg
+        : tk.surface;
 
   return (
     <View ref={fieldRef} style={[styles.fieldContainer, containerStyle]} collapsable={false}>
-      <Text style={[styles.fieldLabel, { color: labelColor }]}>
-        {label}
-      </Text>
+      {label ? (
+        <Text style={[styles.fieldLabel, { color: labelColor }]}>
+          {label}
+        </Text>
+      ) : null}
       <Pressable
         onPress={onPress}
         style={[
@@ -152,11 +282,19 @@ function Field({
           value={value}
           placeholder={placeholder}
           placeholderTextColor={tk.textMuted}
+          selectionColor={tk.selectionColor}
+          cursorColor={tk.cursorColor}
           keyboardType={keyboardType}
           secureTextEntry={secureTextEntry}
           editable={editable}
+          autoCapitalize={autoCapitalize}
+          autoCorrect={autoCorrect}
+          autoComplete={autoComplete}
           onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onBlur={() => {
+            setFocused(false);
+            onBlurProp?.();
+          }}
           onChangeText={onChange}
           style={[
             styles.fieldInput,
@@ -243,17 +381,15 @@ function validateStep1(f: FormData): ErrorMap {
   return e;
 }
 
-function validateStep2(f: FormData): ErrorMap {
+function validateStep2(f: FormData, country: Country): ErrorMap {
   const e: ErrorMap = {};
-  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!f.email.trim()) e.email = "Email address is required.";
-  else if (!emailRe.test(f.email)) e.email = "Enter a valid email address.";
+  const emailError = signupEmailValidationError(f.email);
+  if (emailError) e.email = emailError;
+  const phoneDigits = f.phone.replace(/\D/g, "");
   if (!f.phone.trim()) e.phone = "Phone number is required.";
-  else if (!/^9\d{9}$/.test(f.phone.replace(/\s/g, "")))
-    e.phone = "Enter a valid PH mobile number.";
-  if (!f.password) e.password = "Password is required.";
-  else if (f.password.length < 8)
-    e.password = "Password must be at least 8 characters.";
+  else if (!country.validate(phoneDigits)) e.phone = country.invalidMessage;
+  const passwordError = signupPasswordValidationError(f.password);
+  if (passwordError) e.password = passwordError;
   if (!f.confirm) e.confirm = "Please confirm your password.";
   else if (f.confirm !== f.password) e.confirm = "Passwords do not match.";
   return e;
@@ -266,11 +402,11 @@ export default function SignUp() {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const compactScreen = windowHeight < 760 || windowWidth < 390;
   const heroMinHeight = compactScreen
-    ? Math.max(220, windowHeight * 0.22)
-    : Math.max(250, windowHeight * 0.25);
-  const sheetTopOverlap = compactScreen ? -18 : -24;
+    ? Math.max(168, windowHeight * 0.17)
+    : Math.max(188, windowHeight * 0.19);
+  const sheetTopOverlap = compactScreen ? -44 : -52;
   const sheetPaddingHorizontal = compactScreen ? 16 : 18;
-  const sheetPaddingTop = compactScreen ? 24 : 28;
+  const sheetPaddingTop = compactScreen ? 20 : 24;
   const sheetPaddingBottom = compactScreen ? 20 : 28;
 
   const authMarkSize = useMemo(() => {
@@ -349,12 +485,16 @@ export default function SignUp() {
     return innerContentH > scrollViewportH + SCROLL_FUDGE;
   }, [scrollViewportH, innerContentH]);
 
-  // Field setter (NO automatic touched tracking)
   const f = (k: keyof FormData) => (v: string) => {
     setForm((p) => ({ ...p, [k]: v }));
   };
 
-  const errors = step === 1 ? validateStep1(form) : validateStep2(form);
+  const touchField = (k: keyof FormData) => () => {
+    setTouched((p) => ({ ...p, [k]: true }));
+  };
+
+  const errors =
+    step === 1 ? validateStep1(form) : validateStep2(form, selectedCountry);
 
   const triggerShake = (keys: (keyof FormData)[]) => {
     const s: Partial<Record<keyof FormData, boolean>> = {};
@@ -514,7 +654,7 @@ export default function SignUp() {
   };
 
   const handleCreateAccount = async () => {
-    const errs = validateStep2(form);
+    const errs = validateStep2(form, selectedCountry);
     const allKeys: (keyof FormData)[] = ["email", "phone", "password", "confirm"];
     setTouched((p) => {
       const n = { ...p };
@@ -547,7 +687,10 @@ export default function SignUp() {
 
     setSubmittingAccount(true);
     try {
-      const phoneNumber = normalizePhilippineMobile(form.phone);
+      const phoneNumber = normalizeSignupMobile(
+        form.phone,
+        selectedCountry.dialCode,
+      );
       const { token, user } = await postRegister({
         email: form.email.trim(),
         password: form.password,
@@ -630,7 +773,7 @@ export default function SignUp() {
       }}
     >
       <SafeAreaView
-        style={[styles.root, { backgroundColor: tk.navy }]}
+        style={[styles.root, { backgroundColor: tk.screenBg }]}
         edges={["top", "right", "bottom", "left"]}
       >
       <ScrollView
@@ -657,7 +800,7 @@ export default function SignUp() {
             <View style={styles.heroCircleSmall} />
             <View style={styles.heroTitleRow}>
               <CachedImage
-                source={require("../../assets/images/Tbhon assets/TBhon icon.png")}
+                source={TBHON_ICON}
                 style={{ width: authMarkSize, height: authMarkSize }}
                 resizeMode="contain"
               />
@@ -665,55 +808,6 @@ export default function SignUp() {
                 <Text style={styles.heroTitle}>Create Account</Text>
                 <Text style={styles.heroSubtitle}>TBHON Health Platform</Text>
               </View>
-            </View>
-
-            <View style={styles.stepRow}>
-              {[
-                { n: 1 as const, label: "Personal Info" },
-                { n: 2 as const, label: "Account Setup" },
-              ].map((item) => {
-                const active = step === item.n;
-                const completed = step > item.n;
-                return (
-                  <View
-                    key={item.n}
-                    style={[
-                      styles.stepPill,
-                      active && styles.stepPillActive,
-                      completed && styles.stepPillComplete,
-                      { flex: active ? 1.2 : 1 },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.stepDot,
-                        active && styles.stepDotActive,
-                        completed && styles.stepDotComplete,
-                      ]}
-                    >
-                      {completed ? (
-                        <Ionicons
-                          name="checkmark"
-                          size={12}
-                          color={active ? tk.navy : tk.violet}
-                        />
-                      ) : (
-                        <Text
-                          style={[
-                            styles.stepDotText,
-                            active && styles.stepDotTextActive,
-                          ]}
-                        >
-                          {item.n}
-                        </Text>
-                      )}
-                    </View>
-                    {active ? (
-                      <Text style={styles.stepPillLabel}>{item.label}</Text>
-                    ) : null}
-                  </View>
-                );
-              })}
             </View>
           </View>
 
@@ -728,6 +822,31 @@ export default function SignUp() {
               },
             ]}
           >
+            {step <= SIGNUP_STEP_COUNT ? (
+              <View style={styles.stepProgress}>
+                <View style={styles.stepBarRow}>
+                  {SIGNUP_STEP_NUMBERS.map((n) => {
+                    const active = step >= n;
+                    return (
+                      <View
+                        key={n}
+                        style={[
+                          styles.stepBarSegmentWrap,
+                          active && styles.stepBarSegmentGlow,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.stepBarSegment,
+                            active && styles.stepBarSegmentActive,
+                          ]}
+                        />
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
             <Animated.View style={[styles.stepCard, stepCardAnimation]}>
               {step === 1 && (
                 <View style={styles.formSection}>
@@ -751,7 +870,7 @@ export default function SignUp() {
                         color={
                           touched.firstName && errors.firstName
                             ? tk.error
-                            : tk.violet
+                            : tk.icon
                         }
                       />
                     }
@@ -772,7 +891,7 @@ export default function SignUp() {
                         color={
                           touched.lastName && errors.lastName
                             ? tk.error
-                            : tk.violet
+                            : tk.icon
                         }
                       />
                     }
@@ -795,7 +914,7 @@ export default function SignUp() {
                         color={
                           touched.birthdate && errors.birthdate
                             ? tk.error
-                            : tk.violet
+                            : tk.icon
                         }
                       />
                     }
@@ -811,7 +930,7 @@ export default function SignUp() {
                     value={form.gender}
                     onChange={f("gender")}
                     fieldRef={(el) => { fieldRefsMap.gender = el; }}
-                    suffix={<Ionicons name="chevron-down" size={18} color={tk.violet} />}
+                    suffix={<Ionicons name="chevron-down" size={18} color={tk.icon} />}
                     icon={
                       <Ionicons
                         name="transgender-outline"
@@ -819,7 +938,7 @@ export default function SignUp() {
                         color={
                           touched.gender && errors.gender
                             ? tk.error
-                            : tk.violet
+                            : tk.icon
                         }
                       />
                     }
@@ -840,7 +959,7 @@ export default function SignUp() {
                         name="home-outline"
                         size={17}
                         color={
-                          touched.street && errors.street ? tk.error : tk.violet
+                          touched.street && errors.street ? tk.error : tk.icon
                         }
                       />
                     }
@@ -861,7 +980,7 @@ export default function SignUp() {
                         color={
                           touched.barangay && errors.barangay
                             ? tk.error
-                            : tk.violet
+                            : tk.icon
                         }
                       />
                     }
@@ -880,7 +999,7 @@ export default function SignUp() {
                         name="location-outline"
                         size={17}
                         color={
-                          touched.city && errors.city ? tk.error : tk.violet
+                          touched.city && errors.city ? tk.error : tk.icon
                         }
                       />
                     }
@@ -889,21 +1008,15 @@ export default function SignUp() {
                   />
 
                   <Pressable
-                    style={[
-                      styles.primaryButton,
-                      { backgroundColor: tk.navy },
-                    ]}
+                    style={styles.primaryButton}
                     onPress={handleContinue}
                   >
-                    <Text
-                      style={[
-                        styles.primaryButtonText,
-                        { color: tk.white },
-                      ]}
-                    >
-                      CONTINUE
-                    </Text>
-                    <Ionicons name="arrow-forward" size={17} color={tk.white} />
+                    <Text style={styles.primaryButtonText}>CONTINUE</Text>
+                    <Ionicons
+                      name="arrow-forward"
+                      size={17}
+                      color={tk.primaryBtnText}
+                    />
                   </Pressable>
 
                   <View style={styles.subtleRow}>
@@ -911,7 +1024,7 @@ export default function SignUp() {
                       Already have an account?{" "}
                     </Text>
                     <Pressable onPress={() => router.push("/login/login")}>
-                      <Text style={[styles.subtleLink, { color: tk.violet }]}>
+                      <Text style={[styles.subtleLink, { color: tk.violetLight }]}>
                         Log In
                       </Text>
                     </Pressable>
@@ -933,14 +1046,18 @@ export default function SignUp() {
                     placeholder="maria@email.com"
                     value={form.email}
                     onChange={f("email")}
+                    onBlur={touchField("email")}
                     fieldRef={(el) => { fieldRefsMap.email = el; }}
                     keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="email"
                     icon={
                       <Ionicons
                         name="mail-outline"
                         size={17}
                         color={
-                          touched.email && errors.email ? tk.error : tk.violet
+                          touched.email && errors.email ? tk.error : tk.icon
                         }
                       />
                     }
@@ -949,7 +1066,7 @@ export default function SignUp() {
                   />
 
                   <View style={styles.phoneFieldGroup}>
-                    <Text style={[styles.fieldLabel, { color: tk.textMuted, marginBottom: 12 }]}>Mobile number</Text>
+                    <Text style={[styles.fieldLabel, { marginBottom: 12 }]}>Mobile number</Text>
                     <View style={styles.phoneRowContainer}>
                       <Pressable
                         ref={countryTriggerRef}
@@ -959,20 +1076,23 @@ export default function SignUp() {
                           { borderColor: tk.border, backgroundColor: tk.surface },
                         ]}
                       >
+                        <Text style={styles.countryChipFlag}>
+                          {selectedCountry.flag}
+                        </Text>
                         <Text
                           style={[
                             styles.countryChipText,
                             { color: tk.textPrimary },
                           ]}
                         >
-                          {selectedCountry.code} {selectedCountry.dialCode}
+                          {selectedCountry.dialCode}
                         </Text>
-                        <Ionicons name="chevron-down" size={16} color={tk.textMuted} style={{ marginLeft: 8 }} />
+                        <Ionicons name="chevron-down" size={16} color={tk.icon} />
                       </Pressable>
 
                       <Field
                         label=""
-                        placeholder="9XX XXX XXXX"
+                        placeholder={selectedCountry.placeholder}
                         value={form.phone}
                         onChange={f("phone")}
                         fieldRef={(el) => { fieldRefsMap.phone = el; }}
@@ -982,7 +1102,7 @@ export default function SignUp() {
                             name="call-outline"
                             size={17}
                             color={
-                              touched.phone && errors.phone ? tk.error : tk.violet
+                              touched.phone && errors.phone ? tk.error : tk.icon
                             }
                           />
                         }
@@ -1008,7 +1128,7 @@ export default function SignUp() {
                         color={
                           touched.password && errors.password
                             ? tk.error
-                            : tk.violet
+                            : tk.icon
                         }
                       />
                     }
@@ -1021,7 +1141,7 @@ export default function SignUp() {
                         <Ionicons
                           name={showPw ? "eye-outline" : "eye-off-outline"}
                           size={20}
-                          color={tk.textMuted}
+                          color={tk.icon}
                         />
                       </Pressable>
                     }
@@ -1030,19 +1150,32 @@ export default function SignUp() {
                   />
 
                   <View style={styles.passwordHintsContainer}>
-                    <Text style={[styles.passwordHintLabel, { color: tk.textMuted }]}>Password requirements:</Text>
-                    <View style={styles.passwordHintRow}>
-                      <Text style={[styles.passwordHintIcon, { color: form.password.length >= 8 ? tk.success : tk.textMuted }]}>✓</Text>
-                      <Text style={[styles.passwordHintText, { color: form.password.length >= 8 ? tk.success : tk.textMuted }]}>Minimum 8 characters</Text>
-                    </View>
-                    <View style={styles.passwordHintRow}>
-                      <Text style={[styles.passwordHintIcon, { color: /[A-Z]/.test(form.password) ? tk.success : tk.textMuted }]}>✓</Text>
-                      <Text style={[styles.passwordHintText, { color: /[A-Z]/.test(form.password) ? tk.success : tk.textMuted }]}>1 capital letter</Text>
-                    </View>
-                    <View style={styles.passwordHintRow}>
-                      <Text style={[styles.passwordHintIcon, { color: /[!@#$%^&*]/.test(form.password) ? tk.success : tk.textMuted }]}>✓</Text>
-                      <Text style={[styles.passwordHintText, { color: /[!@#$%^&*]/.test(form.password) ? tk.success : tk.textMuted }]}>1 special character</Text>
-                    </View>
+                    <Text style={[styles.passwordHintLabel, { color: tk.fieldLabel }]}>
+                      Password requirements:
+                    </Text>
+                    {SIGNUP_PASSWORD_REQUIREMENTS.map((req) => {
+                      const met = req.test(form.password);
+                      return (
+                        <View key={req.id} style={styles.passwordHintRow}>
+                          <Text
+                            style={[
+                              styles.passwordHintIcon,
+                              { color: met ? tk.success : tk.textMuted },
+                            ]}
+                          >
+                            ✓
+                          </Text>
+                          <Text
+                            style={[
+                              styles.passwordHintText,
+                              { color: met ? tk.success : tk.textMuted },
+                            ]}
+                          >
+                            {req.label}
+                          </Text>
+                        </View>
+                      );
+                    })}
                   </View>
 
                   <Field
@@ -1060,7 +1193,7 @@ export default function SignUp() {
                         color={
                           touched.confirm && errors.confirm
                             ? tk.error
-                            : tk.violet
+                            : tk.icon
                         }
                       />
                     }
@@ -1073,7 +1206,7 @@ export default function SignUp() {
                         <Ionicons
                           name={showCPw ? "eye-outline" : "eye-off-outline"}
                           size={20}
-                          color={tk.textMuted}
+                          color={tk.icon}
                         />
                       </Pressable>
                     }
@@ -1092,33 +1225,31 @@ export default function SignUp() {
                       <Ionicons
                         name="arrow-back"
                         size={17}
-                        color={tk.textSub}
+                        color={tk.white}
                       />
-                      <Text
-                        style={[
-                          styles.secondaryButtonText,
-                          { color: tk.textSub },
-                        ]}
-                      >
-                        Back
-                      </Text>
+                      <Text style={styles.secondaryButtonText}>Back</Text>
                     </Pressable>
                     <Pressable
-                      style={[
-                        styles.primaryButton,
-                        styles.primaryButtonGrow,
-                        { backgroundColor: tk.navy },
-                      ]}
+                      style={[styles.primaryButton, styles.primaryButtonGrow]}
                       onPress={() => void handleCreateAccount()}
                       disabled={submittingAccount}
                     >
                       {submittingAccount ? (
-                        <ActivityIndicator color={tk.white} />
+                        <ActivityIndicator color={tk.primaryBtnText} />
                       ) : (
                         <Text
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.75}
                           style={[
                             styles.primaryButtonText,
-                            { color: tk.white },
+                            styles.primaryButtonTextRow,
+                            {
+                              fontSize: Math.min(
+                                15,
+                                Math.max(11, windowWidth * 0.035),
+                              ),
+                            },
                           ]}
                         >
                           CREATE ACCOUNT
@@ -1146,20 +1277,10 @@ export default function SignUp() {
                     Welcome to TBHON. Your health companion is ready.
                   </Text>
                   <Pressable
-                    style={[
-                      styles.primaryButton,
-                      { backgroundColor: tk.navy },
-                    ]}
+                    style={styles.primaryButton}
                     onPress={handleGetStarted}
                   >
-                    <Text
-                      style={[
-                        styles.primaryButtonText,
-                        { color: tk.white },
-                      ]}
-                    >
-                      GET STARTED
-                    </Text>
+                    <Text style={styles.primaryButtonText}>GET STARTED</Text>
                   </Pressable>
                 </View>
               )}
@@ -1202,14 +1323,14 @@ export default function SignUp() {
                         left,
                         top,
                         width: menuW,
-                        borderColor: tk.border,
-                        backgroundColor: tk.white,
+                        borderColor: tk.dropdownBorder,
+                        backgroundColor: tk.dropdownBg,
                         ...(Platform.OS === "android"
                           ? { elevation: 12 }
                           : {
                               shadowColor: "#000",
                               shadowOffset: { width: 0, height: 4 },
-                              shadowOpacity: 0.12,
+                              shadowOpacity: 0.35,
                               shadowRadius: 12,
                             }),
                       },
@@ -1228,7 +1349,7 @@ export default function SignUp() {
                           justifyContent: "center",
                           borderBottomWidth:
                             idx === GENDERS.length - 1 ? 0 : 1,
-                          borderBottomColor: tk.border,
+                          borderBottomColor: tk.dropdownBorder,
                         }}
                       >
                         <View
@@ -1245,7 +1366,7 @@ export default function SignUp() {
                             <Ionicons
                               name="checkmark-circle"
                               size={20}
-                              color={tk.navy}
+                              color={tk.icon}
                             />
                           ) : null}
                         </View>
@@ -1275,7 +1396,7 @@ export default function SignUp() {
                 const gap = 6;
                 let left = countryAnchor.x;
                 const maxW = countryAnchor.width;
-                const menuW = Math.max(maxW, 170);
+                const menuW = Math.max(maxW, 220);
                 if (left + menuW > winW - pad) {
                   left = Math.max(pad, winW - pad - menuW);
                 }
@@ -1294,14 +1415,14 @@ export default function SignUp() {
                         top,
                         width: menuW,
                         maxHeight: 300,
-                        borderColor: tk.border,
-                        backgroundColor: tk.white,
+                        borderColor: tk.dropdownBorder,
+                        backgroundColor: tk.dropdownBg,
                         ...(Platform.OS === "android"
                           ? { elevation: 12 }
                           : {
                               shadowColor: "#000",
                               shadowOffset: { width: 0, height: 4 },
-                              shadowOpacity: 0.12,
+                              shadowOpacity: 0.35,
                               shadowRadius: 12,
                             }),
                       },
@@ -1313,6 +1434,8 @@ export default function SignUp() {
                           key={country.code}
                           onPress={() => {
                             setSelectedCountry(country);
+                            setForm((prev) => ({ ...prev, phone: "" }));
+                            setTouched((prev) => ({ ...prev, phone: false }));
                             closeCountryPicker();
                           }}
                           style={{
@@ -1320,7 +1443,7 @@ export default function SignUp() {
                             minHeight: GENDER_ROW_H,
                             justifyContent: "center",
                             borderBottomWidth: country.code !== COUNTRIES[COUNTRIES.length - 1].code ? 1 : 0,
-                            borderBottomColor: tk.border,
+                            borderBottomColor: tk.dropdownBorder,
                           }}
                         >
                           <View
@@ -1330,14 +1453,17 @@ export default function SignUp() {
                               justifyContent: "space-between",
                             }}
                           >
-                            <Text style={{ color: tk.textPrimary, fontSize: 16 }}>
-                              {country.flag} {country.name} {country.dialCode}
+                            <Text
+                              style={{ color: tk.textPrimary, fontSize: 16 }}
+                              numberOfLines={1}
+                            >
+                              {country.name}
                             </Text>
                             {selectedCountry.code === country.code && (
                               <Ionicons
                                 name="checkmark-circle"
                                 size={20}
-                                color={tk.navy}
+                                color={tk.icon}
                               />
                             )}
                           </View>
@@ -1439,21 +1565,21 @@ export default function SignUp() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: tk.navy,
+    backgroundColor: tk.screenBg,
   },
   screenContent: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 10,
   },
   hero: {
     position: "relative",
-    paddingVertical: 24,
+    paddingTop: 14,
     paddingHorizontal: 18,
-    paddingBottom: 28,
+    paddingBottom: 4,
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
-    backgroundColor: tk.navy,
+    backgroundColor: tk.screenBg,
     overflow: "hidden",
   },
   heroCircleLarge: {
@@ -1479,96 +1605,67 @@ const styles = StyleSheet.create({
   heroTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 0,
   },
   heroTitleText: {
     marginLeft: 14,
     flex: 1,
   },
   heroTitle: {
-    color: tk.white,
+    color: tk.heroTitle,
     fontSize: 28,
     fontWeight: "800",
     letterSpacing: -0.4,
   },
   heroSubtitle: {
-    color: "rgba(255, 255, 255, 0.72)",
+    color: tk.heroSub,
     fontSize: 13,
     marginTop: 6,
   },
-  stepRow: {
+  stepProgress: {
+    marginTop: 6,
+    marginBottom: 18,
+  },
+  stepBarRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 10,
   },
-  stepProgressLine: {
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: tk.violetLight,
+  stepBarSegmentWrap: {
+    flex: 1,
   },
-  stepPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    minHeight: 36,
-    justifyContent: "center",
-    marginRight: 10,
+  stepBarSegment: {
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
   },
-  stepPillActive: {
-    backgroundColor: tk.violetLight,
+  stepBarSegmentActive: {
+    backgroundColor: palette.lavender,
   },
-  stepPillComplete: {
-    backgroundColor: tk.white,
-  },
-  stepDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.28)",
-  },
-  stepDotActive: {
-    backgroundColor: tk.white,
-  },
-  stepDotComplete: {
-    backgroundColor: tk.white,
-  },
-  stepDotText: {
-    color: tk.white,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  stepDotTextActive: {
-    color: tk.navy,
-  },
-  stepPillLabel: {
-    color: tk.white,
-    marginLeft: 10,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.3,
+  stepBarSegmentGlow: {
+    shadowColor: palette.lavender,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.65,
+    shadowRadius: 8,
+    elevation: 4,
   },
   cardContainer: {
     flex: 1,
-    backgroundColor: tk.white,
+    backgroundColor: tk.cardBg,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
-    marginTop: -28,
-    paddingTop: 28,
+    marginTop: -36,
+    paddingTop: 20,
     paddingHorizontal: 18,
     paddingBottom: 18,
     minHeight: 420,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 24,
-    elevation: 8,
+    shadowColor: palette.deepNavy,
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 14 },
+    shadowRadius: 28,
+    elevation: 10,
   },
   stepCard: {
     width: "100%",
@@ -1580,7 +1677,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   stepSummaryAccent: {
-    color: tk.violet,
+    color: tk.violetLight,
     fontWeight: "700",
   },
   formSection: {
@@ -1610,7 +1707,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 0,
   },
   phoneFieldInline: {
     flex: 1,
@@ -1620,7 +1717,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   fieldLabel: {
-    color: tk.textMuted,
+    color: tk.fieldLabel,
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 0.7,
@@ -1641,15 +1738,15 @@ const styles = StyleSheet.create({
   },
   fieldBoxFocused: {
     borderColor: tk.violetLight,
-    backgroundColor: tk.white,
-    shadowColor: tk.violet,
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 18,
+    backgroundColor: tk.fieldFocusedBg,
+    shadowColor: palette.softViolet,
+    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
     elevation: 3,
   },
   fieldBoxDisabled: {
-    backgroundColor: "#EEF2FF",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
   },
   fieldInput: {
     height: 50,
@@ -1675,7 +1772,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   primaryButton: {
-    backgroundColor: tk.navy,
+    backgroundColor: tk.primaryBtnBg,
     borderRadius: 24,
     minHeight: 56,
     justifyContent: "center",
@@ -1688,20 +1785,25 @@ const styles = StyleSheet.create({
   },
   primaryButtonGrow: {
     flex: 1,
-    marginLeft: 12,
-    maxWidth: 200,
+    minWidth: 0,
+    marginTop: 0,
+    paddingHorizontal: 14,
   },
   primaryButtonText: {
-    color: tk.white,
+    color: tk.primaryBtnText,
     fontSize: 16,
     fontWeight: "800",
     letterSpacing: 0.5,
   },
+  primaryButtonTextRow: {
+    flexShrink: 1,
+    textAlign: "center",
+  },
   secondaryButton: {
-    backgroundColor: tk.surface,
+    backgroundColor: tk.secondaryBtnBg,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: tk.border,
+    borderColor: tk.secondaryBtnBorder,
     height: 56,
     justifyContent: "center",
     alignItems: "center",
@@ -1710,7 +1812,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   secondaryButtonText: {
-    color: tk.textSub,
+    color: tk.white,
     fontSize: 15,
     fontWeight: "700",
   },
@@ -1718,18 +1820,22 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   countryChip: {
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 16,
+    height: 50,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     backgroundColor: tk.surface,
     borderWidth: 1.5,
     borderColor: tk.border,
     justifyContent: "center",
     alignItems: "center",
-    minHeight: 50,
     flexDirection: "row",
-    gap: 8,
-    minWidth: 110,
+    gap: 6,
+    minWidth: 100,
+    flexShrink: 0,
+  },
+  countryChipFlag: {
+    fontSize: 20,
+    lineHeight: 24,
   },
   countryChipText: {
     color: tk.textPrimary,
@@ -1787,7 +1893,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   subtleLink: {
-    color: tk.violet,
+    color: tk.violetLight,
     fontSize: 14,
     fontWeight: "700",
   },
@@ -1837,10 +1943,10 @@ const styles = StyleSheet.create({
   },
   dropdownMenu: {
     position: "absolute",
-    backgroundColor: tk.white,
+    backgroundColor: tk.dropdownBg,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: tk.border,
+    borderColor: tk.dropdownBorder,
     overflow: "hidden",
   },
   birthdateModalRoot: {

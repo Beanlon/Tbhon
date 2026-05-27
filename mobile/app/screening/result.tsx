@@ -254,8 +254,8 @@ export default function ResultScreen() {
 
   return (
     <>
-      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
-      <SafeAreaView className="flex-1 bg-white" edges={["top", "right", "bottom", "left"]}>
+      <StatusBar style="dark" backgroundColor="#EAE8FA" translucent={false} />
+      <SafeAreaView className="flex-1 bg-lavender" edges={["top", "right", "bottom", "left"]}>
       <View className="flex-row items-center justify-between border-b border-neutral-100 px-4 pb-3 pt-2 sm:px-5 md:px-6">
         <View className="size-11" />
         <View className="min-w-0 flex-1 items-center px-2">
@@ -404,7 +404,7 @@ export default function ResultScreen() {
                 <View className="flex-row flex-wrap gap-3">
                   {hasCough ? (
                     <View
-                      className="flex-1 rounded-xl border border-slate-100 bg-slate-50 p-3"
+                      className="flex-1 rounded-xl border border-slate-100 bg-white p-3"
                       style={{ minWidth: 150 }}
                     >
                       <View className="mb-1.5 flex-row items-center gap-1.5">
@@ -429,7 +429,7 @@ export default function ResultScreen() {
 
                   {hasPhlegm && tone ? (
                     <View
-                      className="flex-1 rounded-xl border border-slate-100 bg-slate-50 p-3"
+                      className="flex-1 rounded-xl border border-slate-100 bg-white p-3"
                       style={{ minWidth: 150 }}
                     >
                       <View className="mb-1.5 flex-row items-center gap-1.5">

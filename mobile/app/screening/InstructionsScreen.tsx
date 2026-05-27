@@ -22,7 +22,7 @@ export default function InstructionsScreen({ onClose }: { onClose?: () => void }
   return (
     <>
       <StatusBar style="dark" backgroundColor="#fff" translucent={false} />
-      <View className="flex-1 bg-white">
+      <View className="flex-1 bg-lavender">
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingTop: insets.top + 24 }}

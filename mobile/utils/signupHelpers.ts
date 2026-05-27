@@ -1,3 +1,32 @@
+const SIGNUP_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Sign-up email validation for step 2 (required + basic format). */
+export function signupEmailValidationError(email: string): string | undefined {
+  const trimmed = email.trim();
+  if (!trimmed) return "Email address is required.";
+  if (!SIGNUP_EMAIL_RE.test(trimmed)) {
+    return "Enter a valid email address.";
+  }
+  return undefined;
+}
+
+/** Local signup digits → E.164 using the selected country dial code. */
+export function normalizeSignupMobile(
+  local: string,
+  dialCode: string,
+): string | undefined {
+  if (dialCode === "+63") {
+    return normalizePhilippineMobile(local);
+  }
+  const digits = local.replace(/\D/g, "");
+  if (!digits) return undefined;
+  const codeDigits = dialCode.replace(/\D/g, "");
+  if (digits.startsWith(codeDigits)) {
+    return `+${digits}`;
+  }
+  return `+${codeDigits}${digits}`;
+}
+
 /** Normalize Filipino mobile input (local digits after +63) to E.164-style +63... */
 export function normalizePhilippineMobile(local: string): string | undefined {
   const digits = local.replace(/\D/g, "");

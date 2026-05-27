@@ -115,7 +115,7 @@ export default function ScreeningChecklistScreen() {
   return (
     <>
       <StatusBar style="dark" backgroundColor="#fff" translucent={false} />
-      <SafeAreaView className="flex-1 bg-white" edges={["top", "right", "bottom", "left"]}>
+      <SafeAreaView className="flex-1 bg-lavender" edges={["top", "right", "bottom", "left"]}>
         {/* Header */}
         <View className="flex-row items-center justify-between border-b border-neutral-100 px-4 pb-3.5 pt-2 sm:px-5">
           <Pressable

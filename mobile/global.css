@@ -14,7 +14,7 @@
     -webkit-text-fill-color: #111111 !important;
     caret-color: #111111;
     border-radius: 1.5rem !important;
-    box-shadow: inset 0 0 0 9999px #f8f8f8 !important;
+    box-shadow: inset 0 0 0 9999px #eae8fa !important;
     transition: background-color 99999s ease-out;
   }
 }

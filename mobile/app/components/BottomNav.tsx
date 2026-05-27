@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { APP_SCREEN_BACKGROUND } from '../../constants/palette';
 
 // Type exports
 export type BottomNavTab = 'home' | 'history' | 'screening' | 'learn' | 'profile';
@@ -26,7 +27,7 @@ export default function BottomNav({ activeTab, onTabPress }: BottomNavProps) {
         flexDirection: 'row',
         justifyContent: 'space-around',
         alignItems: 'center',
-        backgroundColor: '#fff',
+        backgroundColor: APP_SCREEN_BACKGROUND,
         borderTopWidth: 1,
         borderTopColor: '#efefef',
         paddingVertical: '3%',

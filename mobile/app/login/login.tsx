@@ -6,38 +6,34 @@ import {
   TextInput,
   Platform,
   ScrollView,
+  StyleSheet,
   useWindowDimensions,
   Alert,
   ActivityIndicator,
   type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import CachedImage from "../components/CachedImage";
-import { PasswordVisibilityIcon } from "../components/PasswordVisibilityIcons";
+import { AuthFormField, authFormFieldStyles } from "../components/AuthFormField";
+import { TBHON_LOGO } from "../../constants/branding";
+import { getBrandLogoLayout } from "../../utils/brandLogoLayout";
+import { authFormTk as tk } from "../../constants/authFormTheme";
+import { authFormButtonStyles } from "../../constants/authFormStyles";
+import { palette } from "../../constants/palette";
 import { useRouter } from "expo-router";
 import { ApiError, postLogin } from "../../services/backendApi";
 import { saveAuthToken } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
 import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
 
-const inputClass =
-  "h-12 w-full rounded-3xl border border-[#EDEDED] bg-[#F8F8F8] px-4 py-0 text-base font-medium leading-5 text-[#111111]";
-
-const formCardShadow =
-  Platform.OS === "ios"
-    ? {
-        shadowColor: "#000000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-      }
-    : { elevation: 2 };
-
-/** Pixels of slack so float rounding does not toggle scroll. */
 const SCROLL_FUDGE = 8;
 
 export default function Login() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,10 +44,39 @@ export default function Login() {
   const [scrollViewportH, setScrollViewportH] = useState(0);
   const [innerContentH, setInnerContentH] = useState(0);
 
+  const compactScreen = windowHeight < 760 || windowWidth < 390;
+  const sheetPaddingHorizontal = compactScreen ? 16 : 18;
+  const sheetPaddingTop = compactScreen ? 22 : 26;
+  const sheetPaddingBottom = compactScreen ? 22 : 26;
+
   const scrollEnabled = useMemo(() => {
     if (scrollViewportH <= 0 || innerContentH <= 0) return true;
     return innerContentH > scrollViewportH + SCROLL_FUDGE;
   }, [scrollViewportH, innerContentH]);
+
+  const centerInViewport = scrollViewportH > 0 && !scrollEnabled;
+
+  const scrollMinHeight = useMemo(
+    () => Math.max(0, windowHeight - insets.top - insets.bottom),
+    [windowHeight, insets.top, insets.bottom],
+  );
+
+  const brandLogo = useMemo(() => {
+    const layout = getBrandLogoLayout(windowHeight, windowWidth, 40);
+    return {
+      ...layout,
+      topMargin: Math.max(12, layout.topMargin - 14),
+    };
+  }, [windowHeight, windowWidth]);
+
+  const scrollContentStyle = useMemo((): StyleProp<ViewStyle> => {
+    return {
+      flexGrow: 1,
+      minHeight: scrollMinHeight,
+      justifyContent: centerInViewport ? "center" : "flex-start",
+      paddingBottom: insets.bottom + 12,
+    };
+  }, [centerInViewport, insets.bottom, scrollMinHeight]);
 
   const onScrollViewLayout = useCallback((e: LayoutChangeEvent) => {
     setScrollViewportH(e.nativeEvent.layout.height);
@@ -61,22 +86,10 @@ export default function Login() {
     setInnerContentH(e.nativeEvent.layout.height);
   }, []);
 
-  /** Short or narrow viewports: center the block vertically; larger: align like sign-up (top). */
-  const isCompact = useMemo(
-    () => windowHeight < 700 || windowWidth < 380,
-    [windowHeight, windowWidth],
-  );
-
-  /** Scales with the smaller window edge so the mark fits in both orientations. */
-  const authMarkSize = useMemo(() => {
-    const d = Math.min(windowWidth, windowHeight);
-    return Math.min(168, Math.max(76, Math.round(d * 0.27)));
-  }, [windowWidth, windowHeight]);
-
-  const handleSignIn = async () => {
+  const handleLogIn = async () => {
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !password) {
-      Alert.alert("Sign in", "Please enter email and password.");
+      Alert.alert("Log in", "Please enter email and password.");
       return;
     }
     setSubmitting(true);
@@ -92,7 +105,7 @@ export default function Login() {
           : error instanceof Error
             ? error.message
             : "Could not reach the server. Check API URL / network.";
-      Alert.alert("Sign in failed", message);
+      Alert.alert("Log in failed", message);
     } finally {
       setSubmitting(false);
     }
@@ -103,146 +116,199 @@ export default function Login() {
   };
 
   return (
-    <SafeAreaView
-      className="flex-1 bg-white"
-      style={{ flex: 1 }}
-      edges={["top", "right", "bottom", "left"]}
-    >
-      {/*
-       * iOS: avoid KeyboardAvoidingView + SafeArea bottom — duplicates keyboard lift and
-       * shows an extra white band. ScrollView adjusts insets natively instead.
-       */}
+    <SafeAreaView style={styles.root} edges={["top", "right", "bottom", "left"]}>
       <ScrollView
-        className="flex-1"
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
         scrollEnabled={scrollEnabled}
         bounces={scrollEnabled}
         alwaysBounceVertical={false}
         onLayout={onScrollViewLayout}
-        contentContainerStyle={{
-          flexGrow: 1,
-          justifyContent: isCompact ? "center" : "flex-start",
-        }}
+        contentContainerStyle={scrollContentStyle}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={scrollEnabled}
         {...(Platform.OS === "android"
-          ? { overScrollMode: scrollEnabled ? ("auto" as const) : ("never" as const) }
+          ? {
+              overScrollMode: scrollEnabled
+                ? ("auto" as const)
+                : ("never" as const),
+            }
           : {})}
       >
+        <View onLayout={onInnerLayout} collapsable={false} style={styles.screenContent}>
           <View
-            onLayout={onInnerLayout}
-            collapsable={false}
-            className="px-5 pt-5 pb-6 sm:px-6 sm:pt-6 sm:pb-7 md:px-8 md:pt-7 md:pb-9"
+            style={[
+              styles.heroBrand,
+              {
+                marginTop: brandLogo.topMargin,
+                marginBottom: brandLogo.bottomMargin,
+              },
+            ]}
           >
-            <View className="my-3 w-full items-center sm:my-10 md:my-5">
+            <View style={[styles.logoBox, { width: brandLogo.boxWidth }]}>
               <CachedImage
-                source={require("../../assets/images/Tbhon assets/TBhon icon.png")}
-                style={{ width: authMarkSize, height: authMarkSize }}
+                source={TBHON_LOGO}
+                style={styles.logoImage}
                 resizeMode="contain"
               />
             </View>
+          </View>
 
-            <Text className="mb-1.5 text-center text-2xl font-bold text-[#111111] sm:mb-2 sm:text-3xl md:mb-3">
-              Login to your account
+          <View
+            style={[
+              styles.cardContainer,
+              {
+                paddingHorizontal: sheetPaddingHorizontal,
+                paddingTop: sheetPaddingTop,
+                paddingBottom: sheetPaddingBottom,
+              },
+            ]}
+          >
+            <Text style={styles.welcomeHeading}>
+              Welcome{" "}
+              <Text style={styles.welcomeHeadingAccent}>back!</Text>
             </Text>
-
-            <Text
-              className={`text-center text-sm leading-6 text-[#666666] ${
-                isCompact ? "mb-4" : "mb-2.5 sm:mb-3"
-              }`}
-            >
+            <Text style={styles.sectionSubtitle}>
               Enter your email and password to continue.
             </Text>
 
-            <View
-              className="rounded-3xl border border-[#EDEDED] bg-[#FAFAFA] p-4"
-              style={formCardShadow}
-            >
-              <Text className="mb-3 text-lg font-bold text-[#111111]">Sign in</Text>
+            <AuthFormField
+              label="Email Address"
+              placeholder="you@email.com"
+              value={email}
+              onChange={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              icon={<Ionicons name="mail-outline" size={17} color={tk.icon} />}
+            />
 
-              <View className="mb-1 sm:mb-3">
-                <Text className="mb-1 text-xs font-semibold uppercase tracking-wide text-[#888888]">
-                  Email
-                </Text>
-                <TextInput
-                  className={`${inputClass} mb-0`}
-                  placeholder="you@email.com"
-                  placeholderTextColor="#999999"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  textContentType="emailAddress"
-                  textAlignVertical="center"
-                  style={{ includeFontPadding: false }}
-                  value={email}
-                  onChangeText={setEmail}
-                />
-              </View>
-
-              <View className="mb-1 sm:mb-4">
-                <Text className="mb-1 text-xs font-semibold uppercase tracking-wide text-[#888888]">
-                  Password
-                </Text>
-                <View className="relative">
-                  <TextInput
-                    ref={loginPasswordRef}
-                    className={`tbhon-auth-password ${inputClass} mb-0 pr-12`}
-                    placeholder="Your password"
-                    placeholderTextColor="#999999"
-                    secureTextEntry={!passwordVisible}
-                    autoComplete="password"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    spellCheck={false}
-                    textContentType="password"
-                    textAlignVertical="center"
-                    underlineColorAndroid="transparent"
-                    {...(Platform.OS === "ios" ? { clearButtonMode: "never" as const } : {})}
-                    style={{ includeFontPadding: false }}
-                    value={password}
-                    onChangeText={setPassword}
+            <AuthFormField
+              label="Password"
+              placeholder="Your password"
+              value={password}
+              onChange={setPassword}
+              inputRef={loginPasswordRef}
+              secureTextEntry={!passwordVisible}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="password"
+              textContentType="password"
+              spellCheck={false}
+              icon={<Ionicons name="lock-closed-outline" size={17} color={tk.icon} />}
+              suffix={
+                <Pressable
+                  onPress={() => setPasswordVisible((v) => !v)}
+                  style={authFormFieldStyles.passwordToggle}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    passwordVisible ? "Hide password" : "Show password"
+                  }
+                >
+                  <Ionicons
+                    name={passwordVisible ? "eye-outline" : "eye-off-outline"}
+                    size={20}
+                    color={tk.icon}
                   />
-                  <PasswordVisibilityIcon
-                    secureTextEntry={!passwordVisible}
-                    onToggle={() => setPasswordVisible((v) => !v)}
-                  />
-                </View>
-              </View>
+                </Pressable>
+              }
+            />
 
-              <Pressable
-                className="w-full flex-row items-center justify-center rounded-2xl bg-[#1a1a4d] py-3 sm:py-4 active:opacity-90"
-                onPress={handleSignIn}
-                disabled={submitting}
-                android_ripple={{ color: "rgba(255,255,255,0.2)" }}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <Text className="text-base font-bold text-white" style={{ letterSpacing: 0.5 }}>
-                    SIGN IN
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-
-            <View
-              className={`flex-row flex-wrap items-center justify-center gap-x-1 px-1 ${
-                isCompact ? "mt-6" : "mt-4 sm:mt-5"
-              }`}
+            <Pressable
+              style={authFormButtonStyles.primaryButton}
+              onPress={handleLogIn}
+              disabled={submitting}
+              android_ripple={{ color: "rgba(12, 30, 74, 0.14)" }}
             >
-              <Text className="text-center text-base font-normal text-[#666666]">
-                {"Don't have an account? "}
-              </Text>
-              <Pressable
-                onPress={handleSignUp}
-                android_ripple={{ color: "#E8E8E8" }}
-                className="rounded-lg py-1"
-              >
-                <Text className="text-base font-semibold text-[#5B5BFF]">Sign up</Text>
+              {submitting ? (
+                <ActivityIndicator color={tk.primaryBtnText} />
+              ) : (
+                <Text style={authFormButtonStyles.primaryButtonText}>LOG IN</Text>
+              )}
+            </Pressable>
+
+            <View style={styles.subtleRow}>
+              <Text style={styles.subtleText}>{"Don't have an account? "}</Text>
+              <Pressable onPress={handleSignUp} hitSlop={8}>
+                <Text style={styles.subtleLink}>Sign up</Text>
               </Pressable>
             </View>
           </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: tk.screenBg,
+  },
+  screenContent: {
+    paddingHorizontal: 20,
+  },
+  heroBrand: {
+    width: "100%",
+    alignItems: "center",
+    backgroundColor: tk.screenBg,
+    zIndex: 2,
+  },
+  logoBox: {
+    aspectRatio: 1,
+  },
+  logoImage: {
+    width: "100%",
+    height: "100%",
+  },
+  cardContainer: {
+    marginTop: 4,
+    backgroundColor: tk.cardBg,
+    zIndex: 1,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    shadowColor: palette.deepNavy,
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 14 },
+    shadowRadius: 28,
+    elevation: 10,
+  },
+  welcomeHeading: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: tk.textPrimary,
+    textAlign: "center",
+    marginBottom: 8,
+    letterSpacing: -0.3,
+  },
+  welcomeHeadingAccent: {
+    fontWeight: "500",
+    color: tk.textSub,
+  },
+  sectionSubtitle: {
+    color: tk.textSub,
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 22,
+    lineHeight: 20,
+  },
+  subtleRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    marginTop: 18,
+  },
+  subtleText: {
+    color: tk.textSub,
+    fontSize: 14,
+  },
+  subtleLink: {
+    color: tk.violetLight,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+});

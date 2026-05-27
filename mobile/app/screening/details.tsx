@@ -587,8 +587,8 @@ export default function ScreeningDetailsScreen() {
   return (
     <>
       <StatusBar style="dark" backgroundColor="#f8fafc" translucent={false} />
-      <SafeAreaView className="flex-1 bg-slate-50" edges={["top", "right", "bottom", "left"]}>
-        <View className="flex-row items-center justify-between border-b border-slate-900/10 bg-slate-50 px-4 pb-3 pt-2 sm:px-5 md:px-6">
+      <SafeAreaView className="flex-1 bg-lavender" edges={["top", "right", "bottom", "left"]}>
+        <View className="flex-row items-center justify-between border-b border-slate-900/10 bg-lavender px-4 pb-3 pt-2 sm:px-5 md:px-6">
           <Pressable
             onPress={() => router.back()}
             className="size-11 items-center justify-center rounded-full bg-slate-900/5 active:bg-slate-900/10"
@@ -741,7 +741,7 @@ export default function ScreeningDetailsScreen() {
                               {checklistRows.map((row) => (
                                 <View
                                   key={row.questionId}
-                                  className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4"
+                                  className="rounded-2xl border border-slate-100 bg-white px-4 py-4"
                                 >
                                   <Text className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-500">
                                     {categorySectionLabel(row.category)}

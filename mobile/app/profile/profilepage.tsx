@@ -460,7 +460,7 @@ export function ProfilePage() {
                 </View>
                 <TouchableOpacity
                   activeOpacity={0.85}
-                  className="mt-3.5 rounded-full border border-[#efefef] bg-[#f8f8f8] px-5 py-2"
+                  className="mt-3.5 rounded-full border border-[#efefef] bg-white px-5 py-2"
                 >
                   <Text className="text-sm font-bold text-[#111111]">Edit Profile</Text>
                 </TouchableOpacity>
@@ -601,7 +601,7 @@ export function ProfilePage() {
 
           <ProfileCardHeaderOnly
             icon="information-circle-outline"
-            iconBackground="#f8f8f8"
+            iconBackground="#ffffff"
             iconColor="#5D6D7E"
             title="About & Support"
             subtitle="Help, feedback & app info"
@@ -629,7 +629,7 @@ export function ProfilePage() {
             <TouchableOpacity activeOpacity={0.7}>
               <SettingRow
                 icon="document-text-outline"
-                iconBg="#f8f8f8"
+                iconBg="#ffffff"
                 iconColor="#5D6D7E"
                 title="Terms & Privacy Policy"
                 subtitle="Legal information"
@@ -638,7 +638,7 @@ export function ProfilePage() {
             </TouchableOpacity>
             <SettingRow
               icon="phone-portrait-outline"
-              iconBg="#f8f8f8"
+              iconBg="#ffffff"
               iconColor="#5D6D7E"
               title="App version"
               subtitle="TB Care PH"
