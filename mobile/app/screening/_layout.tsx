@@ -26,8 +26,24 @@ export default function ScreeningLayout() {
       }}
     >
       <Stack.Screen
+        name="iot-hardware"
+        options={{ contentStyle: { backgroundColor: LIGHT } }}
+      />
+      <Stack.Screen
+        name="iot-instructions"
+        options={{ contentStyle: { backgroundColor: LIGHT } }}
+      />
+      <Stack.Screen
         name="checklist"
         options={{ contentStyle: { backgroundColor: LIGHT } }}
+      />
+      <Stack.Screen
+        name="iot-cough"
+        options={{ contentStyle: { backgroundColor: NAVY } }}
+      />
+      <Stack.Screen
+        name="iot-sputum"
+        options={{ contentStyle: { backgroundColor: NAVY } }}
       />
       <Stack.Screen
         name="recording"

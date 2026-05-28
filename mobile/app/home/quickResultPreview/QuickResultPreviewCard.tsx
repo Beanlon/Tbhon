@@ -7,6 +7,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
   ApiError,
@@ -22,6 +23,7 @@ import {
   clearScreeningCache,
 } from "../../../utils/screeningHistoryCache";
 import { GaugeChart, type GaugeRiskLevel } from "./GaugeChart";
+import { useTheme } from "../../../contexts/ThemeContext";
 
 const SCREENING_LIST_LIMIT = 100;
 
@@ -31,12 +33,6 @@ const cardShadow: ViewStyle = {
   shadowOpacity: 0.07,
   shadowRadius: 14,
   elevation: 3,
-};
-
-const TAGLINE: Record<GaugeRiskLevel, string> = {
-  low: "Low TB Risk – Monitor symptoms.",
-  moderate: "Moderate TB Risk – Further evaluation needed.",
-  high: "High TB Risk – Seek medical attention.",
 };
 
 function coerceRisk(raw: string | null | undefined): GaugeRiskLevel {
@@ -63,11 +59,37 @@ function formatCompletedAt(row: ScreeningHistoryRow): { date: string; time: stri
 type Props = {
   /** When false, skip network refresh (home tab inactive). */
   isActive: boolean;
+  onHistoryPress?: () => void;
 };
 
-export function QuickResultPreviewCard({ isActive }: Props) {
+const RISK_LABEL: Record<GaugeRiskLevel, string> = {
+  low: "Low TB Risk",
+  moderate: "Moderate TB Risk",
+  high: "High TB Risk",
+};
+
+const RISK_TAG_BG: Record<GaugeRiskLevel, string> = {
+  low: "#DCFCE7",
+  moderate: "#FEF9C3",
+  high: "#FEE2E2",
+};
+
+const RISK_TAG_COLOR: Record<GaugeRiskLevel, string> = {
+  low: "#15803D",
+  moderate: "#A16207",
+  high: "#B91C1C",
+};
+
+const ACTION_LABEL: Record<GaugeRiskLevel, string> = {
+  low: "Monitor symptoms",
+  moderate: "Further evaluation needed",
+  high: "Seek medical attention",
+};
+
+export function QuickResultPreviewCard({ isActive, onHistoryPress }: Props) {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const { colors, isDark } = useTheme();
   const [loading, setLoading] = useState(() => !peekLatestScreening());
   const [signedIn, setSignedIn] = useState(true);
   const [latest, setLatest] = useState<ScreeningHistoryRow | null>(() => peekLatestScreening());
@@ -137,7 +159,6 @@ export function QuickResultPreviewCard({ isActive }: Props) {
   }, [isActive, load]);
 
   const risk = latest ? coerceRisk(latest.finalRiskLevel ?? latest.result?.riskLevel) : "low";
-  const tagline = latest ? TAGLINE[risk] : "";
   const when = latest ? formatCompletedAt(latest) : null;
   const isTinyPhone = width < 340;
   const gaugeSize = Math.min(isTinyPhone ? 84 : 100, Math.max(76, Math.round(width * 0.24)));
@@ -165,20 +186,38 @@ export function QuickResultPreviewCard({ isActive }: Props) {
   };
 
   return (
-    <View className="mb-6 px-5">
-      <Text className="mb-3.5 text-base font-bold leading-6 text-black">Quick Result Preview</Text>
+    <View className="mt-5 mb-6 px-5">
+      <View className="mb-3.5 flex-row items-center justify-between">
+        <Text style={{ color: colors.text }} className="text-[17px] font-extrabold leading-6">
+          Quick Result Preview
+        </Text>
+        {onHistoryPress ? (
+          <Pressable
+            onPress={onHistoryPress}
+            hitSlop={8}
+            className="flex-row items-center gap-0.5"
+            accessibilityRole="button"
+            accessibilityLabel="Open screening history"
+          >
+            <Text style={{ color: colors.accent }} className="text-sm font-semibold">History</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.accent} />
+          </Pressable>
+        ) : null}
+      </View>
 
       {error ? (
-        <Text className="mb-2 rounded-xl bg-[#FDEDEC] px-3 py-2 text-sm text-[#C0392B]">{error}</Text>
+        <Text style={{ backgroundColor: colors.errorBg, color: colors.error }} className="mb-2 rounded-xl px-3 py-2 text-sm">{error}</Text>
       ) : null}
 
       <Pressable
         onPress={latest ? openDetails : undefined}
         disabled={!latest}
-        className="rounded-3xl border border-[#E8E8E8] bg-white active:bg-neutral-50"
+        className="rounded-3xl border active:opacity-90"
         style={[
           cardShadow,
           {
+            backgroundColor: colors.card,
+            borderColor: colors.cardBorder,
             flexDirection: isTinyPhone ? "column" : "row",
             alignItems: isTinyPhone ? "stretch" : "center",
             justifyContent: "space-between",
@@ -192,19 +231,19 @@ export function QuickResultPreviewCard({ isActive }: Props) {
         {loading ? (
           <>
             <View className="min-w-0" style={textStyle}>
-              <View className="mb-2 h-5 w-[88%] max-w-[220px] rounded-md bg-[#EEF0F2]" />
-              <View className="mb-2 h-4 w-[70%] rounded-md bg-[#F4F4F5]" />
-              <View className="h-4 w-[100px] rounded-md bg-[#F4F4F5]" />
+              <View className="mb-2 h-5 w-[88%] max-w-[220px] rounded-md" style={{ backgroundColor: colors.surfaceAlt }} />
+              <View className="mb-2 h-4 w-[70%] rounded-md" style={{ backgroundColor: colors.surfaceAlt }} />
+              <View className="h-4 w-[100px] rounded-md" style={{ backgroundColor: colors.surfaceAlt }} />
             </View>
             <View style={gaugeBoxStyle}>
-              <ActivityIndicator color="#0B1530" />
+              <ActivityIndicator color={colors.text} />
             </View>
           </>
         ) : !signedIn ? (
           <>
             <View className="min-w-0" style={textStyle}>
-              <Text className="mb-1.5 text-base font-bold text-[#6B7280]">Sign in to preview results</Text>
-              <Text className="text-sm leading-5 text-[#9CA3AF]">
+              <Text style={{ color: colors.textSecondary }} className="mb-1.5 text-base font-bold">Sign in to preview results</Text>
+              <Text style={{ color: colors.textMuted }} className="text-sm leading-5">
                 Your most recent completed screening appears here after you sign in.
               </Text>
             </View>
@@ -215,22 +254,39 @@ export function QuickResultPreviewCard({ isActive }: Props) {
         ) : !latest ? (
           <>
             <View className="min-w-0" style={textStyle}>
-              <Text className="mb-1.5 text-base font-bold text-[#6B7280]">No screenings yet</Text>
-              <Text className="text-sm italic text-[#888]">“This is not a medical diagnosis”</Text>
-              <Text className="mt-1 text-sm text-[#bbb]">Complete a screening to see it here.</Text>
+              <Text style={{ color: colors.textSecondary }} className="mb-1.5 text-base font-bold">No screening results yet</Text>
+              <Text className="text-sm italic">“This is not a medical diagnosis”</Text>
+              <Text style={{ color: colors.textMuted }} className="mt-1 text-sm font-semibold">
+                Begin a screening to generate your first result preview.
+              </Text>
             </View>
-            <View style={[gaugeBoxStyle, { opacity: 0.4 }]}>
-              <GaugeChart size={gaugeSize} riskLevel="low" />
+            <View style={gaugeBoxStyle}>
+              <GaugeChart size={gaugeSize} riskLevel="low" disabled />
             </View>
           </>
         ) : (
           <>
             <View className="min-w-0" style={textStyle}>
-              <Text className="mb-1.5 text-base font-bold text-black" numberOfLines={2}>
-                {tagline}
+              <View
+                className="mb-2.5 flex-row items-center self-start rounded-full px-2.5 py-1"
+                style={{ backgroundColor: RISK_TAG_BG[risk] }}
+              >
+                <View
+                  className="mr-1.5 size-1.5 rounded-full"
+                  style={{ backgroundColor: RISK_TAG_COLOR[risk] }}
+                />
+                <Text
+                  className="text-xs font-bold"
+                  style={{ color: RISK_TAG_COLOR[risk] }}
+                >
+                  {RISK_LABEL[risk]}
+                </Text>
+              </View>
+              <Text style={{ color: colors.text }} className="mb-1.5 text-base font-bold" numberOfLines={2}>
+                {ACTION_LABEL[risk]}
               </Text>
-              <Text className="text-sm italic text-[#888]">“This is not a medical diagnosis”</Text>
-              <Text className="mt-1 text-sm text-[#bbb]">
+              <Text style={{ color: colors.textMuted }} className="text-sm italic">*This is not a medical diagnosis*</Text>
+              <Text style={{ color: colors.textMuted }} className="mt-1 text-sm">
                 {when ? `${when.date} · ${when.time}` : ""}
               </Text>
             </View>

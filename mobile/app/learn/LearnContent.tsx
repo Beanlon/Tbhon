@@ -1,12 +1,22 @@
-import React from "react";
-import { View, Text, ScrollView, TouchableOpacity } from "react-native";
-import { useRouter } from "expo-router";
+import React, { useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  Linking,
+  Alert,
+  Pressable,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTheme } from "../../contexts/ThemeContext";
+
+type SectionId = "overviewSymptoms" | "causesRiskPrevention" | "actionSeekHelp";
 
 type Stat = {
   value: string;
   label: string;
-  color: string;
 };
 
 type Tag = {
@@ -29,9 +39,9 @@ type Step = {
 };
 
 const overviewStats: Stat[] = [
-  { value: "1.3M", label: "Deaths globally per year", color: "#E53935" },
-  { value: "10M", label: "People fall ill yearly", color: "#E67E22" },
-  { value: "85%", label: "Cure rate with treatment", color: "#1E8449" },
+  { value: "1.3M", label: "Deaths / year" },
+  { value: "10M", label: "Ill / year" },
+  { value: "85%", label: "Cure rate" },
 ];
 
 const spreadTags: Tag[] = [
@@ -131,46 +141,20 @@ const learnCardShadow = {
   elevation: 4,
 };
 
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <Text className="-mb-1 text-sm font-bold uppercase tracking-widest text-[#8FA3B1]">
-      {children}
-    </Text>
-  );
-}
+type SourceItem = {
+  label: string;
+  url: string;
+};
 
-function InfoCard({
-  icon,
-  iconBackground,
-  title,
-  subtitle,
-  children,
-}: {
-  icon: string;
-  iconBackground: string;
-  title: string;
-  subtitle: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View className="rounded-3xl border border-[#efefef] bg-white p-5" style={learnCardShadow}>
-      <View className="mb-4 flex-row items-center gap-2.5">
-        <View
-          className="h-10 w-10 items-center justify-center rounded-3xl"
-          style={{ backgroundColor: iconBackground }}
-        >
-          <Text className="text-lg">{icon}</Text>
-        </View>
-        <View className="flex-1">
-          <Text className="text-base font-bold text-[#111111]">{title}</Text>
-          <Text className="mt-0.5 text-sm text-[#8FA3B1]">{subtitle}</Text>
-        </View>
-      </View>
-      <View className="mb-4 h-px bg-[#efefef]" />
-      {children}
-    </View>
-  );
-}
+const trustedSources: SourceItem[] = [
+  { label: "World Health Organization (WHO) - Tuberculosis", url: "https://www.who.int/health-topics/tuberculosis" },
+  { label: "U.S. CDC - Tuberculosis (TB)", url: "https://www.cdc.gov/tb/" },
+  { label: "European CDC - Tuberculosis", url: "https://www.ecdc.europa.eu/en/tuberculosis" },
+  {
+    label: "Philippine DOH - National Tuberculosis Control Program",
+    url: "https://doh.gov.ph/national-tuberculosis-control-program",
+  },
+];
 
 function TagPill({ label, backgroundColor, color }: Tag) {
   return (
@@ -178,29 +162,32 @@ function TagPill({ label, backgroundColor, color }: Tag) {
       className="rounded-full py-1.5 px-3"
       style={{ backgroundColor }}
     >
-      <Text className="text-sm font-semibold" style={{ color }}>
+      <Text className="text-xs font-semibold" style={{ color }}>
         {label}
       </Text>
     </View>
   );
 }
 
-function BulletStat({ value, label, color }: Stat) {
+function BulletStat({ value, label, isDark }: Stat & { isDark: boolean }) {
   return (
-    <View className="flex-1 items-center rounded-xl bg-white px-2.5 py-3.5">
-      <Text className="text-2xl font-extrabold" style={{ color }}>
+    <View className="flex-1 items-center rounded-xl px-2.5 py-3.5" style={{ backgroundColor: isDark ? "#1A3478" : "#EAE8FA" }}>
+      <Text className="text-2xl font-extrabold" style={{ color: isDark ? "#FFFFFF" : "#0C1E4A" }}>
         {value}
       </Text>
-      <Text className="mt-1 text-center text-xs leading-4 text-[#8FA3B1]">
+      <Text className="mt-1 text-center text-xs leading-4" style={{ color: isDark ? "#EAE8FA" : "#3D4EA6" }}>
         {label}
       </Text>
     </View>
   );
 }
 
-function StepRow({ number, title, description, backgroundColor }: Step) {
+function StepRow({ number, title, description, backgroundColor, isDark }: Step & { isDark: boolean }) {
   return (
-    <View className="flex-row items-start gap-3">
+    <View
+      className="flex-row items-start gap-3 rounded-xl border p-3.5"
+      style={{ borderColor: isDark ? "#3D4EA6" : "#EAE8FA", backgroundColor: isDark ? "#1A3478" : "#FFFFFF" }}
+    >
       <View
         className="mt-0.5 size-6 shrink-0 items-center justify-center rounded-full"
         style={{ backgroundColor }}
@@ -208,211 +195,352 @@ function StepRow({ number, title, description, backgroundColor }: Step) {
         <Text className="text-sm font-extrabold text-white">{number}</Text>
       </View>
       <View className="flex-1">
-        <Text className="text-base font-bold text-[#111111]">{title}</Text>
-        <Text className="mt-0.5 text-sm leading-5 text-justify text-[#5D6D7E]">{description}</Text>
+        <Text className="text-base font-bold" style={{ color: isDark ? "#FFFFFF" : "#111111" }}>{title}</Text>
+        <Text className="mt-0.5 text-sm leading-5 text-justify" style={{ color: isDark ? "#EAE8FA" : "#5D6D7E" }}>{description}</Text>
       </View>
     </View>
   );
 }
 
-function AlertBanner({
-  tone,
+function SectionCard({
   icon,
   title,
-  description,
+  subtitle,
+  children,
 }: {
-  tone: "warn" | "danger" | "green";
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   title: string;
-  description: string;
+  subtitle: string;
+  children: React.ReactNode;
 }) {
-  const colors = {
-    warn: { backgroundColor: "#FEF5E7", borderColor: "#E67E22", textColor: "#7D4E00" },
-    danger: { backgroundColor: "#FDEDEC", borderColor: "#C0392B", textColor: "#7B241C" },
-    green: { backgroundColor: "#E9F7EF", borderColor: "#1E8449", textColor: "#1A6035" },
-  }[tone];
-
+  const { colors, isDark } = useTheme();
   return (
     <View
-      className="flex-row items-start gap-2.5 rounded-xl border-l-4 p-4"
-      style={{
-        backgroundColor: colors.backgroundColor,
-        borderLeftColor: colors.borderColor,
-      }}
+      className="rounded-2xl border p-5"
+      style={[learnCardShadow, { borderColor: colors.cardBorder, backgroundColor: colors.card }]}
     >
-      <Text className="mt-px text-base">{icon}</Text>
+      <View className="mb-4 flex-row items-center gap-3">
+        <View className="h-9 w-9 items-center justify-center rounded-xl" style={{ backgroundColor: isDark ? "#1A3478" : "#EAE8FA" }}>
+          <Ionicons name={icon} size={18} color={colors.primary} />
+        </View>
+        <View className="flex-1">
+          <Text className="text-base font-bold" style={{ color: colors.text }}>{title}</Text>
+          <Text className="text-xs" style={{ color: colors.textMuted }}>{subtitle}</Text>
+        </View>
+      </View>
       <View className="flex-1">
-        <Text className="mb-0.5 text-base font-bold" style={{ color: colors.textColor }}>
-          {title}
-        </Text>
-        <Text className="text-sm leading-5 text-justify" style={{ color: colors.textColor }}>
-          {description}
-        </Text>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+function TrustedSourcesBlock() {
+  const { colors, isDark } = useTheme();
+  const openSource = (url: string) => {
+    void Linking.openURL(url);
+  };
+
+  return (
+    <View className="mb-3 rounded-2xl border p-4" style={[learnCardShadow, { borderColor: colors.cardBorder, backgroundColor: colors.card }]}>
+      <View className="mb-2.5 flex-row items-center gap-2">
+        <Ionicons name="library-outline" size={18} color={colors.primary} />
+        <Text className="text-base font-extrabold" style={{ color: colors.text }}>Trusted References</Text>
+      </View>
+      <Text className="mb-3 text-sm leading-6" style={{ color: colors.textSecondary }}>
+        Information in this section is based on globally recognized health authorities.
+      </Text>
+      <View className="gap-2">
+        {trustedSources.map((source) => (
+          <TouchableOpacity key={source.url} onPress={() => openSource(source.url)} activeOpacity={0.75}>
+            <View className="flex-row items-center justify-between rounded-lg px-3.5 py-3" style={{ backgroundColor: isDark ? "#3D4EA6" : "#F8FAFF" }}>
+              <Text className="mr-3 flex-1 text-sm font-semibold leading-5" style={{ color: isDark ? colors.textSecondary : colors.primary }}>
+                {source.label}
+              </Text>
+              <Ionicons name="open-outline" size={18} color={isDark ? colors.textSecondary : colors.primary} />
+            </View>
+          </TouchableOpacity>
+        ))}
       </View>
     </View>
   );
 }
 
 export function LearnContent() {
-  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
+  const tbSearchUrl = "https://www.google.com/search?q=TB+testing+center+near+me";
+  const [openAccordion, setOpenAccordion] = useState<SectionId | null>("overviewSymptoms");
+
+  const sections = useMemo(
+    () =>
+      [
+        {
+          id: "overviewSymptoms",
+          label: "Overview + Symptoms",
+          icon: "information-circle-outline",
+        },
+        {
+          id: "causesRiskPrevention",
+          label: "Causes + Risk + Prevention",
+          icon: "cloud-outline",
+        },
+        {
+          id: "actionSeekHelp",
+          label: "Action + Seek Help",
+          icon: "medkit-outline",
+        },
+      ] satisfies Array<{ id: SectionId; label: string; icon: keyof typeof Ionicons.glyphMap }>,
+    [],
+  );
+
+  const handleOpenTestingCenters = () => {
+    Alert.alert(
+      "Open Browser?",
+      "You are about to leave the app and open your phone's browser to search for nearby TB testing centers.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue",
+          onPress: () => {
+            void Linking.openURL(tbSearchUrl);
+          },
+        },
+      ],
+    );
+  };
+
+  const handleOpenMoreArticles = () => {
+    Alert.alert(
+      "Search More Articles?",
+      "You are about to leave the app and open your browser to search for more TB-related articles.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue",
+          onPress: () => {
+            void Linking.openURL(
+              "https://www.google.com/search?q=tuberculosis+articles+WHO+CDC+DOH",
+            );
+          },
+        },
+      ],
+    );
+  };
+
+  const renderSection = (section: SectionId) => {
+    if (section === "overviewSymptoms") {
+      return (
+        <View className="gap-3">
+          <SectionCard
+            icon="information-circle-outline"
+            title="What is Tuberculosis?"
+            subtitle="Basic definition"
+          >
+            <Text className="mb-4 text-sm leading-5" style={{ color: colors.textSecondary }}>
+              TB is a contagious disease caused by{" "}
+              <Text className="font-bold" style={{ color: colors.text }}>Mycobacterium tuberculosis</Text>. It mainly
+              affects the lungs but can spread to other organs.
+            </Text>
+            <View className="flex-row gap-2">
+              {overviewStats.map((item) => (
+                <BulletStat key={item.label} {...item} isDark={isDark} />
+              ))}
+            </View>
+          </SectionCard>
+          <SectionCard icon="pulse-outline" title="Signs & Symptoms" subtitle="Watch for these signs">
+            <View className="gap-2.5">
+              {symptoms.map((symptom) => (
+                <View
+                  key={symptom.name}
+                  className="flex-row items-center gap-2.5 rounded-xl px-3 py-2.5"
+                  style={{ backgroundColor: colors.surface }}
+                >
+                  <View
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: symptom.dotColor }}
+                  />
+                  <Text className="flex-1 text-sm font-semibold" style={{ color: colors.text }}>{symptom.name}</Text>
+                  <Text className="text-xs" style={{ color: colors.textMuted }}>{symptom.note}</Text>
+                </View>
+              ))}
+            </View>
+            <View className="mt-4 rounded-xl border p-3" style={{ borderColor: colors.cardBorder, backgroundColor: colors.surface }}>
+              <Text className="mb-1.5 text-sm font-bold" style={{ color: colors.primary }}>Latent vs Active TB</Text>
+              <Text className="text-xs leading-5" style={{ color: colors.textSecondary }}>
+                Latent: no symptoms and not contagious. Active: symptoms present, contagious, and
+                needs treatment.
+              </Text>
+            </View>
+          </SectionCard>
+        </View>
+      );
+    }
+
+    if (section === "causesRiskPrevention") {
+      return (
+        <View className="gap-3">
+          <SectionCard icon="cloud-outline" title="How TB Spreads" subtitle="Transmission routes">
+            <View className="mb-3 flex-row flex-wrap gap-2">
+              {spreadTags.map((tag) => (
+                <TagPill key={tag.label} {...tag} />
+              ))}
+            </View>
+            <Text className="text-xs italic" style={{ color: colors.textMuted }}>
+              Not spread by touch, handshakes, or sharing food.
+            </Text>
+          </SectionCard>
+          <SectionCard icon="people-outline" title="Higher Risk Groups" subtitle="Who is vulnerable">
+            <View className="flex-row flex-wrap gap-2">
+              {riskTags.map((tag) => (
+                <TagPill key={tag.label} {...tag} />
+              ))}
+            </View>
+          </SectionCard>
+          <SectionCard
+            icon="shield-checkmark-outline"
+            title="How to Prevent TB"
+            subtitle="Protect yourself and others"
+          >
+            <View className="gap-3">
+              {prevention.map((item) => (
+                <StepRow key={item.title} {...item} isDark={isDark} />
+              ))}
+            </View>
+          </SectionCard>
+        </View>
+      );
+    }
+
+    if (section === "actionSeekHelp") {
+      return (
+        <View className="gap-3">
+          <SectionCard icon="medkit-outline" title="Steps to Take" subtitle="If you suspect TB">
+            <View className="gap-3">
+              {steps.map((step) => (
+                <StepRow key={step.title} {...step} isDark={isDark} />
+              ))}
+            </View>
+          </SectionCard>
+          <SectionCard
+            icon="alert-circle-outline"
+            title="Seek care immediately if..."
+            subtitle="Emergency signs"
+          >
+            <View className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] p-3.5">
+              <Text className="text-sm font-semibold text-[#991B1B]">
+                Coughing up blood, severe chest pain, or difficulty breathing.
+              </Text>
+              <Text className="mt-1.5 text-sm leading-5 text-[#7F1D1D]">
+                These may indicate advanced TB and need urgent medical attention.
+              </Text>
+            </View>
+            <View className="mt-3 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] p-3.5">
+              <Text className="text-sm font-semibold text-[#166534]">Good news: TB is curable.</Text>
+              <Text className="mt-1.5 text-sm leading-5 text-[#166534]">
+                With complete and consistent treatment, most people fully recover.
+              </Text>
+            </View>
+          </SectionCard>
+        </View>
+      );
+    }
+
+    return null;
+  };
+
+  const renderAccordionVariant = () => (
+    <View className="gap-3">
+      {sections.map((item) => {
+        const isOpen = openAccordion === item.id;
+        return (
+          <View
+            key={item.id}
+            className="overflow-hidden rounded-2xl border"
+            style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}
+          >
+            <Pressable
+              className="flex-row items-center justify-between px-4 py-3.5"
+              onPress={() => setOpenAccordion(isOpen ? null : item.id)}
+            >
+              <View className="flex-row items-center gap-2.5">
+                <View
+                  className="h-8 w-8 items-center justify-center rounded-lg"
+                  style={{ backgroundColor: isOpen ? colors.primary : isDark ? "#1A3478" : "#EAE8FA" }}
+                >
+                  <Ionicons name={item.icon} size={15} color={isOpen ? "#FFFFFF" : colors.primary} />
+                </View>
+                <Text className="text-sm font-semibold" style={{ color: colors.text }}>{item.label}</Text>
+              </View>
+              <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.textMuted} />
+            </Pressable>
+            {isOpen ? <View className="border-t p-3" style={{ borderColor: colors.cardBorder }}>{renderSection(item.id)}</View> : null}
+          </View>
+        );
+      })}
+    </View>
+  );
 
   return (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: "2%" }}
-    >
-      <View className="px-5 pb-3 pt-3">
-        <View className="mb-4 flex-row items-center justify-between">
-          <View>
-            <Text className="mb-1 text-base text-[#666]">📚 Learn</Text>
-            <Text className="text-3xl font-extrabold text-black">Tuberculosis (TB)</Text>
-          </View>
-          <View className="size-16 items-center justify-center rounded-full bg-[#d8d8d8]">
-            <Text className="text-2xl">🫁</Text>
-          </View>
-        </View>
-
-        <View
-          className="flex-row items-center gap-3.5 rounded-3xl border border-[#efefef] bg-white p-5"
-          style={learnCardShadow}
-        >
-          <View className="size-14 shrink-0 items-center justify-center rounded-3xl bg-[#E6F3FB]">
-            <Ionicons name="medkit-outline" size={26} color="#1D6FA4" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-lg font-extrabold leading-6 text-[#111111]">
-              A curable bacterial infection - understand it, prevent it, and act early.
-            </Text>
-            <Text className="mt-1 text-sm leading-5 text-justify text-[#5D6D7E]">
-              Keep the same clean card styling used throughout the home screen while learning the
-              essentials.
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      <View className="gap-4 px-5">
-        <SectionLabel>Overview</SectionLabel>
-        <InfoCard icon="🔬" iconBackground="#E6F3FB" title="What is Tuberculosis?" subtitle="Basic definition">
-          <Text className="mb-4 text-base leading-5 text-justify text-[#5D6D7E]">
-            TB is a contagious disease caused by the bacterium{" "}
-            <Text className="font-bold text-[#111111]">Mycobacterium tuberculosis</Text>. It mainly
-            affects the lungs, but it can spread to other organs including the kidneys, spine, and
-            brain.
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 28 }} style={{ backgroundColor: colors.background }}>
+      <View className="px-5" style={{ paddingTop: insets.top + 14 }}>
+        <View className="mb-5 rounded-3xl p-5" style={{ backgroundColor: isDark ? "#1A3478" : "#0C1E4A" }}>
+          <Text className="text-sm" style={{ color: "#C9D5FF" }}>Learn</Text>
+          <Text className="mt-1 text-2xl font-extrabold text-white">Tuberculosis (TB)</Text>
+          <Text className="mt-2 text-sm leading-5" style={{ color: "#D8E1FF" }}>
+            A curable bacterial infection. This section is organized to make key facts easier to scan.
           </Text>
-          <View className="flex-row gap-2">
-            {overviewStats.map((item) => (
-              <BulletStat key={item.label} {...item} />
-            ))}
+        </View>
+
+        <View className="mb-4">
+          <View className="mb-3 overflow-hidden rounded-2xl border px-4 py-4" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
+            <View
+              className="absolute -right-6 -top-7 h-20 w-20 rounded-full"
+              style={{ backgroundColor: isDark ? "rgba(123,111,216,0.28)" : "#E4D7FF" }}
+            />
+            <View
+              className="absolute right-8 top-7 h-10 w-10 rounded-full"
+              style={{ backgroundColor: isDark ? "rgba(234,232,250,0.30)" : "#EFE6FF" }}
+            />
+            <Text className="text-[22px] font-extrabold" style={{ color: colors.primary }}>Commonly Asked Questions</Text>
+            <Text className="mt-1 text-sm" style={{ color: colors.textSecondary }}>
+              Open each item below to view formal guidance and key details.
+            </Text>
           </View>
-        </InfoCard>
+          {renderAccordionVariant()}
+        </View>
 
-        <SectionLabel>Causes</SectionLabel>
-        <InfoCard icon="💨" iconBackground="#FEF5E7" title="How TB Spreads" subtitle="Transmission routes">
-          <View className="mb-4 flex-row flex-wrap gap-2">
-            {spreadTags.map((tag) => (
-              <TagPill key={tag.label} {...tag} />
-            ))}
-          </View>
-          <AlertBanner
-            tone="warn"
-            icon="⚠️"
-            title="Not spread by touch"
-            description="TB is not transmitted through handshakes, sharing food, kissing, or touching surfaces. It spreads only through the air."
-          />
-        </InfoCard>
-
-        <InfoCard icon="⚡" iconBackground="#FDEDEC" title="Who is at Higher Risk?" subtitle="Vulnerability factors">
-          <View className="flex-row flex-wrap gap-2">
-            {riskTags.map((tag) => (
-              <TagPill key={tag.label} {...tag} />
-            ))}
-          </View>
-        </InfoCard>
-
-        <SectionLabel>Symptoms</SectionLabel>
-        <InfoCard icon="🩺" iconBackground="#FDEDEC" title="Signs & Symptoms" subtitle="Watch for these warning signs">
-          <View className="gap-2">
-            {symptoms.map((symptom) => (
-              <View
-                key={symptom.name}
-                className="flex-row items-center gap-2.5 rounded-xl bg-white px-3 py-2.5"
-              >
-                <View
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: symptom.dotColor }}
-                />
-                <Text className="flex-1 text-base font-semibold text-[#111111]">
-                  {symptom.name}
-                </Text>
-                <Text className="text-sm text-[#8FA3B1]">{symptom.note}</Text>
-              </View>
-            ))}
-          </View>
-        </InfoCard>
-
-        <InfoCard icon="🔄" iconBackground="#E9F7EF" title="Latent vs Active TB" subtitle="Two very different states">
-          <View className="flex-row gap-2">
-            <View className="flex-1 rounded-xl bg-[#E9F7EF] p-4">
-              <Text className="mb-1.5 text-sm font-bold text-[#1E8449]">Latent TB</Text>
-              <Text className="text-sm leading-5 text-justify text-[#1A6035]">
-                • No symptoms{"\n"}• Not contagious{"\n"}• Bacteria inactive{"\n"}• Can become
-                active
-              </Text>
-            </View>
-            <View className="flex-1 rounded-xl bg-[#FDEDEC] p-4">
-              <Text className="mb-1.5 text-sm font-bold text-[#C0392B]">Active TB</Text>
-              <Text className="text-sm leading-5 text-justify text-[#7B241C]">
-                • Symptoms present{"\n"}• Contagious to others{"\n"}• Bacteria active{"\n"}•
-                Requires treatment
-              </Text>
-            </View>
-          </View>
-        </InfoCard>
-
-        <SectionLabel>What To Do</SectionLabel>
-        <InfoCard icon="✅" iconBackground="#E9F7EF" title="Steps to Take" subtitle="If you suspect TB">
-          <View className="gap-3">
-            {steps.map((step) => (
-              <StepRow key={step.title} {...step} />
-            ))}
-          </View>
-        </InfoCard>
-
-        <SectionLabel>Prevention</SectionLabel>
-        <InfoCard icon="🛡️" iconBackground="#E9F7EF" title="How to Prevent TB" subtitle="Protect yourself and others">
-          <View className="gap-3">
-            {prevention.map((item) => (
-              <StepRow key={item.title} {...item} />
-            ))}
-          </View>
-        </InfoCard>
-
-        <AlertBanner
-          tone="danger"
-          icon="🚨"
-          title="Seek emergency care if..."
-          description="You cough up blood, experience severe chest pain, or have difficulty breathing. These are signs of advanced TB requiring urgent medical attention."
-        />
-
-        <AlertBanner
-          tone="green"
-          icon="💚"
-          title="Good news - TB is curable!"
-          description="With complete and consistent treatment, the vast majority of people fully recover from TB."
-        />
+        <TrustedSourcesBlock />
 
         <TouchableOpacity
           activeOpacity={0.85}
-          onPress={() => router.push("/screening/recording")}
-          className="mb-4 mt-2 flex-row items-center justify-between rounded-2xl bg-[#0a1428] px-5 py-4"
+          onPress={handleOpenTestingCenters}
+          className="mb-4 mt-2 flex-row items-center justify-between rounded-[28px] px-6 py-5"
+          style={[learnCardShadow, { backgroundColor: isDark ? "#7B6FD8" : "#C9D5FF" }]}
         >
-          <View>
-            <Text className="text-base font-bold text-white">Find a TB Testing Center</Text>
-            <Text className="mt-0.5 text-sm text-white/70">Locate the nearest health facility</Text>
+          <View className="flex-1 pr-3">
+            <Text className="text-[18px] font-extrabold" style={{ color: "#0C1E4A" }}>Find a TB Testing Center</Text>
+            <Text className="mt-1 text-base" style={{ color: "#1A3478" }}>Locate the nearest health facility</Text>
           </View>
-          <View className="size-9 items-center justify-center rounded-full bg-white/20">
-            <Text className="text-base text-white">→</Text>
+          <View className="h-14 w-14 items-center justify-center rounded-full bg-white/60">
+            <Ionicons name="arrow-forward" size={28} color="#0C1E4A" />
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={handleOpenMoreArticles}
+          className="mb-4 flex-row items-center justify-between rounded-[28px] border px-6 py-5"
+          style={[learnCardShadow, { borderColor: colors.cardBorder, backgroundColor: colors.card }]}
+        >
+          <View className="flex-1 pr-3">
+            <Text className="text-[18px] font-extrabold" style={{ color: colors.text }}>Search More TB Articles</Text>
+            <Text className="mt-1 text-base" style={{ color: colors.textMuted }}>
+              Browse more trusted and up-to-date online references
+            </Text>
+          </View>
+          <View className="h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: colors.primaryLight }}>
+            <Ionicons name="open-outline" size={22} color={colors.primary} />
           </View>
         </TouchableOpacity>
       </View>

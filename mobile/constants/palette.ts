@@ -1,4 +1,6 @@
 /** TBHON system palette — navy → indigo → violet (hero, splash, progress). */
+export const APP_SCREEN_BACKGROUND = "#FFFFFF";
+
 export const palette = {
   deepNavy: "#0C1E4A",
   navy: "#1A3478",

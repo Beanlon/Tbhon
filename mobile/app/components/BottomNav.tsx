@@ -1,9 +1,8 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { APP_SCREEN_BACKGROUND } from '../../constants/palette';
+import { useTheme } from '../../contexts/ThemeContext';
 
-// Type exports
 export type BottomNavTab = 'home' | 'history' | 'screening' | 'learn' | 'profile';
 
 type BottomNavProps = {
@@ -11,7 +10,6 @@ type BottomNavProps = {
   onTabPress: (tab: BottomNavTab) => void;
 };
 
-// Tab configuration
 const tabs: Array<{ tab: BottomNavTab; label: string; icon: string }> = [
   { tab: 'home', label: 'Home', icon: 'home' },
   { tab: 'history', label: 'History', icon: 'time' },
@@ -21,15 +19,17 @@ const tabs: Array<{ tab: BottomNavTab; label: string; icon: string }> = [
 ];
 
 export default function BottomNav({ activeTab, onTabPress }: BottomNavProps) {
+  const { isDark, colors } = useTheme();
+
   return (
     <View
       style={{
         flexDirection: 'row',
         justifyContent: 'space-around',
         alignItems: 'center',
-        backgroundColor: APP_SCREEN_BACKGROUND,
+        backgroundColor: colors.background,
         borderTopWidth: 1,
-        borderTopColor: '#efefef',
+        borderTopColor: colors.border,
         paddingVertical: '3%',
         paddingBottom: '5%',
       }}
@@ -44,13 +44,12 @@ export default function BottomNav({ activeTab, onTabPress }: BottomNavProps) {
             activeOpacity={0.75}
             style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
           >
-            {/* Special screening button */}
             {item.tab === 'screening' ? (
               <View
                 style={{
                   width: 60,
                   height: 60,
-                  backgroundColor: '#0a1428',
+                  backgroundColor: isDark ? colors.accent : '#0a1428',
                   borderRadius: 30,
                   justifyContent: 'center',
                   alignItems: 'center',
@@ -60,21 +59,19 @@ export default function BottomNav({ activeTab, onTabPress }: BottomNavProps) {
                 <MaterialCommunityIcons name="qrcode-scan" size={28} color="#fff" />
               </View>
             ) : (
-              // Standard tab icon
               <Ionicons
                 name={item.icon as any}
                 size={28}
-                color={isActive ? '#0a1428' : '#999'}
+                color={isActive ? colors.navActive : colors.navInactive}
                 style={{ marginBottom: 4 }}
               />
             )}
 
-            {/* Tab label */}
             <Text
               style={{
                 fontSize: 12,
                 fontWeight: '600',
-                color: isActive ? '#000' : '#333',
+                color: isActive ? colors.navActive : colors.navInactive,
               }}
             >
               {item.label}

@@ -17,9 +17,14 @@ import {
   Keyboard,
   Easing,
   type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type ViewStyle,
   type TextInputProps,
 } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import * as NavigationBar from "expo-navigation-bar";
+import { useFocusEffect } from "@react-navigation/native";
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
@@ -28,7 +33,8 @@ import { Ionicons } from "@expo/vector-icons";
 import CachedImage from "../components/CachedImage";
 import { TBHON_ICON } from "../../constants/branding";
 import { palette } from "../../constants/palette";
-import { useRouter } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
+import { resetToAuthenticatedHome } from "../../utils/authNavigation";
 import { ApiError, postRegister } from "../../services/backendApi";
 import { saveAuthToken } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
@@ -387,7 +393,9 @@ function validateStep2(f: FormData, country: Country): ErrorMap {
   if (emailError) e.email = emailError;
   const phoneDigits = f.phone.replace(/\D/g, "");
   if (!f.phone.trim()) e.phone = "Phone number is required.";
-  else if (!country.validate(phoneDigits)) e.phone = country.invalidMessage;
+  else if (!country.validate(phoneDigits)) {
+    e.phone = `${country.invalidMessage} Expected ${country.dialCode} ${country.placeholder}.`;
+  }
   const passwordError = signupPasswordValidationError(f.password);
   if (passwordError) e.password = passwordError;
   if (!f.confirm) e.confirm = "Please confirm your password.";
@@ -398,6 +406,7 @@ function validateStep2(f: FormData, country: Country): ErrorMap {
 
 export default function SignUp() {
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const compactScreen = windowHeight < 760 || windowWidth < 390;
@@ -408,6 +417,23 @@ export default function SignUp() {
   const sheetPaddingHorizontal = compactScreen ? 16 : 18;
   const sheetPaddingTop = compactScreen ? 20 : 24;
   const sheetPaddingBottom = compactScreen ? 20 : 28;
+
+  /** Scroll offset where the dark form card reaches the status bar region. */
+  const statusBarThreshold = useMemo(
+    () => Math.max(0, heroMinHeight + sheetTopOverlap - 8),
+    [heroMinHeight, sheetTopOverlap],
+  );
+
+  const [statusBarStyle, setStatusBarStyle] = useState<"light" | "dark">("dark");
+
+  const scrollContentStyle = useMemo(
+    () => ({
+      flexGrow: 1,
+      paddingTop: insets.top + 4,
+      paddingBottom: insets.bottom + 28,
+    }),
+    [insets.top, insets.bottom],
+  );
 
   const authMarkSize = useMemo(() => {
     const d = Math.min(windowWidth, windowHeight);
@@ -510,6 +536,33 @@ export default function SignUp() {
   const onInnerLayout = useCallback((e: LayoutChangeEvent) => {
     setInnerContentH(e.nativeEvent.layout.height);
   }, []);
+
+  const applySystemChrome = useCallback((onDarkBackdrop: boolean) => {
+    const statusStyle = onDarkBackdrop ? "light" : "dark";
+    setStatusBarStyle((prev) => (prev === statusStyle ? prev : statusStyle));
+    if (Platform.OS === "android") {
+      void NavigationBar.setButtonStyleAsync(statusStyle).catch(() => {});
+    }
+  }, []);
+
+  const onSignupScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const y = e.nativeEvent.contentOffset.y;
+      applySystemChrome(y >= statusBarThreshold);
+    },
+    [applySystemChrome, statusBarThreshold],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      applySystemChrome(false);
+      return () => {
+        if (Platform.OS === "android") {
+          void NavigationBar.setButtonStyleAsync("dark").catch(() => {});
+        }
+      };
+    }, [applySystemChrome]),
+  );
 
   const closeGenderPicker = useCallback(() => {
     setGenderPickerOpen(false);
@@ -714,7 +767,7 @@ export default function SignUp() {
           ? error.message
           : error instanceof Error
             ? error.message
-            : "Could not reach the server. Check API URL / network.";
+            : "Could not reach the server. Please check your internet connection.";
       Alert.alert("Create account failed", message);
     } finally {
       setSubmittingAccount(false);
@@ -722,7 +775,7 @@ export default function SignUp() {
   };
 
   const handleGetStarted = () => {
-    router.replace("/home/HomeScreen");
+    resetToAuthenticatedHome(navigation);
   };
 
   useEffect(() => {
@@ -774,8 +827,9 @@ export default function SignUp() {
     >
       <SafeAreaView
         style={[styles.root, { backgroundColor: tk.screenBg }]}
-        edges={["top", "right", "bottom", "left"]}
+        edges={["left", "right"]}
       >
+      <StatusBar style={statusBarStyle} translucent backgroundColor="transparent" />
       <ScrollView
         ref={scrollViewRef}
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
@@ -783,9 +837,11 @@ export default function SignUp() {
         bounces={scrollEnabled}
         alwaysBounceVertical={false}
         onLayout={onScrollViewLayout}
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + 28 }}
+        onScroll={onSignupScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={scrollContentStyle}
         keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={scrollEnabled}
+        showsVerticalScrollIndicator={false}
         {...(Platform.OS === "android"
           ? {
               overScrollMode: scrollEnabled
@@ -806,7 +862,7 @@ export default function SignUp() {
               />
               <View style={styles.heroTitleText}>
                 <Text style={styles.heroTitle}>Create Account</Text>
-                <Text style={styles.heroSubtitle}>TBHON Health Platform</Text>
+                <Text style={styles.heroSubtitle}>TBhon Pre-screening App</Text>
               </View>
             </View>
           </View>
@@ -1094,7 +1150,7 @@ export default function SignUp() {
                         label=""
                         placeholder={selectedCountry.placeholder}
                         value={form.phone}
-                        onChange={f("phone")}
+                        onChange={(value) => f("phone")(value.replace(/\D/g, ""))}
                         fieldRef={(el) => { fieldRefsMap.phone = el; }}
                         keyboardType="phone-pad"
                         icon={

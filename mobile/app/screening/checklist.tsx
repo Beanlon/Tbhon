@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
+import { useTheme } from "../../contexts/ThemeContext";
 
 type Answer = "yes" | "no";
 
@@ -30,17 +31,17 @@ function symptomSummary(answers: Record<string, Answer>): {
     level = "high";
     headline = "Several TB-related symptoms reported";
     body =
-      "Your answers indicate multiple symptoms that are commonly associated with TB. We strongly encourage you to consult a healthcare professional for proper testing — especially after completing the cough recording.";
+      "Your answers indicate multiple symptoms that are commonly associated with TB. We strongly encourage you to consult a healthcare professional for proper testing — especially after completing IoT cough recording.";
   } else if (symptomYes >= 1 || riskYes >= 2) {
     level = "moderate";
     headline = "Some risk factors or symptoms noted";
     body =
-      "You reported one or more symptoms or risk factors linked to TB. Please complete the cough recording and consider speaking with a healthcare provider.";
+      "You reported one or more symptoms or risk factors linked to TB. Please complete cough recording on the screening device and consider speaking with a healthcare provider.";
   } else {
     level = "low";
     headline = "No major symptoms reported";
     body =
-      "You did not report significant TB symptoms at this time. The cough recording will help provide additional insight. Continue monitoring your health.";
+      "You did not report significant TB symptoms at this time. Device cough recording will help provide additional insight. Continue monitoring your health.";
   }
 
   return { yesCount, level, headline, body };
@@ -69,6 +70,7 @@ const LEVEL_LABEL: Record<"low" | "moderate" | "high", string> = {
 
 export default function ScreeningChecklistScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   // selection for the current question only — null means nothing picked yet
@@ -114,24 +116,25 @@ export default function ScreeningChecklistScreen() {
 
   return (
     <>
-      <StatusBar style="dark" backgroundColor="#fff" translucent={false} />
-      <SafeAreaView className="flex-1 bg-lavender" edges={["top", "right", "bottom", "left"]}>
+      <StatusBar style={colors.statusBar} backgroundColor={colors.background} translucent={false} />
+      <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["top", "right", "bottom", "left"]}>
         {/* Header */}
-        <View className="flex-row items-center justify-between border-b border-neutral-100 px-4 pb-3.5 pt-2 sm:px-5">
+        <View className="flex-row items-center justify-between border-b px-4 pb-3.5 pt-2 sm:px-5" style={{ borderColor: colors.borderLight }}>
           <Pressable
             onPress={goBack}
-            className="size-11 items-center justify-center rounded-full bg-navy/5 active:bg-navy/10"
+            className="size-11 items-center justify-center rounded-full"
+            style={{ backgroundColor: colors.surfaceAlt }}
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <Ionicons name="chevron-back" size={22} color="#0f172a" />
+            <Ionicons name="chevron-back" size={22} color={colors.text} />
           </Pressable>
 
           <View className="min-w-0 flex-1 items-center px-2">
-            <Text className="text-center text-sm font-bold text-slate-900 sm:text-base">
+            <Text className="text-center text-sm font-bold sm:text-base" style={{ color: colors.text }}>
               {isDone ? "Your responses" : "Symptom check"}
             </Text>
-            <Text className="mt-0.5 text-center text-xs font-semibold text-slate-500 sm:text-sm">
+            <Text className="mt-0.5 text-center text-xs font-semibold sm:text-sm" style={{ color: colors.textMuted }}>
               {isDone ? "Review before continuing" : `Question ${step + 1} of ${TOTAL}`}
             </Text>
           </View>
@@ -141,8 +144,8 @@ export default function ScreeningChecklistScreen() {
 
         {/* Progress bar */}
         {!isDone && (
-          <View className="h-1.5 w-full bg-slate-100">
-            <View className="h-1.5 rounded-full bg-navy" style={{ width: `${progressPct}%` }} />
+          <View className="h-1.5 w-full" style={{ backgroundColor: colors.surfaceAlt }}>
+            <View className="h-1.5 rounded-full" style={{ width: `${progressPct}%`, backgroundColor: colors.primary }} />
           </View>
         )}
 
@@ -150,18 +153,18 @@ export default function ScreeningChecklistScreen() {
         {!isDone && current ? (
           <View className="flex-1 px-6 pb-8 pt-10 sm:px-8">
             {/* Category pill */}
-            <View className="mb-6 self-start rounded-full bg-navy/5 px-4 py-1.5">
-              <Text className="text-xs font-bold uppercase tracking-wider text-navy/70">
+            <View className="mb-6 self-start rounded-full px-4 py-1.5" style={{ backgroundColor: colors.primaryLight }}>
+              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.primary }}>
                 {current.category === "symptom" ? "Symptom" : "Exposure Risk"}
               </Text>
             </View>
 
-            <Text className="text-xl font-bold leading-8 text-slate-900 sm:text-2xl sm:leading-[2.35rem]">
+            <Text className="text-xl font-bold leading-8 sm:text-2xl sm:leading-[2.35rem]" style={{ color: colors.text }}>
               {current.question}
             </Text>
 
             {current.subtext ? (
-              <Text className="mt-4 text-[15px] leading-7 text-slate-500 sm:text-base sm:leading-8">
+              <Text className="mt-4 text-[15px] leading-7 sm:text-base sm:leading-8" style={{ color: colors.textMuted }}>
                 {current.subtext}
               </Text>
             ) : null}
@@ -173,8 +176,8 @@ export default function ScreeningChecklistScreen() {
                 onPress={() => setSelected((s) => (s === "yes" ? null : "yes"))}
                 className="flex-row items-center gap-5 rounded-2xl border px-6 py-5 active:opacity-80 sm:py-[22px]"
                 style={{
-                  backgroundColor: selected === "yes" ? "#0B1530" : "#F8FAFC",
-                  borderColor: selected === "yes" ? "#0B1530" : "#E2E8F0",
+                  backgroundColor: selected === "yes" ? colors.primary : colors.surface,
+                  borderColor: selected === "yes" ? colors.primary : colors.border,
                 }}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: selected === "yes" }}
@@ -184,14 +187,14 @@ export default function ScreeningChecklistScreen() {
                   className="size-9 items-center justify-center rounded-full border-2"
                   style={{
                     backgroundColor: selected === "yes" ? "#fff" : "transparent",
-                    borderColor: selected === "yes" ? "#fff" : "#CBD5E1",
+                    borderColor: selected === "yes" ? "#fff" : colors.border,
                   }}
                 >
                   {selected === "yes" && <Ionicons name="checkmark" size={18} color="#0B1530" />}
                 </View>
                 <Text
                   className="text-base font-bold"
-                  style={{ color: selected === "yes" ? "#fff" : "#0f172a" }}
+                  style={{ color: selected === "yes" ? "#fff" : colors.text }}
                 >
                   Yes
                 </Text>
@@ -202,8 +205,8 @@ export default function ScreeningChecklistScreen() {
                 onPress={() => setSelected((s) => (s === "no" ? null : "no"))}
                 className="flex-row items-center gap-5 rounded-2xl border px-6 py-5 active:opacity-80 sm:py-[22px]"
                 style={{
-                  backgroundColor: selected === "no" ? "#0B1530" : "#F8FAFC",
-                  borderColor: selected === "no" ? "#0B1530" : "#E2E8F0",
+                  backgroundColor: selected === "no" ? colors.primary : colors.surface,
+                  borderColor: selected === "no" ? colors.primary : colors.border,
                 }}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: selected === "no" }}
@@ -213,14 +216,14 @@ export default function ScreeningChecklistScreen() {
                   className="size-9 items-center justify-center rounded-full border-2"
                   style={{
                     backgroundColor: selected === "no" ? "#fff" : "transparent",
-                    borderColor: selected === "no" ? "#fff" : "#CBD5E1",
+                    borderColor: selected === "no" ? "#fff" : colors.border,
                   }}
                 >
                   {selected === "no" && <Ionicons name="close" size={18} color="#0B1530" />}
                 </View>
                 <Text
                   className="text-base font-bold"
-                  style={{ color: selected === "no" ? "#fff" : "#0f172a" }}
+                  style={{ color: selected === "no" ? "#fff" : colors.text }}
                 >
                   No
                 </Text>
@@ -232,20 +235,20 @@ export default function ScreeningChecklistScreen() {
               onPress={goNext}
               disabled={selected === null}
               className="mt-10 items-center justify-center rounded-2xl py-[18px] sm:py-5"
-              style={{ backgroundColor: selected === null ? "#E2E8F0" : "#0B1530" }}
+              style={{ backgroundColor: selected === null ? colors.surfaceAlt : colors.primary }}
               accessibilityRole="button"
               accessibilityLabel="Next question"
               accessibilityState={{ disabled: selected === null }}
             >
               <Text
                 className="text-base font-bold"
-                style={{ color: selected === null ? "#94A3B8" : "#fff" }}
+                style={{ color: selected === null ? colors.textMuted : "#fff" }}
               >
                 {selected === null ? "Select an answer to continue" : "Next →"}
               </Text>
             </Pressable>
 
-            <Text className="mt-8 px-1 text-center text-xs italic leading-5 text-slate-400">
+            <Text className="mt-8 px-1 text-center text-xs italic leading-5" style={{ color: colors.textMuted }}>
               Your answers are not a diagnosis. They help give context to the cough analysis.
             </Text>
           </View>
@@ -262,8 +265,20 @@ export default function ScreeningChecklistScreen() {
             <View
               className="mb-6 rounded-2xl border p-6 sm:p-7"
               style={{
-                backgroundColor: LEVEL_BG[summary.level],
-                borderColor: LEVEL_BORDER[summary.level],
+                backgroundColor: isDark
+                  ? summary.level === "high"
+                    ? "rgba(127,29,29,0.28)"
+                    : summary.level === "moderate"
+                      ? "rgba(120,53,15,0.30)"
+                      : "rgba(6,78,59,0.30)"
+                  : LEVEL_BG[summary.level],
+                borderColor: isDark
+                  ? summary.level === "high"
+                    ? "rgba(248,113,113,0.45)"
+                    : summary.level === "moderate"
+                      ? "rgba(251,191,36,0.45)"
+                      : "rgba(52,211,153,0.45)"
+                  : LEVEL_BORDER[summary.level],
               }}
             >
               <View className="mb-2 flex-row items-center gap-2">
@@ -282,45 +297,48 @@ export default function ScreeningChecklistScreen() {
                   {LEVEL_LABEL[summary.level]}
                 </Text>
               </View>
-              <Text className="text-base font-bold text-slate-900">{summary.headline}</Text>
-              <Text className="mt-3 text-[15px] leading-7 text-slate-700">{summary.body}</Text>
+              <Text className="text-base font-bold" style={{ color: colors.text }}>{summary.headline}</Text>
+              <Text className="mt-3 text-[15px] leading-7" style={{ color: isDark ? colors.textSecondary : colors.textSecondary }}>
+                {summary.body}
+              </Text>
             </View>
 
             {/* Answered yes list */}
             {summary.yesCount > 0 ? (
-              <View className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 sm:px-6">
-                <Text className="mb-4 text-xs font-bold uppercase tracking-wider text-slate-500">
+              <View className="mb-6 rounded-2xl border px-5 py-5 sm:px-6" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
+                <Text className="mb-4 text-xs font-bold uppercase tracking-wider" style={{ color: colors.textMuted }}>
                   You answered Yes to
                 </Text>
                 {QUESTIONS.filter((q) => answers[q.id] === "yes").map((q) => (
                   <View key={q.id} className="mb-4 flex-row items-start gap-3 last:mb-0">
                     <Ionicons name="ellipse" size={7} color="#0B1530" style={{ marginTop: 9 }} />
-                    <Text className="flex-1 text-[15px] leading-7 text-slate-800">{q.question}</Text>
+                    <Text className="flex-1 text-[15px] leading-7" style={{ color: colors.text }}>{q.question}</Text>
                   </View>
                 ))}
               </View>
             ) : null}
 
-            <Text className="text-center text-xs italic leading-5 text-slate-400">
-              This is not a medical diagnosis. Continue to cough recording for the full screening.
+            <Text className="text-center text-xs italic leading-5" style={{ color: colors.textMuted }}>
+              This is not a medical diagnosis. Continue to device recording for the full screening.
             </Text>
           </ScrollView>
         ) : null}
 
         {/* Bottom CTA — only on summary */}
         {isDone ? (
-          <View className="border-t border-slate-100 px-6 pb-8 pt-5 sm:px-8 sm:pb-10 sm:pt-6">
+          <View className="border-t px-6 pb-8 pt-5 sm:px-8 sm:pb-10 sm:pt-6" style={{ borderColor: colors.borderLight }}>
             <Pressable
               onPress={() =>
                 router.push({
-                  pathname: "/screening/recording",
+                  pathname: "/screening/iot-cough",
                   params: { checklist: payloadJson },
                 } as any)
               }
-              className="items-center justify-center rounded-2xl bg-navy py-[18px] active:bg-navy/90 sm:py-5"
+              className="items-center justify-center rounded-2xl py-[18px] sm:py-5"
+              style={{ backgroundColor: colors.primary }}
               accessibilityRole="button"
             >
-              <Text className="text-base font-bold text-white">Continue to cough recording</Text>
+              <Text className="text-base font-bold text-white">Continue to device recording</Text>
             </Pressable>
           </View>
         ) : null}
