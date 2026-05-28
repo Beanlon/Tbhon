@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
@@ -31,17 +31,17 @@ function symptomSummary(answers: Record<string, Answer>): {
     level = "high";
     headline = "Several TB-related symptoms reported";
     body =
-      "Your answers indicate multiple symptoms that are commonly associated with TB. We strongly encourage you to consult a healthcare professional for proper testing — especially after completing IoT cough recording.";
+      "Your answers indicate multiple symptoms that are commonly associated with TB. We strongly encourage you to consult a healthcare professional for proper testing — especially after completing cough recording.";
   } else if (symptomYes >= 1 || riskYes >= 2) {
     level = "moderate";
     headline = "Some risk factors or symptoms noted";
     body =
-      "You reported one or more symptoms or risk factors linked to TB. Please complete cough recording on the screening device and consider speaking with a healthcare provider.";
+      "You reported one or more symptoms or risk factors linked to TB. Please complete cough recording and consider speaking with a healthcare provider.";
   } else {
     level = "low";
     headline = "No major symptoms reported";
     body =
-      "You did not report significant TB symptoms at this time. Device cough recording will help provide additional insight. Continue monitoring your health.";
+      "You did not report significant TB symptoms at this time. Cough recording will help provide additional insight. Continue monitoring your health.";
   }
 
   return { yesCount, level, headline, body };
@@ -70,6 +70,8 @@ const LEVEL_LABEL: Record<"low" | "moderate" | "high", string> = {
 
 export default function ScreeningChecklistScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ from?: string }>();
+  const isIotFlow = params.from === "iot-instructions";
   const { colors, isDark } = useTheme();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
@@ -330,15 +332,20 @@ export default function ScreeningChecklistScreen() {
             <Pressable
               onPress={() =>
                 router.push({
-                  pathname: "/screening/iot-cough",
-                  params: { checklist: payloadJson },
+                  pathname: isIotFlow ? "/screening/iot-cough" : "/screening/recording",
+                  params: {
+                    checklist: payloadJson,
+                    ...(isIotFlow ? { iotMode: "1" } : {}),
+                  },
                 } as any)
               }
               className="items-center justify-center rounded-2xl py-[18px] sm:py-5"
               style={{ backgroundColor: colors.primary }}
               accessibilityRole="button"
             >
-              <Text className="text-base font-bold text-white">Continue to device recording</Text>
+              <Text className="text-base font-bold text-white">
+                {isIotFlow ? "Continue to device cough capture" : "Continue to cough recording"}
+              </Text>
             </Pressable>
           </View>
         ) : null}

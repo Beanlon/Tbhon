@@ -335,6 +335,7 @@ export default function ScreeningDetailsScreen() {
   const { colors } = useTheme();
   const params = useLocalSearchParams<{
     sessionId?: string;
+    from?: string;
     risk?: string;
     probTb?: string;
     audioUris?: string;
@@ -351,6 +352,8 @@ export default function ScreeningDetailsScreen() {
     phlegmErrorDetail?: string;
   }>();
 
+  const fromScreeningFlow = params.from === "result";
+
   const sessionId = pickSessionId(params.sessionId);
 
   const [remoteLoading, setRemoteLoading] = useState(Boolean(sessionId));
@@ -362,6 +365,7 @@ export default function ScreeningDetailsScreen() {
   const [imageViewerVisible, setImageViewerVisible] = useState(false);
   const [viewerHeaders, setViewerHeaders] = useState<Record<string, string> | null>(null);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const playingIndexRef = useRef<number | null>(null);
   const [audioHint, setAudioHint] = useState<string | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const checklistHeightAnim = useRef(new Animated.Value(0)).current;
@@ -380,6 +384,7 @@ export default function ScreeningDetailsScreen() {
     checklistHeightAnim.setValue(0);
     setImageViewerVisible(false);
     setPlayingIndex(null);
+    playingIndexRef.current = null;
     setAudioHint(null);
     const sound = soundRef.current;
     soundRef.current = null;
@@ -643,17 +648,19 @@ export default function ScreeningDetailsScreen() {
   const showRemoteError = Boolean(sessionId) && !remoteLoading && remoteError;
 
   const stopCurrentSound = useCallback(async () => {
-    if (soundRef.current) {
-      await soundRef.current.stopAsync().catch(() => {});
-      await soundRef.current.unloadAsync().catch(() => {});
-      soundRef.current = null;
-    }
+    const s = soundRef.current;
+    soundRef.current = null;
+    playingIndexRef.current = null;
     setPlayingIndex(null);
+    if (s) {
+      await s.stopAsync().catch(() => {});
+      await s.unloadAsync().catch(() => {});
+    }
   }, []);
 
   const playAudioAt = useCallback(async (index: number) => {
-    // Tap again while playing = pause/stop
-    if (playingIndex === index) {
+    // Tap again while playing = stop
+    if (playingIndexRef.current === index) {
       await stopCurrentSound();
       return;
     }
@@ -668,24 +675,49 @@ export default function ScreeningDetailsScreen() {
     // Stop any currently playing clip first
     await stopCurrentSound();
 
+    playingIndexRef.current = index;
     setPlayingIndex(index);
     try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
       const sound = new Audio.Sound();
       soundRef.current = sound;
       await sound.loadAsync({ uri }, { shouldPlay: true });
+
+      // Cancelled while loading (user tapped stop during network fetch)
+      if (soundRef.current !== sound) {
+        void sound.stopAsync().catch(() => {});
+        void sound.unloadAsync().catch(() => {});
+        return;
+      }
+
       sound.setOnPlaybackStatusUpdate((status) => {
-        if (!status.isLoaded || status.didJustFinish) {
-          void sound.unloadAsync().catch(() => {});
-          if (soundRef.current === sound) soundRef.current = null;
+        if (status.isLoaded && status.didJustFinish) {
+          sound.setOnPlaybackStatusUpdate(null);
+          if (soundRef.current === sound) {
+            soundRef.current = null;
+            playingIndexRef.current = null;
+          }
           setPlayingIndex((current) => (current === index ? null : current));
+          void sound.unloadAsync().catch(() => {});
         }
       });
-    } catch {
+    } catch (e) {
+      if (soundRef.current === null || soundRef.current === undefined) {
+        // Already stopped externally, no need to update UI
+        return;
+      }
       soundRef.current = null;
-      setAudioHint("Could not play this recording right now.");
+      playingIndexRef.current = null;
+      setAudioHint(
+        `Could not play this recording: ${e instanceof Error ? e.message : String(e)}`,
+      );
       setPlayingIndex(null);
     }
-  }, [audioUris, playingIndex, stopCurrentSound]);
+  }, [audioUris, stopCurrentSound]);
 
   return (
     <>
@@ -696,13 +728,19 @@ export default function ScreeningDetailsScreen() {
           style={{ paddingTop: headerPadTop, borderBottomWidth: 1, borderBottomColor: colors.borderLight, backgroundColor: colors.background }}
         >
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => {
+              if (fromScreeningFlow) {
+                router.dismissAll();
+              } else {
+                router.back();
+              }
+            }}
             className="size-11 items-center justify-center rounded-full"
             style={{ backgroundColor: colors.surfaceAlt }}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel={fromScreeningFlow ? "Go to home" : "Go back"}
           >
-            <Ionicons name="chevron-back" size={22} color={colors.text} />
+            <Ionicons name={fromScreeningFlow ? "home-outline" : "chevron-back"} size={22} color={colors.text} />
           </Pressable>
 
           <View className="min-w-0 flex-1 items-center px-2">

@@ -101,6 +101,7 @@ export default function ResultScreen() {
     risk?: string;
     probTb?: string;
     audioUris?: string;
+    iotRecordingIds?: string;
     imageUri?: string;
     checklist?: string;
     invalidAudio?: string;
@@ -175,6 +176,22 @@ export default function ResultScreen() {
         }
       }
 
+      // IoT recording IDs assigned by the backend when the ESP32 uploaded.
+      // Paired by index with audioList (localUri[i] corresponds to recordingId[i]).
+      let iotRecordingIdList: string[] = [];
+      if (typeof params.iotRecordingIds === "string" && params.iotRecordingIds.length > 0) {
+        try {
+          const parsed = JSON.parse(params.iotRecordingIds) as unknown;
+          if (Array.isArray(parsed)) {
+            iotRecordingIdList = parsed.filter(
+              (x): x is string => typeof x === "string" && x.length > 0,
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
       let invalidReasonList: string[] | undefined;
       if (typeof params.invalidReasons === "string") {
         try {
@@ -211,12 +228,18 @@ export default function ResultScreen() {
         const includeLocalImageUriInComplete =
           imageUriParam.length > 0 && (!isLocalImage || !serverHasSputumBefore);
 
+        // In the IoT flow the ESP32 already uploaded the audio bytes directly
+        // to the server. Sending local file paths as audioUris confuses the
+        // backend into creating new empty rows instead of linking the existing
+        // IoT recordings by sessionId (the same mechanism that works for sputum).
+        const iotCoughFlow = iotRecordingIdList.length > 0;
+
         const response = await postCompleteScreening({
           riskLevel: risk,
           recommendation: cfg.recommendation,
           ...(draftSessionId ? { sessionId: draftSessionId } : {}),
           ...(checklist.length > 0 ? { checklist } : {}),
-          audioUris: audioList,
+          audioUris: iotCoughFlow ? [] : audioList,
           ...(includeLocalImageUriInComplete ? { imageUri: imageUriParam } : {}),
           ...(uploadError ? { uploadError: true } : {}),
           ...(invalidAudio ? { invalidAudio: true } : {}),
@@ -243,23 +266,35 @@ export default function ResultScreen() {
         const sessionId = response?.session?.sessionId;
         if (typeof sessionId === "string" && sessionId.length > 0) {
           setSavedSessionId(sessionId);
-          const recordings = Array.isArray(response.session.coughRecordings)
-            ? response.session.coughRecordings
-            : [];
-          const pairs = recordings
-            .map((r, i) => ({ recordingId: r.recordingId, uri: audioList[i] }))
-            .filter(
-              (p): p is { recordingId: string; uri: string } =>
-                typeof p.recordingId === "string" &&
-                p.recordingId.length > 0 &&
-                typeof p.uri === "string" &&
-                p.uri.length > 0,
+
+          if (iotCoughFlow) {
+            // IoT path: the ESP32 already uploaded the WAV bytes to the server
+            // via POST /iot/cough-recordings. The backend links those recordings
+            // to this screening by sessionId when postCompleteScreening is called
+            // with audioUris:[]. Re-uploading the locally-cached copy here would
+            // create duplicate DB rows (this is what caused the duplication bug).
+            console.log(
+              `[Screening] IoT cough: skipping raw re-upload — bytes already on server (${iotRecordingIdList.length} recording(s))`,
             );
-          for (const { recordingId, uri } of pairs) {
-            try {
-              await uploadCoughRecordingRaw({ sessionId, recordingId, localUri: uri });
-            } catch (e) {
-              if (__DEV__) {
+          } else {
+            // Non-IoT path: backend created new empty rows and returned their IDs.
+            // Upload the locally-recorded bytes to fill them.
+            const recordings = Array.isArray(response.session.coughRecordings)
+              ? response.session.coughRecordings
+              : [];
+            const pairs = recordings
+              .map((r, i) => ({ recordingId: r.recordingId, uri: audioList[i] }))
+              .filter(
+                (p): p is { recordingId: string; uri: string } =>
+                  typeof p.recordingId === "string" &&
+                  p.recordingId.length > 0 &&
+                  typeof p.uri === "string" &&
+                  p.uri.length > 0,
+              );
+            for (const { recordingId, uri } of pairs) {
+              try {
+                await uploadCoughRecordingRaw({ sessionId, recordingId, localUri: uri });
+              } catch (e) {
                 const msg =
                   e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
                 console.warn(`[Screening] cough raw upload failed for ${recordingId}:`, msg);
@@ -374,7 +409,7 @@ export default function ResultScreen() {
               ) : null}
               <Text className="mb-1.5 text-sm font-bold" style={{ color: isDark ? "#FCA5A5" : "#7F1D1D" }}>Could not complete analysis</Text>
               <Text className="text-xs leading-5" style={{ color: isDark ? "#FECACA" : "#450A0A" }}>
-                We couldn't connect to the analysis service. Please check your internet connection and try again.
+                We could not connect to the analysis service. Please check your internet connection and try again.
                 If the problem persists, contact support.
               </Text>
             </View>
@@ -575,6 +610,7 @@ export default function ResultScreen() {
               router.push({
                 pathname: "/screening/details",
                 params: {
+                  from: "result",
                   risk,
                   probTb: typeof probTb === "number" && Number.isFinite(probTb) ? String(probTb) : "",
                   audioUris: typeof params.audioUris === "string" ? params.audioUris : "[]",

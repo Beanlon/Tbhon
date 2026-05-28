@@ -1,3 +1,4 @@
+/** Max cough slots per screening session; matches backend MAX_COUGH_ATTEMPTS / DB unique (session_id, cough_attempt). */
 export const IOT_COUGH_COUNT = 3;
 
 export type IotStep = {
@@ -11,8 +12,6 @@ export const IOT_COUGH_STEPS: IotStep[] = [
   { id: "started", label: "Recording started", duration: 800 },
   { id: "recording", label: "Recording in progress", duration: 3000 },
   { id: "ended", label: "Recording ended", duration: 600 },
-  { id: "uploading", label: "Uploading to server", duration: 1500 },
-  { id: "success", label: "Upload successful", duration: 0 },
 ];
 
 export const IOT_COUGH_STATUS_LABELS = IOT_COUGH_STEPS.map((s) => s.label);
@@ -21,8 +20,6 @@ export const IOT_SPUTUM_STEPS: IotStep[] = [
   { id: "preparing", label: "Preparing capture", duration: 1000 },
   { id: "capturing", label: "Capturing image", duration: 1500 },
   { id: "processing", label: "Processing image", duration: 1200 },
-  { id: "uploading", label: "Uploading to server", duration: 1500 },
-  { id: "success", label: "Upload successful", duration: 0 },
 ];
 
 export const IOT_SPUTUM_STATUS_LABELS = IOT_SPUTUM_STEPS.map((s) => s.label);
@@ -36,19 +33,7 @@ export const IOT_HARDWARE_CHECKS = [
   {
     id: "bluetooth",
     title: "Bluetooth enabled",
-    detail: "Turn on Bluetooth on your phone to connect with the screening device.",
-  },
-  {
-    id: "pair",
-    title: "Pair with device",
-    detail: "Scan and connect to your TBhon screening device via Bluetooth.",
-    actionLabel: "Scan for device",
-  },
-  {
-    id: "wifi_creds",
-    title: "Wi‑Fi setup",
-    detail: "Enter your Wi‑Fi network details so the device can upload data to the cloud.",
-    actionLabel: "Configure Wi‑Fi",
+    detail: "Turn on Bluetooth on your phone if you use a wireless screening device.",
   },
   {
     id: "health",
@@ -56,4 +41,9 @@ export const IOT_HARDWARE_CHECKS = [
     detail: "Verifies the device can reach TBhon servers over your Wi‑Fi network.",
     actionLabel: "Check connection",
   },
-] as const;
+] as const satisfies ReadonlyArray<{
+  id: string;
+  title: string;
+  detail: string;
+  actionLabel?: string;
+}>;

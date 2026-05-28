@@ -279,6 +279,7 @@ export default function ProcessingScreen() {
   const params = useLocalSearchParams<{
     audioDone?: string;
     audioUris?: string;
+    iotRecordingIds?: string;
     imageUri?: string;
     checklist?: string;
     sessionId?: string;
@@ -323,6 +324,10 @@ export default function ProcessingScreen() {
       /** Forward to every path so result/details persist + display checklist after analysis */
       const checklistNavParams = checklistStr.length > 0 ? ({ checklist: checklistStr } as const) : {};
       const sessionNavParams = sessionIdStr.length > 0 ? ({ sessionId: sessionIdStr } as const) : {};
+      const iotNavParams =
+        typeof params.iotRecordingIds === "string" && params.iotRecordingIds.length > 0
+          ? { iotRecordingIds: params.iotRecordingIds }
+          : {};
       const deviceSputumNavParams =
         params.deviceSputum === "1"
           ? {
@@ -352,6 +357,7 @@ export default function ProcessingScreen() {
             imageUri: "",
             ...checklistNavParams,
             ...sessionNavParams,
+            ...iotNavParams,
             ...deviceSputumNavParams,
             ...phlegmNavParams(emptyPhlegm),
           },
@@ -381,6 +387,7 @@ export default function ProcessingScreen() {
             apiAttempt: apiBases.join(" | "),
             ...checklistNavParams,
             ...sessionNavParams,
+            ...iotNavParams,
             ...deviceSputumNavParams,
             ...phlegmNavParams(emptyPhlegm),
           },
@@ -401,6 +408,7 @@ export default function ProcessingScreen() {
             imageUri: imageUriStr,
             ...checklistNavParams,
             ...sessionNavParams,
+            ...iotNavParams,
             ...deviceSputumNavParams,
             ...phlegmNavParams(phlegm),
           },
@@ -460,6 +468,7 @@ export default function ProcessingScreen() {
                 invalidReasons: JSON.stringify(spoofReasons),
                 ...checklistNavParams,
                 ...sessionNavParams,
+                ...iotNavParams,
                 ...deviceSputumNavParams,
                 ...phlegmNavParams(phlegm),
               },
@@ -481,6 +490,7 @@ export default function ProcessingScreen() {
               imageUri: imageUriStr,
               ...checklistNavParams,
               ...sessionNavParams,
+              ...iotNavParams,
               ...deviceSputumNavParams,
               ...phlegmNavParams(phlegm),
             },
@@ -500,6 +510,7 @@ export default function ProcessingScreen() {
               imageUri: imageUriStr,
               ...checklistNavParams,
               ...sessionNavParams,
+              ...iotNavParams,
               ...deviceSputumNavParams,
               uploadError: "1",
               apiAttempt: apiBases.join(" | "),
