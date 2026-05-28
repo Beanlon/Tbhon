@@ -16,7 +16,6 @@ import {
   Pressable,
   StyleSheet,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resetToLanding } from '../../utils/authNavigation';
@@ -519,11 +518,9 @@ export function ProfilePage() {
     }
   }, [navigation]);
 
-  useFocusEffect(
-    useCallback(() => {
-      void fetchProfile();
-    }, [fetchProfile]),
-  );
+  useEffect(() => {
+    void fetchProfile();
+  }, [fetchProfile]);
 
   const handleSignOut = () => {
     Alert.alert("Sign out", "You'll need to sign in again to access your account.", [
@@ -724,12 +721,11 @@ export function ProfilePage() {
   const showVerifiedBadge = Boolean(user?.profile);
 
   return (
-    <>
-      <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
+    <View style={{ flex: 1, minHeight: 0, width: "100%", backgroundColor: colors.background }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 24 }}
-        style={{ backgroundColor: colors.background }}
+        style={{ flex: 1, backgroundColor: colors.background }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 28 }}
       >
         <View className="px-5 pb-3" style={{ paddingTop: insets.top + 22 }}>
           <View className="mb-4 flex-row items-center justify-between">
@@ -1303,7 +1299,7 @@ export function ProfilePage() {
           </View>
         </View>
       </Modal>
-    </>
+    </View>
   );
 }
 

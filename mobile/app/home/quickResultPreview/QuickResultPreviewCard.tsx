@@ -199,8 +199,8 @@ export function QuickResultPreviewCard({ isActive, onHistoryPress }: Props) {
             accessibilityRole="button"
             accessibilityLabel="Open screening history"
           >
-            <Text style={{ color: colors.accent }} className="text-sm font-semibold">History</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.accent} />
+            <Text style={{ color: isDark ? colors.textSecondary : colors.accent }} className="text-sm font-semibold">History</Text>
+            <Ionicons name="chevron-forward" size={16} color={isDark ? colors.textSecondary : colors.accent} />
           </Pressable>
         ) : null}
       </View>

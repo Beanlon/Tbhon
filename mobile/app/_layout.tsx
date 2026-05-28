@@ -46,7 +46,7 @@ function RootNavigator() {
 
   return (
     <>
-      <StatusBar style={colors.statusBar} translucent={false} />
+      <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -66,7 +66,16 @@ function RootNavigator() {
         <Stack.Screen name="acountOptions/accountOptions" />
         <Stack.Screen name="login/login" />
         <Stack.Screen name="signUp/signUp" />
-        <Stack.Screen name="screening" options={{ animation: "slide_from_bottom", animationDuration: 240 }} />
+        <Stack.Screen
+          name="screening"
+          options={{
+            // Slide from right - device setup is now an in-tree overlay, not navigation.
+            animation: "slide_from_right",
+            animationDuration: 220,
+            gestureEnabled: true,
+            contentStyle: { backgroundColor: colors.background },
+          }}
+        />
       </Stack>
     </>
   );

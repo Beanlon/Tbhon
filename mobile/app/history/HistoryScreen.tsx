@@ -13,7 +13,6 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -125,6 +124,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
   const [sortKey, setSortKey] = useState<SortKey>("newest");
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [showFilter, setShowFilter] = useState(false);
+  const [filterModalMounted, setFilterModalMounted] = useState(false);
 
   const [tmpSort, setTmpSort] = useState<SortKey>("newest");
   const [tmpDateRange, setTmpDateRange] = useState<DateRange>("all");
@@ -206,26 +206,28 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      void load("initial");
-    }, [load]),
-  );
+  useEffect(() => {
+    void load("initial");
+  }, [load]);
 
   const openFilter = () => {
     setTmpSort(sortKey);
     setTmpDateRange(dateRange);
+    setFilterModalMounted(true);
     setShowFilter(true);
   };
+
+  const closeFilter = useCallback(() => {
+    setShowFilter(false);
+  }, []);
 
   const applyFilter = () => {
     setSortKey(tmpSort);
     setDateRange(tmpDateRange);
-    setShowFilter(false);
+    closeFilter();
   };
 
-  const resetAllFilters = () => {
-    setRiskFilter("all");
+  const clearSortAndDate = () => {
     setSortKey("newest");
     setDateRange("all");
     setTmpSort("newest");
@@ -233,15 +235,26 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
   };
 
   useEffect(() => {
-    if (!showFilter) return;
-    filterSheetAnim.setValue(0);
+    if (showFilter) {
+      filterSheetAnim.setValue(0);
+      Animated.timing(filterSheetAnim, {
+        toValue: 1,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+    if (!filterModalMounted) return;
     Animated.timing(filterSheetAnim, {
-      toValue: 1,
-      duration: 230,
-      easing: Easing.out(Easing.cubic),
+      toValue: 0,
+      duration: 220,
+      easing: Easing.in(Easing.cubic),
       useNativeDriver: true,
-    }).start();
-  }, [showFilter, filterSheetAnim]);
+    }).start(({ finished }) => {
+      if (finished) setFilterModalMounted(false);
+    });
+  }, [showFilter, filterModalMounted, filterSheetAnim]);
 
   const minMs =
     dateRange === "7d" ? daysAgoMs(7) : dateRange === "30d" ? daysAgoMs(30) : dateRange === "90d" ? daysAgoMs(90) : 0;
@@ -268,7 +281,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.background }}>
+    <View className="flex-1" style={{ flex: 1, minHeight: 0, backgroundColor: colors.background }}>
       <View
         className="px-5 pb-3.5"
         style={{ borderBottomWidth: 1, borderBottomColor: colors.borderLight, paddingTop: headerPadTop }}
@@ -340,7 +353,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
               {SORT_OPTIONS.find((s) => s.key === sortKey)?.label}
             </Text>
             <Pressable
-              onPress={resetAllFilters}
+              onPress={clearSortAndDate}
               className="ml-1"
             >
               <Text className="text-sm font-bold" style={{ color: colors.primary }}>Clear</Text>
@@ -374,7 +387,8 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
         </ScrollView>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 20, gap: 14 }}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 28 }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} tintColor="#0B1530" />
@@ -426,10 +440,10 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
         </ScrollView>
       )}
 
-      <Modal visible={showFilter} transparent animationType="fade" onRequestClose={() => setShowFilter(false)}>
+      <Modal visible={filterModalMounted} transparent animationType="none" onRequestClose={closeFilter}>
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
           <Animated.View
-            pointerEvents="box-none"
+            pointerEvents={showFilter ? "auto" : "none"}
             style={[
               StyleSheet.absoluteFillObject,
               {
@@ -441,7 +455,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
               },
             ]}
           >
-            <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowFilter(false)} />
+            <Pressable style={StyleSheet.absoluteFillObject} onPress={closeFilter} />
           </Animated.View>
 
           <Animated.View
@@ -453,12 +467,11 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
               borderTopRightRadius: 24,
               zIndex: 10,
               elevation: 10,
-              opacity: filterSheetAnim,
               transform: [
                 {
                   translateY: filterSheetAnim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [34, 0],
+                    outputRange: [screenHeight, 0],
                   }),
                 },
               ],
@@ -505,7 +518,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
                 </Text>
               </Pressable>
               <Pressable
-                onPress={() => setShowFilter(false)}
+                onPress={closeFilter}
                 className="h-10 w-10 items-center justify-center rounded-full"
                 style={{ backgroundColor: colors.surfaceAlt }}
                 accessibilityRole="button"

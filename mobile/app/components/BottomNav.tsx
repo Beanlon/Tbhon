@@ -30,8 +30,8 @@ export default function BottomNav({ activeTab, onTabPress }: BottomNavProps) {
         backgroundColor: colors.background,
         borderTopWidth: 1,
         borderTopColor: colors.border,
-        paddingVertical: '3%',
-        paddingBottom: '5%',
+        paddingTop: 8,
+        paddingBottom: 10,
       }}
     >
       {tabs.map((item) => {

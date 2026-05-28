@@ -9,12 +9,14 @@ import {
   Modal,
   Animated,
   Easing,
+  useWindowDimensions,
+  type EmitterSubscription,
 } from "react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as NavigationBar from "expo-navigation-bar";
 import { LearnContent } from "../learn/LearnContent";
@@ -22,25 +24,21 @@ import HistoryScreen from "../history/HistoryScreen";
 import { ProfilePage } from "../profile/profilepage";
 import BottomNav, { BottomNavTab } from "../components/BottomNav";
 import { QuickResultPreviewCard } from "./quickResultPreview";
+import { IotHardwareContent } from "../screening/iot-hardware";
 import { getMe } from "../../services/backendApi";
 import { resetToLanding } from "../../utils/authNavigation";
 import { getAuthToken } from "../../utils/authStorage";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
 import { profileFirstName } from "../../utils/profileDisplay";
-import { APP_SCREEN_BACKGROUND, palette } from "../../constants/palette";
+import { palette } from "../../constants/palette";
 import { useTheme } from "../../contexts/ThemeContext";
 
 const NAVY = "#0B1530";
 const PURPLE = palette.violet;
 const TEXT_NAVY = palette.deepNavy;
 const MUTED = "#6B7280";
-const TAB_ORDER: Record<BottomNavTab, number> = {
-  home: 0,
-  history: 1,
-  screening: 2,
-  learn: 3,
-  profile: 4,
-};
+/** Body height of bottom nav row (excluding safe-area inset). */
+const BOTTOM_NAV_HEIGHT = 84;
 
 const cardShadow = {
   shadowColor: "#000",
@@ -77,42 +75,55 @@ export default function HomeScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const { isDark, colors } = useTheme();
   const [showNotifications, setShowNotifications] = useState(false);
   const [activeTab, setActiveTab] = useState<BottomNavTab>("home");
-  const [displayedTab, setDisplayedTab] = useState<BottomNavTab>("home");
   const [firstName, setFirstName] = useState<string | null>(() => profileFirstName(peekProfile()));
-  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  // Screening modal state (slide-up like Edit Profile)
+  const [screeningModalVisible, setScreeningModalVisible] = useState(false);
+  const [screeningModalMounted, setScreeningModalMounted] = useState(false);
+  const screeningSlideAnim = useRef(new Animated.Value(0)).current;
 
   const openScreening = useCallback(() => {
-    router.push("/screening/iot-hardware" as any);
+    setScreeningModalMounted(true);
+    setScreeningModalVisible(true);
+  }, []);
+
+  const closeScreening = useCallback(() => {
+    setScreeningModalVisible(false);
+  }, []);
+
+  const continueScreening = useCallback(() => {
+    // Close overlay first, then navigate after animation completes (220ms + buffer)
+    setScreeningModalVisible(false);
+    setTimeout(() => {
+      router.push("/screening/iot-instructions" as any);
+    }, 260);
   }, [router]);
 
+  // Animate screening modal slide
   useEffect(() => {
-    if (activeTab === displayedTab) return;
-    const prevIdx = TAB_ORDER[displayedTab];
-    const nextIdx = TAB_ORDER[activeTab];
-    const direction = nextIdx > prevIdx ? 1 : -1;
-    const distance = 28;
-    Animated.timing(slideAnim, {
-      toValue: -direction * distance,
-      duration: 120,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start(() => {
-      setDisplayedTab(activeTab);
-      requestAnimationFrame(() => {
-        // Wait one frame so the incoming tab is mounted before entry animation.
-        slideAnim.setValue(direction * distance);
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 180,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }).start();
+    if (screeningModalVisible) {
+      screeningSlideAnim.setValue(0);
+      Animated.timing(screeningSlideAnim, {
+        toValue: 1,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else if (screeningModalMounted) {
+      Animated.timing(screeningSlideAnim, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setScreeningModalMounted(false);
       });
-    });
-  }, [activeTab, displayedTab, slideAnim]);
+    }
+  }, [screeningModalVisible, screeningModalMounted, screeningSlideAnim]);
 
   const scrollTopPad = insets.top + (Platform.OS === "ios" ? 24 : 20);
 
@@ -150,8 +161,9 @@ export default function HomeScreen() {
   useEffect(() => {
     if (activeTab === "home") {
       void refreshProfileHeader();
+      applyHomeSystemChrome();
     }
-  }, [activeTab, refreshProfileHeader]);
+  }, [activeTab, refreshProfileHeader, applyHomeSystemChrome]);
 
   useFocusEffect(
     useCallback(() => {
@@ -170,7 +182,12 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+    const sub: EmitterSubscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      // Close screening overlay first if open
+      if (screeningModalVisible) {
+        closeScreening();
+        return true;
+      }
       if (activeTab !== "home") {
         setActiveTab("home");
         return true;
@@ -178,7 +195,7 @@ export default function HomeScreen() {
       return true;
     });
     return () => sub.remove();
-  }, [activeTab]);
+  }, [activeTab, screeningModalVisible, closeScreening]);
 
   const handleTabPress = (tab: BottomNavTab) => {
     const transitionTo = (next: BottomNavTab) => {
@@ -237,7 +254,7 @@ export default function HomeScreen() {
       return (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          style={{ backgroundColor: colors.background }}
+          style={[styles.tabScroll, { backgroundColor: colors.background }]}
           contentContainerStyle={[styles.scrollContent, { paddingTop: scrollTopPad }]}
         >
           <View style={styles.headerBlock}>
@@ -336,7 +353,7 @@ export default function HomeScreen() {
           </View>
 
           <QuickResultPreviewCard
-            isActive={displayedTab === "home"}
+            isActive={activeTab === "home"}
             onHistoryPress={() => handleTabPress("history")}
           />
         </ScrollView>
@@ -344,27 +361,15 @@ export default function HomeScreen() {
     }
 
     if (tab === "learn") {
-      return (
-        <View className="flex-1">
-          <LearnContent />
-        </View>
-      );
+      return <LearnContent />;
     }
 
     if (tab === "history") {
-      return (
-        <View className="flex-1">
-          <HistoryScreen onTabChange={() => handleTabPress("home")} />
-        </View>
-      );
+      return <HistoryScreen onTabChange={() => handleTabPress("home")} />;
     }
 
     if (tab === "profile") {
-      return (
-        <View className="flex-1">
-          <ProfilePage />
-        </View>
-      );
+      return <ProfilePage />;
     }
 
     return null;
@@ -373,19 +378,28 @@ export default function HomeScreen() {
   return (
     <>
       <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
-      <SafeAreaView
-        className="flex-1"
-        style={{ flex: 1, backgroundColor: colors.background }}
-        edges={["left", "right"]}
-      >
-        <View style={styles.tabStage}>
-          <Animated.View style={[styles.tabLayer, { transform: [{ translateX: slideAnim }] }]}>
-            {renderTabContent(displayedTab)}
-          </Animated.View>
+      <View style={[styles.root, { backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.tabStage,
+            { paddingBottom: BOTTOM_NAV_HEIGHT + insets.bottom },
+          ]}
+        >
+          <View style={styles.tabLayer}>{renderTabContent(activeTab)}</View>
         </View>
 
-        <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
-      </SafeAreaView>
+        <View
+          style={[
+            styles.bottomNavHost,
+            {
+              paddingBottom: insets.bottom,
+              backgroundColor: colors.background,
+            },
+          ]}
+        >
+          <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
+        </View>
+      </View>
 
       <Modal
         visible={showNotifications}
@@ -437,19 +451,74 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Screening Device Setup - absolutely positioned overlay (no Modal to avoid layout shifts) */}
+      {screeningModalMounted && (
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+          {/* Backdrop that fades in */}
+          <Animated.View
+            pointerEvents={screeningModalVisible ? "auto" : "none"}
+            style={[
+              StyleSheet.absoluteFillObject,
+              {
+                backgroundColor: colors.modalOverlay,
+                opacity: screeningSlideAnim,
+              },
+            ]}
+          >
+            <Pressable style={StyleSheet.absoluteFillObject} onPress={closeScreening} />
+          </Animated.View>
+
+          {/* Sliding sheet */}
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFillObject,
+              {
+                backgroundColor: colors.background,
+                transform: [
+                  {
+                    translateY: screeningSlideAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [screenHeight, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <IotHardwareContent onClose={closeScreening} onContinue={continueScreening} />
+          </Animated.View>
+        </View>
+      )}
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    flexDirection: "column",
+  },
   tabStage: {
     flex: 1,
+    minHeight: 0,
   },
   tabLayer: {
     flex: 1,
+    minHeight: 0,
+    width: "100%",
+  },
+  bottomNavHost: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  tabScroll: {
+    flex: 1,
   },
   scrollContent: {
-    paddingBottom: 12,
+    paddingBottom: 24,
   },
   headerBlock: {
     paddingHorizontal: 20,

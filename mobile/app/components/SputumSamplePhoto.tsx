@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import { getAuthMediaHeaders, mediaUrlMatchesSession } from "../../services/backendApi";
 
 function isLocalUri(uri: string): boolean {
@@ -19,13 +20,15 @@ type Props = {
   uri: string;
   height?: number;
   label?: string;
+  /** Called when the user taps the image to view it full-screen. */
+  onPress?: () => void;
 };
 
 /**
  * Displays sputum bytes stored on the backend (requires Bearer auth).
  * Refuses file:// and content:// so history always reflects database media.
  */
-export default function SputumSamplePhoto({ sessionId, uri, height = 220, label }: Props) {
+export default function SputumSamplePhoto({ sessionId, uri, height = 220, label, onPress }: Props) {
   const [headers, setHeaders] = useState<Record<string, string> | null>(null);
   const [loadError, setLoadError] = useState(false);
 
@@ -70,28 +73,20 @@ export default function SputumSamplePhoto({ sessionId, uri, height = 220, label 
   const source =
     needsAuth && headers ? { uri: trimmed, headers } : needsAuth ? null : { uri: trimmed };
 
-  return (
-    <View>
-      {label ? (
-        <Text className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          {label}
-        </Text>
-      ) : null}
-      <View
-        className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
-        style={{ height }}
-      >
-        {needsAuth && !headers ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color="#0f172a" />
-          </View>
-        ) : loadError || !source ? (
-          <View className="flex-1 items-center justify-center px-4">
-            <Text className="text-center text-sm text-slate-500">
-              Could not load image from the server.
-            </Text>
-          </View>
-        ) : (
+  const imageContent = (
+    <>
+      {needsAuth && !headers ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color="#0f172a" />
+        </View>
+      ) : loadError || !source ? (
+        <View className="flex-1 items-center justify-center px-4">
+          <Text className="text-center text-sm text-slate-500">
+            Could not load image from the server.
+          </Text>
+        </View>
+      ) : (
+        <>
           <Image
             key={sid.length > 0 ? sid : trimmed}
             source={source}
@@ -100,8 +95,44 @@ export default function SputumSamplePhoto({ sessionId, uri, height = 220, label 
             cachePolicy="none"
             onError={() => setLoadError(true)}
           />
-        )}
-      </View>
+          {onPress ? (
+            <View
+              className="absolute bottom-2 right-2 h-8 w-8 items-center justify-center rounded-full"
+              style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+            >
+              <Ionicons name="expand-outline" size={16} color="#fff" />
+            </View>
+          ) : null}
+        </>
+      )}
+    </>
+  );
+
+  return (
+    <View>
+      {label ? (
+        <Text className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {label}
+        </Text>
+      ) : null}
+      {onPress ? (
+        <Pressable
+          onPress={onPress}
+          className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 active:opacity-90"
+          style={{ height }}
+          accessibilityRole="button"
+          accessibilityLabel="View sputum sample full screen"
+        >
+          {imageContent}
+        </Pressable>
+      ) : (
+        <View
+          className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
+          style={{ height }}
+        >
+          {imageContent}
+        </View>
+      )}
     </View>
   );
 }

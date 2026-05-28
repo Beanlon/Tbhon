@@ -324,7 +324,7 @@ export default function ResultScreen() {
 
   return (
     <>
-      <StatusBar style={colors.statusBar} backgroundColor={colors.background} translucent={false} />
+      <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
       <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["top", "right", "bottom", "left"]}>
       <View className="flex-row items-center justify-between border-b px-4 pb-3 pt-2 sm:px-5 md:px-6" style={{ borderColor: colors.borderLight }}>
         <View className="size-11" />
@@ -334,7 +334,7 @@ export default function ResultScreen() {
           </Text>
         </View>
         <Pressable
-          onPress={() => router.replace({ pathname: "/home/HomeScreen" as any })}
+          onPress={() => router.dismissAll()}
           className="size-11 items-center justify-center rounded-full active:opacity-90"
           style={{ backgroundColor: colors.surfaceAlt }}
           accessibilityRole="button"
@@ -600,7 +600,7 @@ export default function ResultScreen() {
           </Pressable>
 
           <Pressable
-            onPress={() => router.replace({ pathname: "/home/HomeScreen" as any })}
+            onPress={() => router.dismissAll()}
             className="items-center justify-center rounded-2xl border py-4 active:opacity-90"
             style={{ borderColor: colors.borderLight, backgroundColor: colors.surfaceAlt }}
             accessibilityRole="button"

@@ -128,7 +128,7 @@ export default function ReviewInputsScreen() {
 
   return (
     <>
-      <StatusBar style={colors.statusBar} backgroundColor={colors.background} translucent={false} />
+      <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
       <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["top", "right", "bottom", "left"]}>
       <View className="flex-row items-center justify-between border-b px-4 pb-3.5 pt-2 sm:px-5 md:px-6" style={{ borderColor: colors.borderLight }}>
         <Pressable

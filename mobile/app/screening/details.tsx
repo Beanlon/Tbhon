@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -19,6 +19,7 @@ import { Audio } from "expo-av";
 import {
   ApiError,
   buildServerSputumImageUrl,
+  getAuthMediaHeaders,
   getScreening,
   resolveMediaUrl,
   type ScreeningSessionDetail,
@@ -359,14 +360,34 @@ export default function ScreeningDetailsScreen() {
   const [checklistBodyMounted, setChecklistBodyMounted] = useState(false);
   const [checklistContentHeight, setChecklistContentHeight] = useState(0);
   const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const [viewerHeaders, setViewerHeaders] = useState<Record<string, string> | null>(null);
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const [audioHint, setAudioHint] = useState<string | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
   const checklistHeightAnim = useRef(new Animated.Value(0)).current;
+
+  // Unload audio on unmount to prevent leaks
+  useEffect(() => {
+    return () => {
+      void soundRef.current?.unloadAsync().catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     setChecklistOpen(false);
     setChecklistBodyMounted(false);
     setChecklistContentHeight(0);
     checklistHeightAnim.setValue(0);
-  }, [sessionId]);
+    setImageViewerVisible(false);
+    setPlayingIndex(null);
+    setAudioHint(null);
+    const sound = soundRef.current;
+    soundRef.current = null;
+    if (sound) {
+      void sound.stopAsync().catch(() => {});
+      void sound.unloadAsync().catch(() => {});
+    }
+  }, [sessionId, checklistHeightAnim]);
 
   useEffect(() => {
     if (checklistOpen) setChecklistBodyMounted(true);
@@ -514,6 +535,29 @@ export default function ScreeningDetailsScreen() {
     if (imageUri.startsWith("iot://")) return "";
     return resolveMediaUrl(imageUri) || imageUri;
   }, [imageProvided, imageUri]);
+  const viewerNeedsAuth = useMemo(
+    () => /^https?:\/\//i.test(resolvedImageUri),
+    [resolvedImageUri],
+  );
+
+  useEffect(() => {
+    if (!imageViewerVisible || !viewerNeedsAuth) {
+      setViewerHeaders(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const h = await getAuthMediaHeaders();
+        if (!cancelled) setViewerHeaders(h);
+      } catch {
+        if (!cancelled) setViewerHeaders(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [imageViewerVisible, viewerNeedsAuth]);
   const imageAnalyzed = vm?.imageAnalyzed ?? false;
   const phlegmLoad = vm?.phlegmLoad ?? "";
   const phlegmConf = vm?.phlegmConf ?? NaN;
@@ -598,9 +642,54 @@ export default function ScreeningDetailsScreen() {
   const showRemoteSpinner = Boolean(sessionId) && remoteLoading;
   const showRemoteError = Boolean(sessionId) && !remoteLoading && remoteError;
 
+  const stopCurrentSound = useCallback(async () => {
+    if (soundRef.current) {
+      await soundRef.current.stopAsync().catch(() => {});
+      await soundRef.current.unloadAsync().catch(() => {});
+      soundRef.current = null;
+    }
+    setPlayingIndex(null);
+  }, []);
+
+  const playAudioAt = useCallback(async (index: number) => {
+    // Tap again while playing = pause/stop
+    if (playingIndex === index) {
+      await stopCurrentSound();
+      return;
+    }
+
+    const uri = audioUris[index];
+    if (!uri) {
+      setAudioHint("Playback is not available for this clip.");
+      return;
+    }
+
+    setAudioHint(null);
+    // Stop any currently playing clip first
+    await stopCurrentSound();
+
+    setPlayingIndex(index);
+    try {
+      const sound = new Audio.Sound();
+      soundRef.current = sound;
+      await sound.loadAsync({ uri }, { shouldPlay: true });
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (!status.isLoaded || status.didJustFinish) {
+          void sound.unloadAsync().catch(() => {});
+          if (soundRef.current === sound) soundRef.current = null;
+          setPlayingIndex((current) => (current === index ? null : current));
+        }
+      });
+    } catch {
+      soundRef.current = null;
+      setAudioHint("Could not play this recording right now.");
+      setPlayingIndex(null);
+    }
+  }, [audioUris, playingIndex, stopCurrentSound]);
+
   return (
     <>
-      <StatusBar style={colors.statusBar} backgroundColor={colors.background} translucent={false} />
+      <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
       <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["right", "bottom", "left"]}>
         <View
           className="flex-row items-center justify-between px-4 pb-3 sm:px-5 md:px-6"
@@ -704,6 +793,35 @@ export default function ScreeningDetailsScreen() {
                   <Text className="text-base leading-6" style={{ color: colors.textSecondary }}>{copy.simple}</Text>
                 </Card>
 
+                <Card title="Input Summary">
+                  <CheckRow
+                    ok={audioAnalyzed}
+                    label="Cough audio analyzed"
+                    sub={audioAnalyzed ? `Clips: ${audioUris.length}` : "No recorded audio was provided."}
+                  />
+                  <CheckRow
+                    ok={imageProvided}
+                    label={
+                      imageProvided ? "Sputum / phlegm image received" : "Sputum / phlegm skipped (optional)"
+                    }
+                    sub={
+                      imageProvided
+                        ? imageAnalyzed
+                          ? `AFB load grade: ${phlegmLoad || "—"}${
+                              phlegmConf !== null && Number.isFinite(phlegmConf)
+                                ? ` (confidence ${(phlegmConf * 100).toFixed(0)}%)`
+                                : ""
+                            }${phlegmProbsText ? `. ${phlegmProbsText}` : ""}`
+                          : phlegmFailed
+                            ? phlegmDetail
+                              ? `Analysis failed: ${phlegmDetail.slice(0, 200)}`
+                              : "Analysis could not be completed for the sputum image."
+                            : "Image captured; analysis not run."
+                        : "No sample photo — results use cough audio (and checklist) only."
+                    }
+                  />
+                </Card>
+
                 <View className="mb-3 rounded-3xl border p-5" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
                   <Pressable
                     onPress={toggleChecklistOpen}
@@ -797,6 +915,41 @@ export default function ScreeningDetailsScreen() {
                   ) : null}
                 </View>
 
+                <Card title="Cough audio replay">
+                  {audioUris.length > 0 ? (
+                    <View className="gap-2">
+                      {audioUris.map((_, i) => (
+                        <Pressable
+                          key={`audio-${i}`}
+                          onPress={() => void playAudioAt(i)}
+                          className="flex-row items-center justify-between rounded-xl border px-3.5 py-3 active:opacity-90"
+                          style={{ borderColor: colors.borderLight, backgroundColor: colors.surfaceAlt }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Play cough clip ${i + 1}`}
+                        >
+                          <Text className="text-sm font-semibold" style={{ color: colors.text }}>
+                            Cough clip {i + 1}
+                          </Text>
+                          <Ionicons
+                            name={playingIndex === i ? "pause-circle" : "play-circle"}
+                            size={20}
+                            color={colors.primary}
+                          />
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text className="text-sm leading-5" style={{ color: colors.textMuted }}>
+                      No playable cough clips were stored for this session.
+                    </Text>
+                  )}
+                  {audioHint ? (
+                    <Text className="mt-3 text-sm leading-5" style={{ color: colors.textMuted }}>
+                      {audioHint}
+                    </Text>
+                  ) : null}
+                </Card>
+
                 <Card title="Sputum sample">
                   <SputumSamplePhoto
                     key={sessionId ?? "no-session"}
@@ -804,91 +957,7 @@ export default function ScreeningDetailsScreen() {
                     uri={imageUri}
                     height={260}
                     label={imageProvided ? "Stored on your account (server)" : undefined}
-                  />
-                </Card>
-
-                <Card title="Input Summary">
-                  <CheckRow
-                    ok={audioAnalyzed}
-                    label="Cough audio analyzed"
-                    sub={audioAnalyzed ? `Clips: ${audioUris.length}` : "No recorded audio was provided."}
-                  />
-                  <CheckRow
-                    ok={imageProvided}
-                    label={
-                      imageProvided ? "Sputum / phlegm image received" : "Sputum / phlegm skipped (optional)"
-                    }
-                    sub={
-                      imageProvided
-                        ? imageAnalyzed
-                          ? `AFB load grade: ${phlegmLoad || "—"}${
-                              phlegmConf !== null && Number.isFinite(phlegmConf)
-                                ? ` (confidence ${(phlegmConf * 100).toFixed(0)}%)`
-                                : ""
-                            }${phlegmProbsText ? `. ${phlegmProbsText}` : ""}`
-                          : phlegmFailed
-                            ? phlegmDetail
-                              ? `Analysis failed: ${phlegmDetail.slice(0, 200)}`
-                              : "Analysis failed — check that infer_api can load ml (phlegm) checkpoints."
-                            : "Image captured; analysis not run."
-                        : "No sample photo — results use cough audio (and checklist) only."
-                    }
-                  />
-                  <View
-                    className="mt-1 overflow-hidden rounded-2xl border"
-                    style={{ borderColor: colors.borderLight, backgroundColor: colors.surface }}
-                  >
-                    {imageProvided && resolvedImageUri ? (
-                      <Pressable
-                        onPress={() => setImageViewerVisible(true)}
-                        style={{ height: 180 }}
-                        accessibilityRole="button"
-                        accessibilityLabel="Open sputum image preview"
-                      >
-                        <Image
-                          source={{ uri: resolvedImageUri }}
-                          style={{ width: "100%", height: "100%" }}
-                          contentFit="cover"
-                        />
-                        <View
-                          className="absolute bottom-2 right-2 rounded-full px-3 py-1"
-                          style={{ backgroundColor: "rgba(12,30,74,0.72)" }}
-                        >
-                          <Text className="text-xs font-bold text-white">Tap to view</Text>
-                        </View>
-                      </Pressable>
-                    ) : (
-                      <View className="px-4 py-4">
-                        <View
-                          className="items-center rounded-2xl border px-4 py-5"
-                          style={{ borderColor: colors.borderLight, backgroundColor: colors.card }}
-                        >
-                          <View
-                            className="mb-3 h-12 w-12 items-center justify-center rounded-full"
-                            style={{ backgroundColor: colors.primaryLight }}
-                          >
-                            <Ionicons name="image-outline" size={22} color={colors.primary} />
-                          </View>
-                          <Text className="text-center text-sm font-bold" style={{ color: colors.text }}>
-                            {imageProvided ? "Image uploaded" : "No image uploaded yet"}
-                          </Text>
-                          <Text className="mt-1.5 text-center text-xs leading-5" style={{ color: colors.textMuted }}>
-                            {imageProvided
-                              ? "Preview will appear once backend media URL is available."
-                              : "Capture and upload a sample image to view it here."}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                  <CheckRow
-                    ok={hasSavedChecklist}
-                    label="Symptoms & exposure checklist"
-                    sub={
-                      hasSavedChecklist
-                        ? `${checklistYesCount} Yes · ${checklistNoCount} No (${checklistAnswered.length} answers)`
-                        : "No checklist responses for this session."
-                    }
+                    onPress={imageProvided ? () => setImageViewerVisible(true) : undefined}
                   />
                 </Card>
 
@@ -961,7 +1030,25 @@ export default function ScreeningDetailsScreen() {
                 }}
               >
                 {resolvedImageUri ? (
-                  <Image source={{ uri: resolvedImageUri }} style={{ width: "100%", height: "100%" }} contentFit="contain" />
+                  viewerNeedsAuth && !viewerHeaders ? (
+                    <View className="flex-1 items-center justify-center px-6">
+                      <ActivityIndicator color="#C7D2FE" />
+                      <Text className="mt-3 text-center text-sm font-semibold text-[#C7D2FE]">
+                        Loading image…
+                      </Text>
+                    </View>
+                  ) : (
+                    <Image
+                      source={
+                        viewerNeedsAuth && viewerHeaders
+                          ? { uri: resolvedImageUri, headers: viewerHeaders }
+                          : { uri: resolvedImageUri }
+                      }
+                      style={{ width: "100%", height: "100%" }}
+                      contentFit="contain"
+                      cachePolicy="none"
+                    />
+                  )
                 ) : (
                   <View className="flex-1 items-center justify-center px-6">
                     <Ionicons name="image-outline" size={28} color="#C7D2FE" />

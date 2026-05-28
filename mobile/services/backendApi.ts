@@ -67,6 +67,10 @@ export async function apiRequest<T>(
   options: RequestInit & { json?: JsonBody } = {},
   token?: string | null,
 ): Promise<T> {
+  // TODO(Backend+Mobile, production auth hardening):
+  // Current app session behavior is token-based and client-persisted.
+  // For deployed environments, align on short-lived access tokens + refresh-token rotation,
+  // explicit session revocation, and 401 refresh/retry contract for this request layer.
   const base = resolveApiBaseUrl();
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
   const headers: HeadersInit = {

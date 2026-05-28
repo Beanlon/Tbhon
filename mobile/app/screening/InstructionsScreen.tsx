@@ -46,7 +46,7 @@ export default function InstructionsScreen({ onClose, iotMode = false }: Props) 
 
   return (
     <>
-      <StatusBar style={colors.statusBar} backgroundColor={colors.background} translucent={false} />
+      <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
       <View className="flex-1" style={{ backgroundColor: colors.background }}>
         <ScrollView
           showsVerticalScrollIndicator={false}

@@ -482,7 +482,12 @@ export function LearnContent() {
   );
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 28 }} style={{ backgroundColor: colors.background }}>
+    <View style={{ flex: 1, minHeight: 0, width: "100%", backgroundColor: colors.background }}>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={{ flexGrow: 1, paddingBottom: 28 }}
+    >
       <View className="px-5" style={{ paddingTop: insets.top + 14 }}>
         <View className="mb-5 rounded-3xl p-5" style={{ backgroundColor: isDark ? "#1A3478" : "#0C1E4A" }}>
           <Text className="text-sm" style={{ color: "#C9D5FF" }}>Learn</Text>
@@ -545,5 +550,6 @@ export function LearnContent() {
         </TouchableOpacity>
       </View>
     </ScrollView>
+    </View>
   );
 }
