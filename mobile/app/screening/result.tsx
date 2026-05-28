@@ -16,6 +16,7 @@ import {
 import SputumSamplePhoto from "../components/SputumSamplePhoto";
 import { clearScreeningCache } from "../../utils/screeningHistoryCache";
 import { getAuthToken } from "../../utils/authStorage";
+import { useTheme } from "../../contexts/ThemeContext";
 
 type RiskLevel = "low" | "moderate" | "high";
 type PhlegmTone = { color: string; bg: string; border: string; label: string };
@@ -76,11 +77,11 @@ const RISK_CONFIG: Record<
   },
 };
 
-const monoFont = Platform.OS === "ios" ? "Menlo" : "monospace";
 
 export default function ResultScreen() {
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
+  const { colors, isDark } = useTheme();
 
   /** Risk ring scales with viewport so it never overflows narrow phones */
   const ring = useMemo(() => {
@@ -323,22 +324,23 @@ export default function ResultScreen() {
 
   return (
     <>
-      <StatusBar style="dark" backgroundColor="#EAE8FA" translucent={false} />
-      <SafeAreaView className="flex-1 bg-lavender" edges={["top", "right", "bottom", "left"]}>
-      <View className="flex-row items-center justify-between border-b border-neutral-100 px-4 pb-3 pt-2 sm:px-5 md:px-6">
+      <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
+      <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["top", "right", "bottom", "left"]}>
+      <View className="flex-row items-center justify-between border-b px-4 pb-3 pt-2 sm:px-5 md:px-6" style={{ borderColor: colors.borderLight }}>
         <View className="size-11" />
         <View className="min-w-0 flex-1 items-center px-2">
-          <Text className="text-center text-sm font-bold text-navy sm:text-base" numberOfLines={1}>
+          <Text className="text-center text-sm font-bold sm:text-base" style={{ color: colors.text }} numberOfLines={1}>
             Screening Result
           </Text>
         </View>
         <Pressable
-          onPress={() => router.replace({ pathname: "/home/HomeScreen" as any })}
-          className="size-11 items-center justify-center rounded-full active:bg-slate-900/10"
+          onPress={() => router.dismissAll()}
+          className="size-11 items-center justify-center rounded-full active:opacity-90"
+          style={{ backgroundColor: colors.surfaceAlt }}
           accessibilityRole="button"
           accessibilityLabel="Close"
         >
-          <Ionicons name="close" size={22} color="#0f172a" />
+          <Ionicons name="close" size={22} color={colors.text} />
         </Pressable>
       </View>
 
@@ -349,54 +351,44 @@ export default function ResultScreen() {
       >
         <View className="px-5 pb-8 pt-8 sm:px-6 md:px-8">
           {uploadError && (
-            <View className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3.5">
+            <View
+              className="mb-4 rounded-2xl border p-3.5"
+              style={{
+                borderColor: isDark ? "rgba(248,113,113,0.45)" : "#FECACA",
+                backgroundColor: isDark ? "rgba(127,29,29,0.30)" : "#FEF2F2",
+              }}
+            >
               {wifiRequired ? (
-                <View className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
-                  <Text className="mb-1.5 text-sm font-bold text-amber-900">Phone is on mobile data (4G/5G)</Text>
-                  <Text className="text-xs leading-5 text-amber-950">
-                    Addresses like <Text className="font-bold">192.168.x.x</Text> only work on the same{" "}
-                    <Text className="font-bold">Wi‑Fi</Text> as your PC. Turn on Wi‑Fi, join the same network as the computer running{" "}
-                    <Text className="font-bold">Expo</Text> and <Text className="font-bold">infer_api.py</Text>, then run screening again.
+                <View
+                  className="mb-3 rounded-xl border p-3"
+                  style={{
+                    borderColor: isDark ? "rgba(251,191,36,0.45)" : "#FCD34D",
+                    backgroundColor: isDark ? "rgba(120,53,15,0.30)" : "#FFFBEB",
+                  }}
+                >
+                  <Text className="mb-1.5 text-sm font-bold" style={{ color: isDark ? "#FDE68A" : "#78350F" }}>No Wi‑Fi connection</Text>
+                  <Text className="text-xs leading-5" style={{ color: isDark ? "#FDE68A" : "#451A03" }}>
+                    Please connect to the same Wi‑Fi network as your screening device and try again.
                   </Text>
                 </View>
               ) : null}
-              <Text className="mb-1.5 text-sm font-bold text-red-900">Could not reach the analysis server</Text>
-              {!wifiRequired ? (
-                <Text className="text-xs leading-5 text-red-950">
-                  The app tries <Text className="font-bold">http://YOUR_IP:8081/_tb_infer</Text> first (Metro proxies to port 8000).{" "}
-                  <Text className="font-bold">Restart Expo</Text> after updating the project so Metro loads the proxy. If it still fails, Windows may be blocking port{" "}
-                  <Text className="font-bold">8000</Text> (direct URL) — use one of these:
-                </Text>
-              ) : (
-                <Text className="text-xs leading-5 text-red-950">
-                  After you are on Wi‑Fi, if it still fails, check Windows Firewall for port <Text className="font-bold">8000</Text> or use:
-                </Text>
-              )}
-              <Text className="mt-2.5 text-xs leading-5 text-red-950">
-                1) Open <Text className="font-bold">PowerShell as Administrator</Text> and run (then retry):
+              <Text className="mb-1.5 text-sm font-bold" style={{ color: isDark ? "#FCA5A5" : "#7F1D1D" }}>Could not complete analysis</Text>
+              <Text className="text-xs leading-5" style={{ color: isDark ? "#FECACA" : "#450A0A" }}>
+                We couldn't connect to the analysis service. Please check your internet connection and try again.
+                If the problem persists, contact support.
               </Text>
-              <Text className="mt-1.5 text-xs text-red-950" style={{ fontFamily: monoFont }} selectable>
-                netsh advfirewall firewall add rule name=&quot;TBhon API 8000&quot; dir=in action=allow protocol=TCP localport=8000 profile=private
-              </Text>
-              <Text className="mt-2.5 text-xs leading-5 text-red-950">
-                2) <Text className="font-bold">Android + USB:</Text> run{" "}
-                <Text className="font-bold">adb reverse tcp:8000 tcp:8000</Text> — the app will retry via{" "}
-                <Text className="font-bold">127.0.0.1:8000</Text> automatically.
-              </Text>
-              <Text className="mt-2 text-xs leading-5 text-red-950">
-                Keep <Text className="font-bold">python infer_api.py</Text> running in the <Text className="font-bold">ml</Text> folder.
-              </Text>
-              {apiAttempt.length > 0 ? (
-                <Text className="mt-2.5 text-xs text-red-900" style={{ fontFamily: monoFont }} selectable>
-                  Tried: {apiAttempt}
-                </Text>
-              ) : null}
             </View>
           )}
           {invalidAudio && (
-            <View className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-3.5">
-              <Text className="mb-1.5 text-sm font-bold text-amber-900">Recording quality issue detected</Text>
-              <Text className="text-xs leading-snug text-amber-900">
+            <View
+              className="mb-4 rounded-2xl border p-3.5"
+              style={{
+                borderColor: isDark ? "rgba(251,191,36,0.45)" : "#FCD34D",
+                backgroundColor: isDark ? "rgba(120,53,15,0.30)" : "#FFFBEB",
+              }}
+            >
+              <Text className="mb-1.5 text-sm font-bold" style={{ color: isDark ? "#FDE68A" : "#78350F" }}>Recording quality issue detected</Text>
+              <Text className="text-xs leading-snug" style={{ color: isDark ? "#FDE68A" : "#78350F" }}>
                 {invalidLabel === "silence"
                   ? "The recording was too quiet / silent. Please cough once clearly within 3–10 seconds."
                   : invalidLabel === "speech"
@@ -417,19 +409,20 @@ export default function ResultScreen() {
                 height: ring.outer,
                 borderRadius: ring.radius,
                 borderWidth: ring.borderWidth,
-                backgroundColor: cfg.bg,
+                backgroundColor: isDark ? "rgba(255,255,255,0.08)" : cfg.bg,
                 borderColor: cfg.ringColor,
               }}
             >
               <View
-                className="items-center justify-center rounded-full bg-white"
+                className="items-center justify-center rounded-full"
                 style={{
                   width: ring.inner,
                   height: ring.inner,
                   borderRadius: ring.innerRadius,
+                  backgroundColor: colors.card,
                   shadowColor: cfg.color,
                   shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.15,
+                  shadowOpacity: isDark ? 0.25 : 0.15,
                   shadowRadius: 12,
                   elevation: 4,
                 }}
@@ -445,9 +438,11 @@ export default function ResultScreen() {
               {cfg.label}
             </Text>
 
-            <Text className="mt-2 px-1 text-center text-sm font-bold text-navy sm:text-base">{cfg.tagline}</Text>
+            <Text className="mt-2 px-1 text-center text-sm font-bold sm:text-base" style={{ color: colors.text }}>
+              {cfg.tagline}
+            </Text>
 
-            <Text className="mt-1.5 px-2 text-center text-xs italic text-neutral-400">
+            <Text className="mt-1.5 px-2 text-center text-xs italic" style={{ color: colors.textMuted }}>
               This is not a medical diagnosis
             </Text>
           </View>
@@ -472,10 +467,10 @@ export default function ResultScreen() {
             const probWidth = hasCough ? Math.max(2, Math.min(100, (probTb as number) * 100)) : 0;
 
             return (
-              <View className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+              <View className="mb-6 rounded-2xl border p-4" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
                 <View className="mb-3 flex-row items-center gap-2">
-                  <Ionicons name="pulse-outline" size={16} color="#475569" />
-                  <Text className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                  <Ionicons name="pulse-outline" size={16} color={colors.textMuted} />
+                  <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.textMuted }}>
                     Signals analyzed
                   </Text>
                 </View>
@@ -483,21 +478,21 @@ export default function ResultScreen() {
                 <View className="flex-row flex-wrap gap-3">
                   {hasCough ? (
                     <View
-                      className="flex-1 rounded-xl border border-slate-100 bg-white p-3"
-                      style={{ minWidth: 150 }}
+                      className="flex-1 rounded-xl border p-3"
+                      style={{ minWidth: 150, borderColor: colors.borderLight, backgroundColor: colors.surface }}
                     >
                       <View className="mb-1.5 flex-row items-center gap-1.5">
-                        <Ionicons name="mic-outline" size={14} color="#64748B" />
-                        <Text className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                        <Ionicons name="mic-outline" size={14} color={colors.textMuted} />
+                        <Text className="text-[11px] font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
                           Cough audio
                         </Text>
                       </View>
                       <View className="flex-row items-baseline gap-1">
-                        <Text className="text-2xl font-bold text-slate-900">{probPct?.toFixed(1)}</Text>
-                        <Text className="text-sm font-bold text-slate-500">%</Text>
+                        <Text className="text-2xl font-bold" style={{ color: colors.text }}>{probPct?.toFixed(1)}</Text>
+                        <Text className="text-sm font-bold" style={{ color: colors.textMuted }}>%</Text>
                       </View>
-                      <Text className="text-[11px] text-slate-500">TB probability</Text>
-                      <View className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                      <Text className="text-[11px]" style={{ color: colors.textMuted }}>TB probability</Text>
+                      <View className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: colors.borderLight }}>
                         <View
                           className="h-1.5 rounded-full"
                           style={{ width: `${probWidth}%`, backgroundColor: cfg.color }}
@@ -508,12 +503,12 @@ export default function ResultScreen() {
 
                   {hasPhlegm && tone ? (
                     <View
-                      className="flex-1 rounded-xl border border-slate-100 bg-white p-3"
-                      style={{ minWidth: 150 }}
+                      className="flex-1 rounded-xl border p-3"
+                      style={{ minWidth: 150, borderColor: colors.borderLight, backgroundColor: colors.surface }}
                     >
                       <View className="mb-1.5 flex-row items-center gap-1.5">
-                        <Ionicons name="image-outline" size={14} color="#64748B" />
-                        <Text className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                        <Ionicons name="image-outline" size={14} color={colors.textMuted} />
+                        <Text className="text-[11px] font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
                           Phlegm image
                         </Text>
                       </View>
@@ -522,7 +517,7 @@ export default function ResultScreen() {
                           {tone.label}
                         </Text>
                       </View>
-                      <Text className="mt-1.5 text-[11px] text-slate-500">
+                      <Text className="mt-1.5 text-[11px]" style={{ color: colors.textMuted }}>
                         AFB load
                         {typeof phlegmConfidence === "number" && Number.isFinite(phlegmConfidence)
                           ? ` · ${(phlegmConfidence * 100).toFixed(0)}% conf.`
@@ -531,38 +526,48 @@ export default function ResultScreen() {
                     </View>
                   ) : phlegmFailed ? (
                     <View
-                      className="flex-1 rounded-xl border border-amber-200 bg-amber-50 p-3"
-                      style={{ minWidth: 150 }}
+                      className="flex-1 rounded-xl border p-3"
+                      style={{
+                        minWidth: 150,
+                        borderColor: isDark ? "rgba(251,191,36,0.45)" : "#FDE68A",
+                        backgroundColor: isDark ? "rgba(120,53,15,0.30)" : "#FFFBEB",
+                      }}
                     >
                       <View className="mb-1.5 flex-row items-center gap-1.5">
-                        <Ionicons name="alert-circle-outline" size={14} color="#B45309" />
-                        <Text className="text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                        <Ionicons name="alert-circle-outline" size={14} color={isDark ? "#FCD34D" : "#B45309"} />
+                        <Text className="text-[11px] font-bold uppercase tracking-wide" style={{ color: isDark ? "#FDE68A" : "#B45309" }}>
                           Phlegm image
                         </Text>
                       </View>
-                      <Text className="text-sm font-bold text-amber-900">Unavailable</Text>
-                      <Text className="mt-0.5 text-[11px] text-amber-800">
+                      <Text className="text-sm font-bold" style={{ color: isDark ? "#FDE68A" : "#78350F" }}>Unavailable</Text>
+                      <Text className="mt-0.5 text-[11px]" style={{ color: isDark ? "#FDE68A" : "#92400E" }}>
                         Could not analyze the image. Open Details for the error.
                       </Text>
                     </View>
                   ) : null}
                 </View>
 
-                <Text className="mt-3 text-[11px] italic leading-4 text-slate-400">
+                <Text className="mt-3 text-[11px] italic leading-4" style={{ color: colors.textMuted }}>
                   Combined risk uses the higher of the two signals. Not a diagnosis.
                 </Text>
               </View>
             );
           })()}
 
-          <View className="mb-7 rounded-2xl border p-5" style={{ backgroundColor: cfg.bg, borderColor: cfg.ringColor }}>
+          <View
+            className="mb-7 rounded-2xl border p-5"
+            style={{
+              backgroundColor: isDark ? "rgba(255,255,255,0.08)" : cfg.bg,
+              borderColor: cfg.ringColor,
+            }}
+          >
             <View className="mb-2.5 flex-row items-center gap-2">
               <Ionicons name="information-circle" size={20} color={cfg.color} />
               <Text className="text-sm font-bold" style={{ color: cfg.color }}>
                 Recommendation
               </Text>
             </View>
-            <Text className="text-sm leading-6 text-gray-700">{cfg.recommendation}</Text>
+            <Text className="text-sm leading-6" style={{ color: colors.textSecondary }}>{cfg.recommendation}</Text>
           </View>
 
           <Pressable
@@ -587,18 +592,20 @@ export default function ResultScreen() {
                 },
               } as any)
             }
-            className="mb-3 items-center justify-center rounded-2xl bg-navy py-4 active:bg-navy/90"
+            className="mb-3 items-center justify-center rounded-2xl py-4 active:opacity-90"
+            style={{ backgroundColor: isDark ? "#4458A6" : "#1A3478" }}
             accessibilityRole="button"
           >
             <Text className="text-base font-bold text-white">View Details</Text>
           </Pressable>
 
           <Pressable
-            onPress={() => router.replace({ pathname: "/home/HomeScreen" as any })}
-            className="items-center justify-center rounded-2xl border border-navy/10 bg-navy/5 py-4 active:bg-navy/10"
+            onPress={() => router.dismissAll()}
+            className="items-center justify-center rounded-2xl border py-4 active:opacity-90"
+            style={{ borderColor: colors.borderLight, backgroundColor: colors.surfaceAlt }}
             accessibilityRole="button"
           >
-            <Text className="text-base font-bold text-navy">Return Home</Text>
+            <Text className="text-base font-bold" style={{ color: colors.text }}>Return Home</Text>
           </Pressable>
         </View>
       </ScrollView>

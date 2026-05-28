@@ -6,11 +6,10 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { LogBox } from "react-native";
 import { TBHON_ICON, TBHON_LOGO } from "../constants/branding";
+import { ThemeProvider, useTheme } from "../contexts/ThemeContext";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
-// expo-keep-awake (splash / camera / recording) can reject on some Android + Expo Go
-// builds; the app usually still works — avoid a blocking dev error overlay.
 if (__DEV__) {
   LogBox.ignoreLogs([
     "Unable to activate keep awake",
@@ -18,9 +17,10 @@ if (__DEV__) {
   ]);
 }
 
-export default function RootLayout() {
+function RootNavigator() {
+  const { colors } = useTheme();
+
   useEffect(() => {
-    // Warm up the logo asset so it is available immediately when screens mount
     Asset.loadAsync([TBHON_LOGO, TBHON_ICON]).catch(() => {});
   }, []);
 
@@ -46,17 +46,45 @@ export default function RootLayout() {
 
   return (
     <>
-      <StatusBar style="dark" translucent={false} />
-      <Stack screenOptions={{ gestureEnabled: false }}>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="home/HomeScreen" options={{ headerShown: false }} />
-        <Stack.Screen name="learn/learn" options={{ headerShown: false }} />
-        <Stack.Screen name="landingpage/landingpage" options={{ headerShown: false }} />
-        <Stack.Screen name="acountOptions/accountOptions" options={{ headerShown: false }} />
-        <Stack.Screen name="login/login" options={{ headerShown: false }} />
-        <Stack.Screen name="signUp/signUp" options={{ headerShown: false }} />
-        <Stack.Screen name="screening" options={{ headerShown: false }} />
+      <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          gestureEnabled: true,
+          animation: "slide_from_right",
+          animationDuration: 220,
+          contentStyle: { backgroundColor: colors.background },
+        }}
+      >
+        <Stack.Screen name="index" options={{ animation: "none" }} />
+        <Stack.Screen
+          name="home/HomeScreen"
+          options={{ animation: "none", animationDuration: 0 }}
+        />
+        <Stack.Screen name="learn/learn" />
+        <Stack.Screen name="landingpage/landingpage" />
+        <Stack.Screen name="acountOptions/accountOptions" />
+        <Stack.Screen name="login/login" />
+        <Stack.Screen name="signUp/signUp" />
+        <Stack.Screen
+          name="screening"
+          options={{
+            // Slide from right - device setup is now an in-tree overlay, not navigation.
+            animation: "slide_from_right",
+            animationDuration: 220,
+            gestureEnabled: true,
+            contentStyle: { backgroundColor: colors.background },
+          }}
+        />
       </Stack>
     </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootNavigator />
+    </ThemeProvider>
   );
 }

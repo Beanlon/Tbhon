@@ -44,7 +44,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
   return Promise.race([
     promise,
     new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs),
+      setTimeout(() => reject(new Error("Request timed out. Please check your connection.")), timeoutMs),
     ),
   ]);
 }
@@ -59,7 +59,7 @@ async function parseErrorMessage(response: Response): Promise<string> {
   } catch {
     // ignore
   }
-  return response.statusText || `Request failed (${response.status})`;
+  return response.statusText || "Something went wrong. Please try again.";
 }
 
 export async function apiRequest<T>(
@@ -67,6 +67,10 @@ export async function apiRequest<T>(
   options: RequestInit & { json?: JsonBody } = {},
   token?: string | null,
 ): Promise<T> {
+  // TODO(Backend+Mobile, production auth hardening):
+  // Current app session behavior is token-based and client-persisted.
+  // For deployed environments, align on short-lived access tokens + refresh-token rotation,
+  // explicit session revocation, and 401 refresh/retry contract for this request layer.
   const base = resolveApiBaseUrl();
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
   const headers: HeadersInit = {
@@ -421,6 +425,35 @@ export async function downloadSessionSputumToCache(sessionId: string): Promise<s
   return result.uri;
 }
 
+export type UpdateMePayload = {
+  email?: string | null;
+  phoneNumber?: string | null;
+};
+
+export async function patchMe(payload: UpdateMePayload) {
+  return apiRequest<{ user: ApiUserPayload }>("/users/me", {
+    method: "PATCH",
+    json: payload as JsonBody,
+  });
+}
+
+export type UpsertMyProfilePayload = {
+  firstName: string;
+  lastName: string;
+  birthdate: string;
+  gender: string;
+  street?: string | null;
+  barangay?: string | null;
+  city?: string | null;
+};
+
+export async function putMyProfile(payload: UpsertMyProfilePayload) {
+  return apiRequest<{ profile: ApiUserPayload["profile"] }>("/users/me/profile", {
+    method: "PUT",
+    json: payload as JsonBody,
+  });
+}
+
 export type CompleteScreeningPayload = {
   riskLevel: "low" | "moderate" | "high";
   recommendation: string;
@@ -523,7 +556,7 @@ export async function uploadCoughRecordingRaw(args: {
     "Cough upload",
   );
   if (result.status < 200 || result.status >= 300) {
-    throw new ApiError(result.status, `Cough upload failed: HTTP ${result.status}`);
+    throw new ApiError(result.status, "Could not upload recording. Please try again.");
   }
 }
 
@@ -551,7 +584,7 @@ export async function uploadSputumImageRaw(args: {
     "Sputum upload",
   );
   if (result.status < 200 || result.status >= 300) {
-    throw new ApiError(result.status, `Sputum upload failed: HTTP ${result.status}`);
+    throw new ApiError(result.status, "Could not upload image. Please try again.");
   }
 }
 

@@ -1,11 +1,13 @@
-import { ActivityIndicator, Text, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { ActivityIndicator, Animated, Easing, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect } from "react";
 import NetInfo from "@react-native-community/netinfo";
 import * as FileSystem from "expo-file-system/legacy";
+import { LinearGradient } from "expo-linear-gradient";
 import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
+import { palette } from "../../constants/palette";
 
 const ANALYSIS_UPLOAD_TIMEOUT_MS = 12000;
 
@@ -515,18 +517,127 @@ export default function ProcessingScreen() {
     };
   }, []);
 
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.1,
+          duration: 1000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    pulse.start();
+
+    const rotate = Animated.loop(
+      Animated.timing(rotateAnim, {
+        toValue: 1,
+        duration: 3000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    rotate.start();
+
+    return () => {
+      pulse.stop();
+      rotate.stop();
+    };
+  }, [pulseAnim, rotateAnim]);
+
+  const spin = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
   return (
     <>
-      <StatusBar style="light" backgroundColor="#0B1530" translucent={false} />
-      <SafeAreaView className="flex-1 bg-navy" edges={["top", "right", "bottom", "left"]}>
-        <View className="flex-1 items-center justify-center gap-5 px-5 sm:px-6">
-          <ActivityIndicator size="large" color="#FFFFFF" />
-          <Text className="text-center text-base font-bold text-white sm:text-lg">
-            Analyzing data… Please wait
-          </Text>
-          <Text className="text-center text-xs text-white/55 sm:text-sm">This may take a few seconds</Text>
-        </View>
-      </SafeAreaView>
+      <StatusBar style="light" backgroundColor={palette.deepNavy} translucent={false} />
+      <LinearGradient
+        colors={[palette.deepNavy, "#0F2847", palette.deepNavy]}
+        style={{ flex: 1 }}
+      >
+        <SafeAreaView style={{ flex: 1 }} edges={["top", "right", "bottom", "left"]}>
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }}>
+            <Animated.View
+              style={{
+                width: 120,
+                height: 120,
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 32,
+                transform: [{ scale: pulseAnim }],
+              }}
+            >
+              <View
+                style={{
+                  position: "absolute",
+                  width: 120,
+                  height: 120,
+                  borderRadius: 60,
+                  backgroundColor: "rgba(91, 79, 196, 0.1)",
+                }}
+              />
+              <View
+                style={{
+                  position: "absolute",
+                  width: 90,
+                  height: 90,
+                  borderRadius: 45,
+                  backgroundColor: "rgba(91, 79, 196, 0.15)",
+                }}
+              />
+              <View
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 32,
+                  backgroundColor: "rgba(91, 79, 196, 0.25)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                  <ActivityIndicator size="large" color={palette.softViolet} />
+                </Animated.View>
+              </View>
+            </Animated.View>
+
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: "700",
+                color: "#FFFFFF",
+                textAlign: "center",
+                marginBottom: 8,
+              }}
+            >
+              Analyzing your data
+            </Text>
+            <Text
+              style={{
+                fontSize: 14,
+                color: "rgba(255,255,255,0.6)",
+                textAlign: "center",
+                lineHeight: 20,
+                maxWidth: 260,
+              }}
+            >
+              Please wait while we process your screening results…
+            </Text>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
     </>
   );
 }

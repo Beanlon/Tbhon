@@ -138,13 +138,6 @@ export default function LandingPage() {
               onPress={() => router.push("/signUp/signUp")}
             />
           </View>
-
-          <Text className="px-2 pt-4 text-center text-xs leading-6 text-[#888888] sm:pt-5 sm:text-sm">
-            By continuing you agree to our{" "}
-            <Text className="font-medium text-[#5B5BFF]">Terms of Service</Text>
-            {" & "}
-            <Text className="font-medium text-[#5B5BFF]">Privacy Policy</Text>
-          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>

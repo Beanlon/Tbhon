@@ -26,6 +26,7 @@ const ARC_SEGMENTS: { degFrom: number; degTo: number; color: string }[] = [
 type GaugeChartProps = {
   size?: number;
   riskLevel?: GaugeRiskLevel;
+  disabled?: boolean;
 };
 
 /** Math angle (deg, CCW from +x) → point on circle; SVG y grows downward. */
@@ -57,7 +58,7 @@ function needleRotationDeg(arcDeg: number): string {
  * Semicircle gauge: three equal 60° bands (green / amber / red); needle aims at the
  * center of the band for `riskLevel`.
  */
-export function GaugeChart({ size = 150, riskLevel = "low" }: GaugeChartProps) {
+export function GaugeChart({ size = 150, riskLevel = "low", disabled = false }: GaugeChartProps) {
   const S = size;
   const scale = S / 150;
   const needleL = 64 * scale;
@@ -71,15 +72,22 @@ export function GaugeChart({ size = 150, riskLevel = "low" }: GaugeChartProps) {
   const r = S / 2 - strokeW / 2;
 
   const arcDeg = NEEDLE_CENTER_DEG[riskLevel];
-  const needleColor = NEEDLE_COLOR[riskLevel];
+  const needleColor = disabled ? "#9CA3AF" : NEEDLE_COLOR[riskLevel];
   const needleRotate = needleRotationDeg(arcDeg);
+  const arcSegments = disabled
+    ? [
+        { degFrom: 180, degTo: 120, color: "#E5E7EB" },
+        { degFrom: 120, degTo: 60, color: "#E5E7EB" },
+        { degFrom: 60, degTo: 0, color: "#E5E7EB" },
+      ]
+    : ARC_SEGMENTS;
 
   const svgH = S / 2;
 
   return (
     <View style={{ width: S, height: svgH + 22 * scale, alignItems: "center" }}>
       <Svg width={S} height={svgH} viewBox={`0 0 ${S} ${svgH}`}>
-        {ARC_SEGMENTS.map((seg, i) => (
+        {arcSegments.map((seg, i) => (
           <Path
             key={i}
             d={arcStrokePath(cx, cy, r, seg.degFrom, seg.degTo)}
@@ -123,7 +131,7 @@ export function GaugeChart({ size = 150, riskLevel = "low" }: GaugeChartProps) {
           width: hubR * 2,
           height: hubR * 2,
           borderRadius: hubR,
-          backgroundColor: "#1E293B",
+          backgroundColor: disabled ? "#9CA3AF" : "#1E293B",
         }}
       />
     </View>

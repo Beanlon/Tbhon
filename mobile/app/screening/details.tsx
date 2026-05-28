@@ -1,9 +1,10 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   Easing,
   LayoutChangeEvent,
+  Modal,
   Pressable,
   ScrollView,
   Text,
@@ -12,11 +13,13 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { Image } from "expo-image";
 import { Audio } from "expo-av";
 import {
   ApiError,
   buildServerSputumImageUrl,
+  getAuthMediaHeaders,
   getScreening,
   resolveMediaUrl,
   type ScreeningSessionDetail,
@@ -24,6 +27,7 @@ import {
 import SputumSamplePhoto from "../components/SputumSamplePhoto";
 import { getAuthToken } from "../../utils/authStorage";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
+import { useTheme } from "../../contexts/ThemeContext";
 
 type RiskLevel = "low" | "moderate" | "high";
 
@@ -326,6 +330,9 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
 
 export default function ScreeningDetailsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const headerPadTop = Math.max(insets.top, 16) + 10;
+  const { colors } = useTheme();
   const params = useLocalSearchParams<{
     sessionId?: string;
     risk?: string;
@@ -352,14 +359,35 @@ export default function ScreeningDetailsScreen() {
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [checklistBodyMounted, setChecklistBodyMounted] = useState(false);
   const [checklistContentHeight, setChecklistContentHeight] = useState(0);
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const [viewerHeaders, setViewerHeaders] = useState<Record<string, string> | null>(null);
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const [audioHint, setAudioHint] = useState<string | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
   const checklistHeightAnim = useRef(new Animated.Value(0)).current;
+
+  // Unload audio on unmount to prevent leaks
+  useEffect(() => {
+    return () => {
+      void soundRef.current?.unloadAsync().catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     setChecklistOpen(false);
     setChecklistBodyMounted(false);
     setChecklistContentHeight(0);
     checklistHeightAnim.setValue(0);
-  }, [sessionId]);
+    setImageViewerVisible(false);
+    setPlayingIndex(null);
+    setAudioHint(null);
+    const sound = soundRef.current;
+    soundRef.current = null;
+    if (sound) {
+      void sound.stopAsync().catch(() => {});
+      void sound.unloadAsync().catch(() => {});
+    }
+  }, [sessionId, checklistHeightAnim]);
 
   useEffect(() => {
     if (checklistOpen) setChecklistBodyMounted(true);
@@ -502,6 +530,34 @@ export default function ScreeningDetailsScreen() {
 
   const imageUri = vm?.imageUri ?? "";
   const imageProvided = imageUri.length > 0;
+  const resolvedImageUri = useMemo(() => {
+    if (!imageProvided) return "";
+    if (imageUri.startsWith("iot://")) return "";
+    return resolveMediaUrl(imageUri) || imageUri;
+  }, [imageProvided, imageUri]);
+  const viewerNeedsAuth = useMemo(
+    () => /^https?:\/\//i.test(resolvedImageUri),
+    [resolvedImageUri],
+  );
+
+  useEffect(() => {
+    if (!imageViewerVisible || !viewerNeedsAuth) {
+      setViewerHeaders(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const h = await getAuthMediaHeaders();
+        if (!cancelled) setViewerHeaders(h);
+      } catch {
+        if (!cancelled) setViewerHeaders(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [imageViewerVisible, viewerNeedsAuth]);
   const imageAnalyzed = vm?.imageAnalyzed ?? false;
   const phlegmLoad = vm?.phlegmLoad ?? "";
   const phlegmConf = vm?.phlegmConf ?? NaN;
@@ -560,8 +616,8 @@ export default function ScreeningDetailsScreen() {
   const copy = RISK_COPY[risk];
 
   const Card = ({ title, children }: { title: string; children: ReactNode }) => (
-    <View className="mb-3 rounded-3xl border border-slate-200 bg-white p-5">
-      <Text className="mb-3 text-base font-bold text-slate-900">{title}</Text>
+    <View className="mb-3 rounded-3xl border p-5" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
+      <Text className="mb-3 text-base font-bold" style={{ color: colors.text }}>{title}</Text>
       {children}
     </View>
   );
@@ -569,16 +625,16 @@ export default function ScreeningDetailsScreen() {
   const Bullet = ({ text }: { text: string }) => (
     <View className="mb-2 flex-row items-start gap-3">
       <View className="mt-2 size-2 rounded-full" style={{ backgroundColor: copy.color }} />
-      <Text className="flex-1 text-base leading-6 text-slate-700">{text}</Text>
+      <Text className="flex-1 text-base leading-6" style={{ color: colors.textSecondary }}>{text}</Text>
     </View>
   );
 
   const CheckRow = ({ ok, label, sub }: { ok: boolean; label: string; sub?: string }) => (
     <View className="mb-3 flex-row items-start gap-3">
-      <Ionicons name={ok ? "checkmark-circle" : "information-circle"} size={22} color={ok ? "#059669" : "#64748b"} />
+      <Ionicons name={ok ? "checkmark-circle" : "information-circle"} size={22} color={ok ? colors.success : colors.textMuted} />
       <View className="min-w-0 flex-1">
-        <Text className="text-base font-bold text-slate-900">{label}</Text>
-        {sub ? <Text className="mt-1 text-sm leading-5 text-slate-500">{sub}</Text> : null}
+        <Text className="text-base font-bold" style={{ color: colors.text }}>{label}</Text>
+        {sub ? <Text className="mt-1 text-sm leading-5" style={{ color: colors.textMuted }}>{sub}</Text> : null}
       </View>
     </View>
   );
@@ -586,25 +642,74 @@ export default function ScreeningDetailsScreen() {
   const showRemoteSpinner = Boolean(sessionId) && remoteLoading;
   const showRemoteError = Boolean(sessionId) && !remoteLoading && remoteError;
 
+  const stopCurrentSound = useCallback(async () => {
+    if (soundRef.current) {
+      await soundRef.current.stopAsync().catch(() => {});
+      await soundRef.current.unloadAsync().catch(() => {});
+      soundRef.current = null;
+    }
+    setPlayingIndex(null);
+  }, []);
+
+  const playAudioAt = useCallback(async (index: number) => {
+    // Tap again while playing = pause/stop
+    if (playingIndex === index) {
+      await stopCurrentSound();
+      return;
+    }
+
+    const uri = audioUris[index];
+    if (!uri) {
+      setAudioHint("Playback is not available for this clip.");
+      return;
+    }
+
+    setAudioHint(null);
+    // Stop any currently playing clip first
+    await stopCurrentSound();
+
+    setPlayingIndex(index);
+    try {
+      const sound = new Audio.Sound();
+      soundRef.current = sound;
+      await sound.loadAsync({ uri }, { shouldPlay: true });
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (!status.isLoaded || status.didJustFinish) {
+          void sound.unloadAsync().catch(() => {});
+          if (soundRef.current === sound) soundRef.current = null;
+          setPlayingIndex((current) => (current === index ? null : current));
+        }
+      });
+    } catch {
+      soundRef.current = null;
+      setAudioHint("Could not play this recording right now.");
+      setPlayingIndex(null);
+    }
+  }, [audioUris, playingIndex, stopCurrentSound]);
+
   return (
     <>
-      <StatusBar style="dark" backgroundColor="#f8fafc" translucent={false} />
-      <SafeAreaView className="flex-1 bg-lavender" edges={["top", "right", "bottom", "left"]}>
-        <View className="flex-row items-center justify-between border-b border-slate-900/10 bg-lavender px-4 pb-3 pt-2 sm:px-5 md:px-6">
+      <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
+      <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["right", "bottom", "left"]}>
+        <View
+          className="flex-row items-center justify-between px-4 pb-3 sm:px-5 md:px-6"
+          style={{ paddingTop: headerPadTop, borderBottomWidth: 1, borderBottomColor: colors.borderLight, backgroundColor: colors.background }}
+        >
           <Pressable
             onPress={() => router.back()}
-            className="size-11 items-center justify-center rounded-full bg-slate-900/5 active:bg-slate-900/10"
+            className="size-11 items-center justify-center rounded-full"
+            style={{ backgroundColor: colors.surfaceAlt }}
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <Ionicons name="chevron-back" size={22} color="#0f172a" />
+            <Ionicons name="chevron-back" size={22} color={colors.text} />
           </Pressable>
 
           <View className="min-w-0 flex-1 items-center px-2">
-            <Text className="text-center text-lg font-bold text-slate-900 sm:text-xl" numberOfLines={2}>
+            <Text className="text-center text-lg font-bold sm:text-xl" style={{ color: colors.text }} numberOfLines={2}>
               Result Details
             </Text>
-            <Text className="mt-1 text-center text-sm font-semibold text-slate-500 sm:text-base" numberOfLines={2}>
+            <Text className="mt-1 text-center text-sm font-semibold sm:text-base" style={{ color: colors.textMuted }} numberOfLines={2}>
               {headerSubtitle}
             </Text>
           </View>
@@ -620,15 +725,15 @@ export default function ScreeningDetailsScreen() {
           <View className="px-4 pb-8 pt-4 sm:px-5 md:px-6">
             {showRemoteSpinner ? (
               <View className="min-h-[240px] items-center justify-center py-16">
-                <ActivityIndicator size="large" color="#0f172a" />
-                <Text className="mt-3 text-base text-slate-500">Loading screening summary…</Text>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text className="mt-3 text-base" style={{ color: colors.textMuted }}>Loading screening summary…</Text>
               </View>
             ) : null}
 
             {showRemoteError ? (
-              <View className="mb-4 rounded-3xl border border-red-200 bg-red-50 p-5">
-                <Text className="text-base font-bold text-red-900">Could not open summary</Text>
-                <Text className="mt-2 text-base leading-6 text-red-800">{remoteError}</Text>
+              <View className="mb-4 rounded-3xl border p-5" style={{ borderColor: colors.error, backgroundColor: colors.errorBg }}>
+                <Text className="text-base font-bold" style={{ color: colors.error }}>Could not open summary</Text>
+                <Text className="mt-2 text-base leading-6" style={{ color: colors.error }}>{remoteError}</Text>
               </View>
             ) : null}
 
@@ -636,8 +741,8 @@ export default function ScreeningDetailsScreen() {
               <>
                 {invalidAudio && (
                   <View className="mb-3 rounded-3xl border border-amber-300 bg-amber-50 p-5">
-                    <Text className="mb-2 text-base font-bold text-amber-900">Audio authenticity check</Text>
-                    <Text className="text-base leading-6 text-amber-900">
+                    <Text className="mb-2 text-base font-bold" style={{ color: "#92400E" }}>Audio authenticity check</Text>
+                    <Text className="text-base leading-6" style={{ color: "#92400E" }}>
                       {invalidLabel === "silence"
                         ? "The recording was too quiet / silent. Please cough once clearly within 3–10 seconds."
                         : invalidLabel === "speech"
@@ -650,9 +755,9 @@ export default function ScreeningDetailsScreen() {
                     </Text>
                     {invalidReasons.length > 0 && (
                       <View className="mt-2.5">
-                        <Text className="mb-2 text-sm font-bold text-amber-900">Detected issues</Text>
+                        <Text className="mb-2 text-sm font-bold" style={{ color: "#92400E" }}>Detected issues</Text>
                         {invalidReasons.map((r) => (
-                          <Text key={r} className="text-sm leading-5 text-amber-900">
+                          <Text key={r} className="text-sm leading-5" style={{ color: "#92400E" }}>
                             - {r}
                           </Text>
                         ))}
@@ -664,8 +769,8 @@ export default function ScreeningDetailsScreen() {
                 <Card title="Risk Breakdown">
                   <View className="mb-3 flex-row items-center justify-between gap-3">
                     <View
-                      className="rounded-full border border-slate-900/10 px-4 py-2.5"
-                      style={{ backgroundColor: copy.pillBg }}
+                      className="rounded-full border px-4 py-2.5"
+                      style={{ backgroundColor: copy.pillBg, borderColor: colors.borderLight }}
                     >
                       <Text className="text-base font-bold" style={{ color: copy.color }}>
                         {copy.title}
@@ -673,121 +778,19 @@ export default function ScreeningDetailsScreen() {
                     </View>
                     {hasProb ? (
                       <View className="min-w-0 items-end">
-                        <Text className="text-base font-bold text-slate-900">
+                        <Text className="text-base font-bold" style={{ color: colors.text }}>
                           Confidence: {(confidence * 100).toFixed(0)}%
                         </Text>
-                        <Text className="text-sm text-slate-500">
+                        <Text className="text-sm" style={{ color: colors.textMuted }}>
                           TB probability: {((probTb as number) * 100).toFixed(1)}%
                         </Text>
                       </View>
                     ) : (
-                      <Text className="text-sm font-bold text-slate-500">Confidence: —</Text>
+                      <Text className="text-sm font-bold" style={{ color: colors.textMuted }}>Confidence: —</Text>
                     )}
                   </View>
 
-                  <Text className="text-base leading-6 text-slate-700">{copy.simple}</Text>
-                </Card>
-
-                <View className="mb-3 rounded-3xl border border-slate-200 bg-white p-5">
-                  <Pressable
-                    onPress={toggleChecklistOpen}
-                    className="flex-row items-start justify-between gap-3 active:opacity-75"
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      checklistOpen ? "Collapse symptoms and exposure checklist" : "Expand symptoms and exposure checklist"
-                    }
-                    accessibilityState={{ expanded: checklistOpen }}
-                  >
-                    <View className="min-w-0 flex-1">
-                      <Text className="text-base font-bold text-slate-900">Symptoms & exposure checklist</Text>
-                      {!checklistOpen ? (
-                        <Text className="mt-1 text-sm leading-5 text-slate-500">{checklistCollapsedSubtitle}</Text>
-                      ) : null}
-                    </View>
-                    <Ionicons
-                      name={checklistOpen ? "chevron-up" : "chevron-down"}
-                      size={22}
-                      color="#64748b"
-                      style={{ marginTop: 2 }}
-                    />
-                  </Pressable>
-
-                  {checklistBodyMounted ? (
-                    <Animated.View
-                      pointerEvents={checklistOpen ? "auto" : "none"}
-                      style={{
-                        height: checklistHeightAnim,
-                        overflow: "hidden",
-                      }}
-                    >
-                      <View
-                        className="mt-4 border-t border-slate-100 pt-4"
-                        style={{ position: "absolute", left: 0, right: 0, top: 0 }}
-                        onLayout={onChecklistContentLayout}
-                      >
-                        {checklistRows.length === 0 ? (
-                          <Text className="text-base leading-6 text-slate-600">
-                            No checklist data for this view. Complete the symptom checklist before recording, finish while
-                            signed in so answers save with your screening, then open Details from results or History.
-                          </Text>
-                        ) : (
-                          <>
-                            <Text className="mb-4 text-base leading-6 text-slate-600">
-                              {hasSavedChecklist
-                                ? "Answers stored with this session (Yes / No)."
-                                : sessionId
-                                  ? "No checklist answers were stored for this screening. Questions are shown for reference."
-                                  : "Answer each question during screening; responses appear here after you finish."}
-                            </Text>
-                            <View className="gap-3">
-                              {checklistRows.map((row) => (
-                                <View
-                                  key={row.questionId}
-                                  className="rounded-2xl border border-slate-100 bg-white px-4 py-4"
-                                >
-                                  <Text className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-500">
-                                    {categorySectionLabel(row.category)}
-                                  </Text>
-                                  <Text className="text-base leading-6 text-slate-900">{row.questionText}</Text>
-                                  <View className="mt-3 flex-row flex-wrap items-center gap-2">
-                                    {row.answerYes === null ? (
-                                      <Text className="text-sm font-semibold text-slate-400">Not recorded</Text>
-                                    ) : (
-                                      <View
-                                        className="rounded-full px-3 py-1"
-                                        style={{
-                                          backgroundColor: row.answerYes
-                                            ? "rgba(220,38,38,0.10)"
-                                            : "rgba(15,23,42,0.06)",
-                                        }}
-                                      >
-                                        <Text
-                                          className="text-sm font-bold"
-                                          style={{ color: row.answerYes ? "#B91C1C" : "#475569" }}
-                                        >
-                                          {row.answerYes ? "Yes" : "No"}
-                                        </Text>
-                                      </View>
-                                    )}
-                                  </View>
-                                </View>
-                              ))}
-                            </View>
-                          </>
-                        )}
-                      </View>
-                    </Animated.View>
-                  ) : null}
-                </View>
-
-                <Card title="Sputum sample">
-                  <SputumSamplePhoto
-                    key={sessionId ?? "no-session"}
-                    sessionId={sessionId}
-                    uri={imageUri}
-                    height={260}
-                    label={imageProvided ? "Stored on your account (server)" : undefined}
-                  />
+                  <Text className="text-base leading-6" style={{ color: colors.textSecondary }}>{copy.simple}</Text>
                 </Card>
 
                 <Card title="Input Summary">
@@ -812,19 +815,149 @@ export default function ScreeningDetailsScreen() {
                           : phlegmFailed
                             ? phlegmDetail
                               ? `Analysis failed: ${phlegmDetail.slice(0, 200)}`
-                              : "Analysis failed — check that infer_api can load ml (phlegm) checkpoints."
+                              : "Analysis could not be completed for the sputum image."
                             : "Image captured; analysis not run."
                         : "No sample photo — results use cough audio (and checklist) only."
                     }
                   />
-                  <CheckRow
-                    ok={hasSavedChecklist}
-                    label="Symptoms & exposure checklist"
-                    sub={
-                      hasSavedChecklist
-                        ? `${checklistYesCount} Yes · ${checklistNoCount} No (${checklistAnswered.length} answers)`
-                        : "No checklist responses for this session."
+                </Card>
+
+                <View className="mb-3 rounded-3xl border p-5" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
+                  <Pressable
+                    onPress={toggleChecklistOpen}
+                    className="flex-row items-start justify-between gap-3 active:opacity-75"
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      checklistOpen ? "Collapse symptoms and exposure checklist" : "Expand symptoms and exposure checklist"
                     }
+                    accessibilityState={{ expanded: checklistOpen }}
+                  >
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-base font-bold" style={{ color: colors.text }}>Symptoms & exposure checklist</Text>
+                      {!checklistOpen ? (
+                        <Text className="mt-1 text-sm leading-5" style={{ color: colors.textMuted }}>{checklistCollapsedSubtitle}</Text>
+                      ) : null}
+                    </View>
+                    <Ionicons
+                      name={checklistOpen ? "chevron-up" : "chevron-down"}
+                      size={22}
+                      color={colors.textMuted}
+                      style={{ marginTop: 2 }}
+                    />
+                  </Pressable>
+
+                  {checklistBodyMounted ? (
+                    <Animated.View
+                      pointerEvents={checklistOpen ? "auto" : "none"}
+                      style={{
+                        height: checklistHeightAnim,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <View
+                        className="mt-4 border-t pt-4"
+                        style={{ position: "absolute", left: 0, right: 0, top: 0, borderColor: colors.borderLight }}
+                        onLayout={onChecklistContentLayout}
+                      >
+                        {checklistRows.length === 0 ? (
+                          <Text className="text-base leading-6" style={{ color: colors.textSecondary }}>
+                            No checklist data for this view. Complete the symptom checklist before recording, finish while
+                            signed in so answers save with your screening, then open Details from results or History.
+                          </Text>
+                        ) : (
+                          <>
+                            <Text className="mb-4 text-base leading-6" style={{ color: colors.textSecondary }}>
+                              {hasSavedChecklist
+                                ? "Answers stored with this session (Yes / No)."
+                                : sessionId
+                                  ? "No checklist answers were stored for this screening. Questions are shown for reference."
+                                  : "Answer each question during screening; responses appear here after you finish."}
+                            </Text>
+                            <View className="gap-3">
+                              {checklistRows.map((row) => (
+                                <View
+                                  key={row.questionId}
+                                  className="rounded-2xl border px-4 py-4"
+                                  style={{ borderColor: colors.borderLight, backgroundColor: colors.surface }}
+                                >
+                                  <Text className="mb-1.5 text-xs font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
+                                    {categorySectionLabel(row.category)}
+                                  </Text>
+                                  <Text className="text-base leading-6" style={{ color: colors.text }}>{row.questionText}</Text>
+                                  <View className="mt-3 flex-row flex-wrap items-center gap-2">
+                                    {row.answerYes === null ? (
+                                      <Text className="text-sm font-semibold" style={{ color: colors.textMuted }}>Not recorded</Text>
+                                    ) : (
+                                      <View
+                                        className="rounded-full px-3 py-1"
+                                        style={{
+                                          backgroundColor: row.answerYes
+                                            ? "rgba(220,38,38,0.10)"
+                                            : colors.primaryLight,
+                                        }}
+                                      >
+                                        <Text
+                                          className="text-sm font-bold"
+                                          style={{ color: row.answerYes ? "#B91C1C" : colors.text }}
+                                        >
+                                          {row.answerYes ? "Yes" : "No"}
+                                        </Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                </View>
+                              ))}
+                            </View>
+                          </>
+                        )}
+                      </View>
+                    </Animated.View>
+                  ) : null}
+                </View>
+
+                <Card title="Cough audio replay">
+                  {audioUris.length > 0 ? (
+                    <View className="gap-2">
+                      {audioUris.map((_, i) => (
+                        <Pressable
+                          key={`audio-${i}`}
+                          onPress={() => void playAudioAt(i)}
+                          className="flex-row items-center justify-between rounded-xl border px-3.5 py-3 active:opacity-90"
+                          style={{ borderColor: colors.borderLight, backgroundColor: colors.surfaceAlt }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Play cough clip ${i + 1}`}
+                        >
+                          <Text className="text-sm font-semibold" style={{ color: colors.text }}>
+                            Cough clip {i + 1}
+                          </Text>
+                          <Ionicons
+                            name={playingIndex === i ? "pause-circle" : "play-circle"}
+                            size={20}
+                            color={colors.primary}
+                          />
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text className="text-sm leading-5" style={{ color: colors.textMuted }}>
+                      No playable cough clips were stored for this session.
+                    </Text>
+                  )}
+                  {audioHint ? (
+                    <Text className="mt-3 text-sm leading-5" style={{ color: colors.textMuted }}>
+                      {audioHint}
+                    </Text>
+                  ) : null}
+                </Card>
+
+                <Card title="Sputum sample">
+                  <SputumSamplePhoto
+                    key={sessionId ?? "no-session"}
+                    sessionId={sessionId}
+                    uri={imageUri}
+                    height={260}
+                    label={imageProvided ? "Stored on your account (server)" : undefined}
+                    onPress={imageProvided ? () => setImageViewerVisible(true) : undefined}
                   />
                 </Card>
 
@@ -844,14 +977,14 @@ export default function ScreeningDetailsScreen() {
 
                 <Card title="Recommendations">
                   {savedRecommendation ? (
-                    <Text className="text-base leading-6 text-slate-700">{savedRecommendation}</Text>
+                    <Text className="text-base leading-6" style={{ color: colors.textSecondary }}>{savedRecommendation}</Text>
                   ) : (
                     copy.recommendations.map((t) => <Bullet key={t} text={t} />)
                   )}
                 </Card>
 
                 <Card title="Disclaimer">
-                  <Text className="text-base italic leading-6 text-slate-600">
+                  <Text className="text-base italic leading-6" style={{ color: colors.textSecondary }}>
                     This result is not a medical diagnosis.
                   </Text>
                 </Card>
@@ -859,6 +992,75 @@ export default function ScreeningDetailsScreen() {
             ) : null}
           </View>
         </ScrollView>
+
+        <Modal
+          visible={imageViewerVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setImageViewerVisible(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.86)" }}>
+            <View
+              style={{
+                paddingTop: Math.max(insets.top, 18),
+                paddingHorizontal: 16,
+                flexDirection: "row",
+                justifyContent: "flex-end",
+              }}
+            >
+              <Pressable
+                onPress={() => setImageViewerVisible(false)}
+                className="h-10 w-10 items-center justify-center rounded-full"
+                style={{ backgroundColor: "rgba(255,255,255,0.12)" }}
+                accessibilityRole="button"
+                accessibilityLabel="Close image viewer"
+              >
+                <Ionicons name="close" size={22} color="#FFFFFF" />
+              </Pressable>
+            </View>
+            <View style={{ flex: 1, paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 18) }}>
+              <View
+                style={{
+                  flex: 1,
+                  borderRadius: 18,
+                  overflow: "hidden",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.18)",
+                  backgroundColor: "rgba(255,255,255,0.06)",
+                }}
+              >
+                {resolvedImageUri ? (
+                  viewerNeedsAuth && !viewerHeaders ? (
+                    <View className="flex-1 items-center justify-center px-6">
+                      <ActivityIndicator color="#C7D2FE" />
+                      <Text className="mt-3 text-center text-sm font-semibold text-[#C7D2FE]">
+                        Loading image…
+                      </Text>
+                    </View>
+                  ) : (
+                    <Image
+                      source={
+                        viewerNeedsAuth && viewerHeaders
+                          ? { uri: resolvedImageUri, headers: viewerHeaders }
+                          : { uri: resolvedImageUri }
+                      }
+                      style={{ width: "100%", height: "100%" }}
+                      contentFit="contain"
+                      cachePolicy="none"
+                    />
+                  )
+                ) : (
+                  <View className="flex-1 items-center justify-center px-6">
+                    <Ionicons name="image-outline" size={28} color="#C7D2FE" />
+                    <Text className="mt-3 text-center text-sm font-semibold text-[#C7D2FE]">
+                      Image preview unavailable.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </>
   );

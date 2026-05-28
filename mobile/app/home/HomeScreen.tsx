@@ -2,34 +2,50 @@ import {
   View,
   Text,
   ScrollView,
-  TextInput,
-  TouchableOpacity,
+  Pressable,
   Platform,
+  BackHandler,
+  StyleSheet,
+  Modal,
+  Animated,
+  Easing,
+  useWindowDimensions,
+  type EmitterSubscription,
 } from "react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import InstructionsScreen from "../screening/InstructionsScreen";
+import * as NavigationBar from "expo-navigation-bar";
 import { LearnContent } from "../learn/LearnContent";
 import HistoryScreen from "../history/HistoryScreen";
 import { ProfilePage } from "../profile/profilepage";
 import BottomNav, { BottomNavTab } from "../components/BottomNav";
-import CachedImage from "../components/CachedImage";
-import { TBHON_ICON } from "../../constants/branding";
 import { QuickResultPreviewCard } from "./quickResultPreview";
+import { IotHardwareContent } from "../screening/iot-hardware";
 import { getMe } from "../../services/backendApi";
+import { resetToLanding } from "../../utils/authNavigation";
 import { getAuthToken } from "../../utils/authStorage";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
 import { profileFirstName } from "../../utils/profileDisplay";
+import { palette } from "../../constants/palette";
+import { useTheme } from "../../contexts/ThemeContext";
 
-/** iOS/Android shadows — Tailwind shadows don’t match 1:1 on native. */
-const homeCardShadow = {
+const NAVY = "#0B1530";
+const PURPLE = palette.violet;
+const TEXT_NAVY = palette.deepNavy;
+const MUTED = "#6B7280";
+/** Body height of bottom nav row (excluding safe-area inset). */
+const BOTTOM_NAV_HEIGHT = 84;
+
+const cardShadow = {
   shadowColor: "#000",
   shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.07,
+  shadowOpacity: 0.08,
   shadowRadius: 14,
-  elevation: 3,
+  elevation: 4,
 };
 
 const serviceTileShadow = {
@@ -40,255 +56,729 @@ const serviceTileShadow = {
   elevation: 2,
 };
 
-const BrandMark = () => (
-  <CachedImage
-    source={TBHON_ICON}
-    className="size-12"
-    resizeMode="contain"
-  />
-);
+function timeGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+type ServiceTile = {
+  key: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+};
 
 export default function HomeScreen() {
-  const [showInstructions, setShowInstructions] = useState(false);
+  const navigation = useNavigation();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
+  const { isDark, colors } = useTheme();
+  const [showNotifications, setShowNotifications] = useState(false);
   const [activeTab, setActiveTab] = useState<BottomNavTab>("home");
-  const [greetingFirstName, setGreetingFirstName] = useState<string | null>(() =>
-    profileFirstName(peekProfile()),
-  );
+  const [firstName, setFirstName] = useState<string | null>(() => profileFirstName(peekProfile()));
 
-  const headerPadTop = Platform.select({ ios: 12, android: 10, default: 10 });
+  // Screening modal state (slide-up like Edit Profile)
+  const [screeningModalVisible, setScreeningModalVisible] = useState(false);
+  const [screeningModalMounted, setScreeningModalMounted] = useState(false);
+  const screeningSlideAnim = useRef(new Animated.Value(0)).current;
 
-  const refreshGreetingName = useCallback(async () => {
+  const openScreening = useCallback(() => {
+    setScreeningModalMounted(true);
+    setScreeningModalVisible(true);
+  }, []);
+
+  const closeScreening = useCallback(() => {
+    setScreeningModalVisible(false);
+  }, []);
+
+  const continueScreening = useCallback(() => {
+    // Close overlay first, then navigate after animation completes (220ms + buffer)
+    setScreeningModalVisible(false);
+    setTimeout(() => {
+      router.push("/screening/iot-instructions" as any);
+    }, 260);
+  }, [router]);
+
+  // Animate screening modal slide
+  useEffect(() => {
+    if (screeningModalVisible) {
+      screeningSlideAnim.setValue(0);
+      Animated.timing(screeningSlideAnim, {
+        toValue: 1,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else if (screeningModalMounted) {
+      Animated.timing(screeningSlideAnim, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setScreeningModalMounted(false);
+      });
+    }
+  }, [screeningModalVisible, screeningModalMounted, screeningSlideAnim]);
+
+  const scrollTopPad = insets.top + (Platform.OS === "ios" ? 24 : 20);
+
+  const applyHomeSystemChrome = useCallback(() => {
+    if (Platform.OS === "android") {
+      void NavigationBar.setButtonStyleAsync(isDark ? "light" : "dark").catch(() => {});
+      void NavigationBar.setBackgroundColorAsync(colors.background).catch(() => {});
+    }
+  }, [isDark, colors.background]);
+
+  const refreshProfileHeader = useCallback(async () => {
     const cached = peekProfile();
     const cachedFirst = profileFirstName(cached);
     if (cachedFirst) {
-      setGreetingFirstName(cachedFirst);
+      setFirstName(cachedFirst);
     }
 
     const token = await getAuthToken();
     if (!token) {
-      setGreetingFirstName(null);
+      setFirstName(null);
       return;
     }
 
     try {
       const { user } = await getMe();
       setCachedProfile(user);
-      setGreetingFirstName(profileFirstName(user));
+      setFirstName(profileFirstName(user));
     } catch {
       if (!cachedFirst) {
-        setGreetingFirstName(null);
+        setFirstName(null);
       }
     }
   }, []);
 
   useEffect(() => {
     if (activeTab === "home") {
-      void refreshGreetingName();
+      void refreshProfileHeader();
+      applyHomeSystemChrome();
     }
-  }, [activeTab, refreshGreetingName]);
+  }, [activeTab, refreshProfileHeader, applyHomeSystemChrome]);
+
+  useFocusEffect(
+    useCallback(() => {
+      applyHomeSystemChrome();
+      let active = true;
+      void (async () => {
+        const token = await getAuthToken();
+        if (!token && active) {
+          resetToLanding(navigation);
+        }
+      })();
+      return () => {
+        active = false;
+      };
+    }, [navigation, applyHomeSystemChrome]),
+  );
+
+  useEffect(() => {
+    const sub: EmitterSubscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      // Close screening overlay first if open
+      if (screeningModalVisible) {
+        closeScreening();
+        return true;
+      }
+      if (activeTab !== "home") {
+        setActiveTab("home");
+        return true;
+      }
+      return true;
+    });
+    return () => sub.remove();
+  }, [activeTab, screeningModalVisible, closeScreening]);
 
   const handleTabPress = (tab: BottomNavTab) => {
+    const transitionTo = (next: BottomNavTab) => {
+      if (next === activeTab) return;
+      setActiveTab(next);
+    };
+
     if (tab === "home") {
-      setActiveTab("home");
+      transitionTo("home");
       return;
     }
-
     if (tab === "screening") {
-      setShowInstructions(true);
+      openScreening();
       return;
     }
-
     if (tab === "learn") {
-      setActiveTab("learn");
+      transitionTo("learn");
       return;
     }
     if (tab === "profile") {
-      setActiveTab("profile");
+      transitionTo("profile");
       return;
     }
-
     if (tab === "history") {
-      setActiveTab("history");
+      transitionTo("history");
       return;
     }
   };
 
-  if (showInstructions) {
-    return <InstructionsScreen onClose={() => setShowInstructions(false)} />;
-  }
+  const serviceTiles: ServiceTile[] = [
+    {
+      key: "cough",
+      icon: "mic-outline",
+      title: "Record Cough",
+      subtitle: "Audio analysis",
+      onPress: openScreening,
+    },
+    {
+      key: "phlegm",
+      icon: "camera-outline",
+      title: "Capture Phlegm",
+      subtitle: "Image analysis",
+      onPress: openScreening,
+    },
+    {
+      key: "results",
+      icon: "clipboard-outline",
+      title: "View Results",
+      subtitle: "Full report",
+      onPress: () => handleTabPress("history"),
+    },
+  ];
 
-  if (activeTab === "learn") {
-    return (
-      <>
-        <StatusBar style="dark" backgroundColor="#fff" translucent={false} />
-        <SafeAreaView
-          className="flex-1 bg-white"
-          style={{ flex: 1 }}
-          edges={["top", "left", "right"]}
+  const renderTabContent = (tab: BottomNavTab) => {
+    if (tab === "home") {
+      return (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          style={[styles.tabScroll, { backgroundColor: colors.background }]}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: scrollTopPad }]}
         >
-          <View className="flex-1">
-            <LearnContent />
-          </View>
-          <BottomNav activeTab="learn" onTabPress={handleTabPress} />
-        </SafeAreaView>
-      </>
-    );
-  }
-
-  if (activeTab === "history") {
-    return (
-      <>
-        <StatusBar style="dark" backgroundColor="#fff" translucent={false} />
-        <SafeAreaView className="flex-1 bg-white" style={{ flex: 1 }} edges={["left", "right"]}>
-          <View className="flex-1">
-            <HistoryScreen onTabChange={() => setActiveTab("home")} />
-          </View>
-          <BottomNav activeTab="history" onTabPress={handleTabPress} />
-        </SafeAreaView>
-      </>
-    );
-  }
-
-  if (activeTab === "profile") {
-    return (
-      <>
-        <StatusBar style="dark" backgroundColor="#fff" translucent={false} />
-        <SafeAreaView
-          className="flex-1 bg-white"
-          style={{ flex: 1 }}
-          edges={["top", "left", "right"]}
-        >
-          <View className="flex-1">
-            <ProfilePage />
-          </View>
-          <BottomNav activeTab="profile" onTabPress={handleTabPress} />
-        </SafeAreaView>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <StatusBar style="dark" backgroundColor="#fff" translucent={false} />
-      <SafeAreaView className="flex-1 bg-white" style={{ flex: 1 }} edges={["top", "left", "right"]}>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View className="px-5 pb-3" style={{ paddingTop: headerPadTop }}>
-            <View className="flex-row items-center justify-between">
-              <View className="min-w-0 flex-1 pr-3">
-                {greetingFirstName ? (
-                  <Text
-                    className="text-2xl font-bold leading-9 text-black"
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    <Text className="text-2xl font-normal leading-9 text-[#666]">
-                      👋 Hello!{" "}
-                    </Text>
-                    {greetingFirstName}
-                  </Text>
-                ) : (
-                  <Text className="text-3xl font-extrabold leading-9 text-black">
-                    <Text className="text-base font-normal leading-9 text-[#666]">👋 </Text>
-                    Hello!
-                  </Text>
-                )}
-              </View>
-              <BrandMark />
-            </View>
-          </View>
-
-          <View className="mb-6 px-5">
-            <View className="h-14 flex-row items-center rounded-3xl border border-[#EDEDED] bg-[#F8F8F8] px-4 py-3">
-              <Ionicons name="search" size={20} color="#BBBBBB" />
-              <TextInput
-                placeholder="Search"
-                placeholderTextColor="#BBBBBB"
-                textAlignVertical="center"
-                style={{ includeFontPadding: false }}
-                className="ml-2.5 h-full flex-1 py-0 text-lg leading-6 text-[#333]"
-              />
-            </View>
-          </View>
-
-          <View className="mb-6 px-5">
-            <View
-              className="flex-row items-center rounded-2xl border border-[#EEEEEE] bg-white p-5"
-              style={homeCardShadow}
-            >
-              <View className="flex-1">
-                <Text className="mb-2 text-base leading-5 text-[#333]">
-                  Maintain lung health to support overall well-being.
+          <View style={styles.headerBlock}>
+            <View style={styles.headerRow}>
+              <View style={styles.headerTextCol}>
+                <Text style={[styles.greetingSub, { color: colors.textMuted }]}>{`${timeGreeting()},`}</Text>
+                <Text style={[styles.greetingName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
+                  {firstName ? `${firstName}!` : "Welcome!"}
                 </Text>
-                <TouchableOpacity
-                  onPress={() => setShowInstructions(true)}
-                  className="my-2 self-start rounded-2xl bg-[#1a1a2e] px-4 py-2"
-                >
-                  <Text className="text-base font-bold text-white">Get Checked Now</Text>
-                </TouchableOpacity>
-                <Text className="text-base text-[#0066cc]">Learn More →</Text>
               </View>
-              <View className="h-28 w-32 items-center justify-center overflow-hidden">
-                <CachedImage
-                  source={require("../../assets/images/Tbhon assets/respiratory_11925119.png")}
-                  className="h-full w-full"
-                  resizeMode="contain"
-                />
+              <Pressable
+                style={[styles.notifyBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => setShowNotifications(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Notifications"
+              >
+                <Ionicons name="notifications-outline" size={22} color={colors.text} />
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.heroWrap}>
+            <View style={[styles.heroCard, { backgroundColor: colors.heroCard }]}>
+              <View style={[styles.heroCircleLarge, { backgroundColor: colors.heroCardAccent }]} />
+              <View style={[styles.heroCircleSmall, { backgroundColor: colors.heroCardAccent }]} />
+              <View style={[styles.heroBadge, { backgroundColor: colors.heroBadgeBg }]}>
+                <Ionicons name="shield-checkmark-outline" size={14} color={colors.heroText} />
+                <Text style={[styles.heroBadgeText, { color: colors.heroText }]}>LUNG HEALTH</Text>
+              </View>
+              <Text style={[styles.heroBody, { color: colors.heroText }]}>
+                Maintain lung health to support overall well-being.
+              </Text>
+              <View style={styles.heroActionsRow}>
+                <Pressable
+                  onPress={openScreening}
+                  style={styles.heroCtaPressable}
+                  accessibilityRole="button"
+                >
+                  {({ pressed }) => (
+                    <View
+                      style={[
+                        styles.heroCta,
+                        {
+                          backgroundColor: pressed
+                            ? isDark
+                              ? "#DBD8F8"
+                              : "#4E43B7"
+                            : isDark
+                              ? palette.lavender
+                              : palette.violet,
+                          borderColor: isDark ? "rgba(12,30,74,0.18)" : "rgba(255,255,255,0.35)",
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.heroCtaText, { color: isDark ? palette.deepNavy : "#FFFFFF" }]}>
+                        Get Checked Now
+                      </Text>
+                    </View>
+                  )}
+                </Pressable>
+                <Pressable style={styles.heroLearnRow} onPress={() => handleTabPress("learn")} hitSlop={8}>
+                  <Text style={[styles.heroLearnText, { color: colors.heroTextMuted }]}>Learn More</Text>
+                  <Ionicons name="arrow-forward" size={16} color={colors.heroTextMuted} />
+                </Pressable>
+              </View>
+              <View style={styles.heroArt} pointerEvents="none">
+                <MaterialCommunityIcons name="lungs" size={96} color="rgba(255,255,255,0.18)" />
               </View>
             </View>
           </View>
 
-          <View className="mb-6 px-5">
-            <Text className="mb-3.5 text-base font-bold leading-6 text-black">
-              Offered Services
-            </Text>
-            <View className="flex-row gap-3">
-              {[
-                { icon: "mic-outline", iconLib: "ion", label: "Record Cough" },
-                { icon: "camera-outline", iconLib: "ion", label: "Capture Phlegm" },
-                { icon: "clipboard-list-outline", iconLib: "mci", label: "View Results" },
-              ].map((item, idx) => (
-                <View
-                  key={idx}
-                  className="relative min-w-0 flex-1 items-center overflow-hidden rounded-2xl border border-[#EEEEEE] bg-white px-3 pb-3 pt-3.5"
-                  style={serviceTileShadow}
+          <View style={styles.sectionBlock}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Offered Services</Text>
+            <View style={styles.serviceRow}>
+              {serviceTiles.map((item) => (
+                <Pressable
+                  key={item.key}
+                  style={[
+                    styles.serviceTile,
+                    { backgroundColor: colors.serviceTileBg, borderColor: colors.serviceTileBorder },
+                  ]}
+                  onPress={item.onPress}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.title}
                 >
-                  <View
-                    className="absolute right-0 top-0 opacity-[0.15]"
-                    style={{ width: 40, height: 40 }}
-                  >
-                    {[...Array(6)].map((_, i) => (
-                      <View
-                        key={i}
-                        style={{
-                          width: 2,
-                          height: 2,
-                          backgroundColor: "#999",
-                          borderRadius: 1,
-                          margin: 2,
-                        }}
-                      />
-                    ))}
+                  <View style={[styles.serviceIconWrap, { backgroundColor: isDark ? colors.surfaceAlt : "#F3F0FF" }]}>
+                    <Ionicons name={item.icon} size={26} color={colors.serviceTileIcon} />
                   </View>
-                  <View className="mb-2.5 h-12 w-12 items-center justify-center rounded-lg border border-[#EEEEEE] bg-[#f0f0f0]">
-                    {item.iconLib === "ion" ? (
-                      <Ionicons name={item.icon as any} size={24} color="#222" />
-                    ) : (
-                      <MaterialCommunityIcons name={item.icon as any} size={24} color="#222" />
-                    )}
-                  </View>
-                  <Text className="text-center text-sm font-semibold text-black">{item.label}</Text>
-                </View>
+                  <Text style={[styles.serviceTitle, { color: colors.text }]} numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                  <Text style={[styles.serviceSubtitle, { color: colors.textMuted }]}>{item.subtitle}</Text>
+                </Pressable>
               ))}
             </View>
           </View>
 
-          <QuickResultPreviewCard isActive={activeTab === "home"} />
-
-          <View className="h-5" />
+          <QuickResultPreviewCard
+            isActive={activeTab === "home"}
+            onHistoryPress={() => handleTabPress("history")}
+          />
         </ScrollView>
+      );
+    }
 
-        <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
-      </SafeAreaView>
+    if (tab === "learn") {
+      return <LearnContent />;
+    }
+
+    if (tab === "history") {
+      return <HistoryScreen onTabChange={() => handleTabPress("home")} />;
+    }
+
+    if (tab === "profile") {
+      return <ProfilePage />;
+    }
+
+    return null;
+  };
+
+  return (
+    <>
+      <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
+      <View style={[styles.root, { backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.tabStage,
+            { paddingBottom: BOTTOM_NAV_HEIGHT + insets.bottom },
+          ]}
+        >
+          <View style={styles.tabLayer}>{renderTabContent(activeTab)}</View>
+        </View>
+
+        <View
+          style={[
+            styles.bottomNavHost,
+            {
+              paddingBottom: insets.bottom,
+              backgroundColor: colors.background,
+            },
+          ]}
+        >
+          <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
+        </View>
+      </View>
+
+      <Modal
+        visible={showNotifications}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowNotifications(false)}
+      >
+        <View style={[styles.notificationBackdrop, { backgroundColor: colors.modalOverlay }]}>
+          <Pressable style={styles.notificationBackdropTap} onPress={() => setShowNotifications(false)} />
+          <View
+            style={[
+              styles.notificationSheet,
+              {
+                paddingTop: insets.top + 12,
+                backgroundColor: colors.card,
+                borderTopColor: colors.cardBorder,
+              },
+            ]}
+          >
+            <View style={styles.notificationHeaderRow}>
+              <Text style={[styles.notificationTitle, { color: colors.text }]}>Notifications</Text>
+              <Pressable
+                onPress={() => setShowNotifications(false)}
+                style={[styles.notificationCloseBtn, { backgroundColor: colors.surfaceAlt }]}
+                accessibilityRole="button"
+                accessibilityLabel="Close notifications"
+              >
+                <Ionicons name="close" size={20} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <View
+              style={[
+                styles.notificationEmptyState,
+                { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+              ]}
+            >
+              <View style={[styles.notificationIconWrap, { backgroundColor: colors.primaryLight }]}>
+                <Ionicons name="notifications-off-outline" size={28} color={colors.textSecondary} />
+              </View>
+              <Text style={[styles.notificationEmptyTitle, { color: colors.text }]}>No notifications</Text>
+              <Text style={[styles.notificationEmptyBody, { color: colors.textSecondary }]}>
+                This interface is ready, but real-time notifications are not connected yet.
+              </Text>
+              <Text style={[styles.notificationHintText, { color: colors.textMuted }]}>
+                Future updates like screening reminders and result alerts will appear here.
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Screening Device Setup - absolutely positioned overlay (no Modal to avoid layout shifts) */}
+      {screeningModalMounted && (
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+          {/* Backdrop that fades in */}
+          <Animated.View
+            pointerEvents={screeningModalVisible ? "auto" : "none"}
+            style={[
+              StyleSheet.absoluteFillObject,
+              {
+                backgroundColor: colors.modalOverlay,
+                opacity: screeningSlideAnim,
+              },
+            ]}
+          >
+            <Pressable style={StyleSheet.absoluteFillObject} onPress={closeScreening} />
+          </Animated.View>
+
+          {/* Sliding sheet */}
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFillObject,
+              {
+                backgroundColor: colors.background,
+                transform: [
+                  {
+                    translateY: screeningSlideAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [screenHeight, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <IotHardwareContent onClose={closeScreening} onContinue={continueScreening} />
+          </Animated.View>
+        </View>
+      )}
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    flexDirection: "column",
+  },
+  tabStage: {
+    flex: 1,
+    minHeight: 0,
+  },
+  tabLayer: {
+    flex: 1,
+    minHeight: 0,
+    width: "100%",
+  },
+  bottomNavHost: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  tabScroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 24,
+  },
+  headerBlock: {
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+  headerTextCol: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 12,
+  },
+  greetingSub: {
+    fontSize: 14,
+    color: MUTED,
+    marginBottom: 4,
+  },
+  greetingName: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: TEXT_NAVY,
+    letterSpacing: -0.4,
+    lineHeight: 34,
+  },
+  notifyBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 10,
+    ...cardShadow,
+  },
+  notificationBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 23, 0.24)",
+  },
+  notificationBackdropTap: {
+    flex: 1,
+  },
+  notificationSheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    minHeight: "58%",
+  },
+  notificationHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 18,
+  },
+  notificationTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: TEXT_NAVY,
+    letterSpacing: -0.3,
+  },
+  notificationCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+  },
+  notificationEmptyState: {
+    backgroundColor: "#F8FAFF",
+    borderColor: "#E6E9F8",
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+  },
+  notificationIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EEF0FF",
+    marginBottom: 12,
+  },
+  notificationEmptyTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: TEXT_NAVY,
+    marginBottom: 8,
+    letterSpacing: -0.2,
+  },
+  notificationEmptyBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#374151",
+    marginBottom: 8,
+  },
+  notificationHintText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#6B7280",
+  },
+  heroWrap: {
+    paddingHorizontal: 20,
+    marginTop: 22,
+    marginBottom: 24,
+  },
+  heroCard: {
+    backgroundColor: NAVY,
+    borderRadius: 24,
+    padding: 20,
+    paddingBottom: 12,
+    minHeight: 210,
+    overflow: "hidden",
+    ...cardShadow,
+  },
+  heroCircleLarge: {
+    position: "absolute",
+    top: -40,
+    right: -30,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  heroCircleSmall: {
+    position: "absolute",
+    top: 24,
+    right: 48,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "rgba(91, 79, 196, 0.25)",
+  },
+  heroBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    marginBottom: 18,
+  },
+  heroBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+  },
+  heroBody: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "500",
+    marginBottom: 24,
+    maxWidth: "68%",
+  },
+  heroActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  heroCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    alignSelf: "flex-start",
+    backgroundColor: PURPLE,
+    borderWidth: 1,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 24,
+    shadowColor: "#0B1530",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  heroCtaPressable: {
+    alignSelf: "flex-start",
+  },
+  heroCtaText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  heroLearnRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+    marginRight: 6,
+  },
+  heroLearnText: {
+    color: "rgba(255,255,255,0.92)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  heroArt: {
+    position: "absolute",
+    top: 58,
+    right: 14,
+    opacity: 1,
+  },
+  sectionBlock: {
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: TEXT_NAVY,
+    letterSpacing: -0.2,
+    marginBottom: 14,
+  },
+  serviceRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  serviceTile: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#EEEEEE",
+    paddingHorizontal: 10,
+    paddingTop: 14,
+    paddingBottom: 12,
+    alignItems: "center",
+    ...serviceTileShadow,
+  },
+  serviceIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: palette.lavender,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  serviceTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: TEXT_NAVY,
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  serviceSubtitle: {
+    fontSize: 11,
+    color: MUTED,
+    textAlign: "center",
+  },
+});

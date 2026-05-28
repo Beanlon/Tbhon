@@ -14,6 +14,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import CachedImage from "../components/CachedImage";
@@ -23,9 +24,10 @@ import { getBrandLogoLayout } from "../../utils/brandLogoLayout";
 import { authFormTk as tk } from "../../constants/authFormTheme";
 import { authFormButtonStyles } from "../../constants/authFormStyles";
 import { palette } from "../../constants/palette";
-import { useRouter } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { ApiError, postLogin } from "../../services/backendApi";
-import { saveAuthToken } from "../../utils/authStorage";
+import { resetToAuthenticatedHome } from "../../utils/authNavigation";
+import { getAuthToken, saveAuthToken } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
 import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
 
@@ -33,6 +35,7 @@ const SCROLL_FUDGE = 8;
 
 export default function Login() {
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [email, setEmail] = useState("");
@@ -86,6 +89,21 @@ export default function Login() {
     setInnerContentH(e.nativeEvent.layout.height);
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void (async () => {
+        const token = await getAuthToken();
+        if (token && active) {
+          resetToAuthenticatedHome(navigation);
+        }
+      })();
+      return () => {
+        active = false;
+      };
+    }, [navigation]),
+  );
+
   const handleLogIn = async () => {
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !password) {
@@ -97,14 +115,14 @@ export default function Login() {
       const { token, user } = await postLogin(trimmedEmail, password);
       await saveAuthToken(token);
       setCachedProfile(user);
-      router.replace("/home/HomeScreen");
+      resetToAuthenticatedHome(navigation);
     } catch (error) {
       const message =
         error instanceof ApiError
           ? error.message
           : error instanceof Error
             ? error.message
-            : "Could not reach the server. Check API URL / network.";
+            : "Could not reach the server. Please check your internet connection.";
       Alert.alert("Log in failed", message);
     } finally {
       setSubmitting(false);
