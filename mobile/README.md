@@ -16,6 +16,13 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npx expo start
    ```
 
+## Bluetooth (ESP32 setup)
+
+The device-setup flow uses `react-native-ble-plx` to scan for `ESP32-IOT-SETUP` and send Wi‑Fi credentials over BLE.
+
+- This requires a **native development build** (or EAS build). It will **not** work in Expo Go.
+- After changing Bluetooth-related native dependencies or permissions, rebuild the native app.
+
 In the output, you'll find options to open the app in a
 
 - [development build](https://docs.expo.dev/develop/development-builds/introduction/)

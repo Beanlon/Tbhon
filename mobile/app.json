@@ -11,6 +11,8 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Bluetooth is used to connect to the TBhon screening device and send Wi‑Fi credentials.",
+        "NSBluetoothPeripheralUsageDescription": "Bluetooth is used to connect to the TBhon screening device and send Wi‑Fi credentials.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }
@@ -18,7 +20,12 @@
     },
     "android": {
       "permissions": [
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
+        "ACCESS_FINE_LOCATION"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#000000",

@@ -35,6 +35,7 @@ export default function ReviewInputsScreen() {
       ? params.sessionId.trim()
       : "";
   const sessionNavParams = sessionId.length > 0 ? ({ sessionId } as const) : {};
+  const deviceSputumFlow = params.deviceSputum === "1";
   const deviceSputumNavParams =
     params.deviceSputum === "1"
       ? {
@@ -274,13 +275,14 @@ export default function ReviewInputsScreen() {
             <Pressable
               onPress={() =>
                 router.replace({
-                  pathname: iotMode ? "/screening/iot-sputum" : "/screening/phlegm",
+                  pathname: deviceSputumFlow || iotMode ? "/screening/iot-sputum" : "/screening/phlegm",
                   params: {
                     audioDone: audioDone ? "1" : "0",
                     audioUris,
                     checklist,
                     ...(iotMode ? { iotMode: "1" } : {}),
                     ...sessionNavParams,
+                    ...(deviceSputumFlow ? { deviceSputum: "1" } : {}),
                   },
                 } as any)
               }
@@ -289,7 +291,7 @@ export default function ReviewInputsScreen() {
               accessibilityRole="button"
             >
               <Text className="text-sm font-bold sm:text-base" style={{ color: colors.text }}>
-                {imageDone ? (iotMode ? "Re-capture" : "Change photo") : "Add sample"}
+                {imageDone ? (deviceSputumFlow || iotMode ? "Re-capture" : "Change photo") : "Add sample"}
               </Text>
             </Pressable>
           </View>

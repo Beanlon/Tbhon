@@ -8,7 +8,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 const IOT_INSTRUCTIONS = [
   "Stay on the same Wi‑Fi network as the screening device",
   "Answer a quick symptoms & exposure checklist on this phone",
-  "The device will record 3 separate coughs — follow the prompts on the hardware",
+  "Record 3 separate coughs on the screening device, one at a time",
   "Sputum / phlegm capture is optional and is taken on the screening device",
 ];
 
@@ -62,7 +62,7 @@ export default function InstructionsScreen({ onClose, iotMode = false }: Props) 
           {iotMode ? (
             <View className="mx-5 mb-4 rounded-2xl border px-4 py-3" style={{ borderColor: colors.border, backgroundColor: colors.primaryLight }}>
               <Text className="text-sm leading-6" style={{ color: colors.textSecondary }}>
-                Your phone shows progress only — recording and imaging happen on the connected
+                Your phone guides the steps. Sputum imaging (optional) happens on the connected
                 hardware.
               </Text>
             </View>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -7,8 +7,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
 import { IOT_SPUTUM_STEPS } from "../../constants/iotScreening";
-import { useIotStatusSimulation } from "../../utils/useIotStatusSimulation";
 import { palette } from "../../constants/palette";
+import {
+  ApiError,
+  downloadSessionSputumToCache,
+  ensureScreeningSessionId,
+  fetchSessionSputumPreview,
+  getMe,
+  queueIotDeviceImageCommand,
+} from "../../services/backendApi";
 
 const ACCENT_BLUE = palette.indigo;
 const SUCCESS_GREEN = "#38d9a9";
@@ -17,6 +24,19 @@ const CTA_BLUE_PRESSED = palette.navy;
 const COOL_VIOLET_TEXT = "#B7C6FF";
 const LIGHT_LOADING_TINT = "#CFD9FF";
 const GRADIENT_COLORS = [palette.deepNavy, palette.navy, palette.signupBg] as const;
+
+const IOT_POLL_MS = 2500;
+const IOT_TIMEOUT_MS = 120_000;
+
+type SputumPreview = Awaited<ReturnType<typeof fetchSessionSputumPreview>>;
+
+function sputumFingerprint(preview: NonNullable<SputumPreview>): string {
+  return `${preview.imageId}|${preview.byteSize}|${preview.capturedAt ?? ""}`;
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 function PulseRing({ delay = 0, active }: { delay?: number; active: boolean }) {
   const scale = useRef(new Animated.Value(1)).current;
@@ -203,23 +223,46 @@ export default function IotSputumScreen() {
     iotMode?: string;
     imageUri?: string;
     sessionId?: string;
+    deviceSputum?: string;
+    sputumByteSize?: string;
+    sputumCapturedAt?: string;
   }>();
   const checklist = typeof params.checklist === "string" ? params.checklist : "";
   const audioDone = params.audioDone === "1" ? "1" : "0";
   const audioUris = typeof params.audioUris === "string" ? params.audioUris : "[]";
-  const sessionId =
+  const iotMode = params.iotMode === "1";
+
+  const initialSessionId =
     typeof params.sessionId === "string" && params.sessionId.trim().length > 0
       ? params.sessionId.trim()
-      : "Pending assignment";
-  const previewImageUri =
+      : "";
+  const [screeningSessionId, setScreeningSessionId] = useState<string>(initialSessionId);
+
+  const initialPreviewUri =
     typeof params.imageUri === "string" && params.imageUri.length > 0 && !params.imageUri.startsWith("iot://")
       ? params.imageUri
-      : null;
+      : "";
+  const [previewImageUri, setPreviewImageUri] = useState<string>(initialPreviewUri);
+  const [sputumByteSize, setSputumByteSize] = useState<string>(
+    typeof params.sputumByteSize === "string" ? params.sputumByteSize : "",
+  );
+  const [sputumCapturedAt, setSputumCapturedAt] = useState<string>(
+    typeof params.sputumCapturedAt === "string" ? params.sputumCapturedAt : "",
+  );
 
-  const timeline = useIotStatusSimulation(IOT_SPUTUM_STEPS);
+  const [running, setRunning] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [completedThrough, setCompletedThrough] = useState(-1);
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState<string | null>(null);
+
+  const done = completedThrough >= IOT_SPUTUM_STEPS.length - 1 && !running && !errorText;
+
+  const acceptedFingerprintRef = useRef<string | null>(null);
+  const retakeBaselineRef = useRef<string | null>(null);
   const iconScale = useRef(new Animated.Value(1)).current;
 
-  const isCapturing = timeline.running && timeline.activeIndex >= 1 && timeline.activeIndex <= 2;
+  const isCapturing = running && activeIndex >= 1 && activeIndex <= 2;
 
   useEffect(() => {
     if (isCapturing) {
@@ -248,30 +291,138 @@ export default function IotSputumScreen() {
 
   const REQUEST_STEPS = [IOT_SPUTUM_STEPS[0], IOT_SPUTUM_STEPS[1], IOT_SPUTUM_STEPS[3], IOT_SPUTUM_STEPS[4]];
 
-  const goToReview = useCallback(
-    (imageDone: boolean) => {
-      router.replace({
-        pathname: "/screening/review",
-        params: {
-          audioDone,
-          audioUris,
-          checklist,
-          imageUri: imageDone ? "iot://sputum-uploaded" : "",
-          iotMode: "1",
-        },
-      } as any);
+  const goToReview = useCallback(() => {
+    const hasImage = Boolean(previewImageUri && previewImageUri.length > 0);
+    const deviceSputumNavParams = {
+      deviceSputum: "1" as const,
+      ...(hasImage ? { sputumByteSize, sputumCapturedAt } : {}),
+    };
+
+    router.replace({
+      pathname: "/screening/review",
+      params: {
+        audioDone,
+        audioUris,
+        checklist,
+        imageUri: hasImage ? previewImageUri : "",
+        ...(iotMode ? { iotMode: "1" } : {}),
+        ...(screeningSessionId ? { sessionId: screeningSessionId } : {}),
+        ...deviceSputumNavParams,
+      },
+    } as any);
+  }, [router, audioDone, audioUris, checklist, previewImageUri, iotMode, screeningSessionId, sputumByteSize, sputumCapturedAt]);
+
+  const pollForSputumPreview = useCallback(
+    async (sessionId: string, baselineFingerprint: string | null) => {
+      const started = Date.now();
+      while (Date.now() - started < IOT_TIMEOUT_MS) {
+        const preview = await fetchSessionSputumPreview(sessionId);
+        if (preview && preview.byteSize > 0) {
+          const fp = sputumFingerprint(preview);
+          if (!baselineFingerprint || fp !== baselineFingerprint) {
+            return preview;
+          }
+        }
+        await sleep(IOT_POLL_MS);
+      }
+      throw new Error("Timed out waiting for device photo");
     },
-    [router, audioDone, audioUris, checklist],
+    [],
+  );
+
+  const captureFromDevice = useCallback(
+    async (mode: "request" | "retake") => {
+      setErrorText(null);
+      setStatusText(null);
+      setRunning(true);
+      setActiveIndex(0);
+      setCompletedThrough(-1);
+
+      try {
+        if (mode === "retake") {
+          retakeBaselineRef.current = acceptedFingerprintRef.current;
+          setPreviewImageUri("");
+          setSputumByteSize("");
+          setSputumCapturedAt("");
+        } else {
+          retakeBaselineRef.current = null;
+        }
+
+        setStatusText("Preparing session…");
+        const { user } = await getMe();
+        const ensuredSessionId = await ensureScreeningSessionId(screeningSessionId || null);
+        setScreeningSessionId(ensuredSessionId);
+        setCompletedThrough(0);
+
+        setActiveIndex(1);
+        setStatusText("Queuing capture on device…");
+        await queueIotDeviceImageCommand({
+          userId: user.userId,
+          sessionId: ensuredSessionId,
+        });
+        setCompletedThrough(1);
+
+        setActiveIndex(2);
+        setStatusText("Waiting for device upload…");
+        setCompletedThrough(2);
+
+        setActiveIndex(3);
+        const preview = await pollForSputumPreview(ensuredSessionId, retakeBaselineRef.current);
+        const fp = sputumFingerprint(preview);
+        acceptedFingerprintRef.current = fp;
+        retakeBaselineRef.current = null;
+
+        setStatusText("Downloading photo…");
+        const localUri = await downloadSessionSputumToCache(ensuredSessionId);
+        setPreviewImageUri(localUri);
+        setSputumByteSize(String(preview.byteSize ?? ""));
+        setSputumCapturedAt(preview.capturedAt ?? "");
+
+        setCompletedThrough(IOT_SPUTUM_STEPS.length - 1);
+        setActiveIndex(-1);
+        setStatusText("Photo received from device. Proceed or retake.");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Failed to capture image";
+        if (e instanceof ApiError && e.status === 401) {
+          setErrorText(
+            "Sign in on the app, or check EXPO_PUBLIC_IOT_API_KEY in mobile/.env if you are already signed in.",
+          );
+        } else if (e instanceof ApiError && e.status === 403) {
+          setErrorText("Sign in to link the device capture to your screening.");
+        } else {
+          setErrorText(msg);
+        }
+        setStatusText(null);
+        setActiveIndex(-1);
+        setCompletedThrough(-1);
+        retakeBaselineRef.current = null;
+      } finally {
+        setRunning(false);
+      }
+    },
+    [pollForSputumPreview, screeningSessionId],
   );
 
   const startCapture = useCallback(async () => {
-    timeline.reset();
-    const ok = await timeline.run();
-    if (!ok) return;
-  }, [timeline]);
+    await captureFromDevice("request");
+  }, [captureFromDevice]);
 
-  const iconBgColor = timeline.done ? SUCCESS_GREEN : isCapturing ? ACCENT_BLUE : "#2F448E";
+  const startRetake = useCallback(async () => {
+    await captureFromDevice("retake");
+  }, [captureFromDevice]);
 
+  const iconBgColor = done ? SUCCESS_GREEN : isCapturing ? ACCENT_BLUE : "#2F448E";
+
+  const sessionLabel = screeningSessionId?.trim().length ? screeningSessionId.trim() : "Pending assignment";
+
+  const previewContent = useMemo(() => {
+    if (previewImageUri?.trim().length) {
+      return (
+        <Image source={{ uri: previewImageUri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
+      );
+    }
+    return null;
+  }, [previewImageUri]);
   return (
     <>
       <StatusBar style="light" backgroundColor={palette.deepNavy} translucent={false} />
@@ -289,7 +440,7 @@ export default function IotSputumScreen() {
           >
             <Pressable
               onPress={() => router.back()}
-              disabled={timeline.running}
+              disabled={running}
               style={{
                 width: 44,
                 height: 44,
@@ -329,7 +480,7 @@ export default function IotSputumScreen() {
                     letterSpacing: 0.2,
                   }}
                 >
-                  Session ID: {sessionId}
+                  Session ID: {sessionLabel}
                 </Text>
               </View>
             </View>
@@ -356,8 +507,8 @@ export default function IotSputumScreen() {
                 justifyContent: "center",
               }}
             >
-              {previewImageUri ? (
-                <Image source={{ uri: previewImageUri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
+              {previewContent ? (
+                previewContent
               ) : (
                 <View style={{ alignItems: "center", paddingHorizontal: 24 }}>
                   <View
@@ -391,7 +542,7 @@ export default function IotSputumScreen() {
                         transform: [{ scale: iconScale }],
                       }}
                     >
-                      {timeline.done ? (
+                      {done ? (
                         <Ionicons name="checkmark" size={32} color="#fff" />
                       ) : (
                         <Ionicons name="camera" size={30} color="#fff" style={{ opacity: isCapturing ? 1 : 0.9 }} />
@@ -408,15 +559,28 @@ export default function IotSputumScreen() {
                         lineHeight: 19,
                       }}
                     >
-                      {timeline.done
-                        ? "Preview placeholder shown. Live image preview appears after device integration."
+                      {done
+                        ? "Photo ready. You can proceed or retake."
                         : "No image yet. Captured sample preview will appear here."}
                     </Text>
                   )}
                 </View>
               )}
             </View>
-            {timeline.done && (
+            {errorText ? (
+              <Text
+                style={{
+                  marginTop: 10,
+                  textAlign: "center",
+                  color: "rgba(255,255,255,0.78)",
+                  fontSize: 13,
+                  fontWeight: "600",
+                }}
+              >
+                {errorText}
+              </Text>
+            ) : null}
+            {done && (
               <Text
                 style={{
                   marginTop: 10,
@@ -429,6 +593,19 @@ export default function IotSputumScreen() {
                 Photo received from device. Proceed or retake.
               </Text>
             )}
+            {!done && statusText ? (
+              <Text
+                style={{
+                  marginTop: 10,
+                  textAlign: "center",
+                  color: "rgba(255,255,255,0.55)",
+                  fontSize: 13,
+                  fontWeight: "600",
+                }}
+              >
+                {statusText}
+              </Text>
+            ) : null}
           </View>
 
           {/* Steps card */}
@@ -450,8 +627,8 @@ export default function IotSputumScreen() {
               <StepRow
                 key={step.id}
                 label={step.label}
-                isActive={timeline.activeIndex === sourceIndex}
-                isDone={sourceIndex <= timeline.completedThrough}
+                isActive={activeIndex === sourceIndex}
+                isDone={sourceIndex <= completedThrough}
               />
               );
             })}
@@ -459,7 +636,7 @@ export default function IotSputumScreen() {
 
           {/* CTAs */}
           <View style={{ paddingHorizontal: 28, marginTop: "auto", paddingBottom: 40, gap: 12 }}>
-            {!timeline.running && !timeline.done && (
+            {!running && !done && (
               <Pressable onPress={startCapture} style={{ opacity: 1 }}>
                 {({ pressed }) => (
                   <View
@@ -482,7 +659,7 @@ export default function IotSputumScreen() {
                 )}
               </Pressable>
             )}
-            {timeline.running && (
+            {running && (
               <View
                 style={{
                   backgroundColor: "rgba(255,255,255,0.06)",
@@ -496,9 +673,9 @@ export default function IotSputumScreen() {
                 </Text>
               </View>
             )}
-            {timeline.done && (
+            {done && (
               <View style={{ flexDirection: "row", gap: 12 }}>
-                <Pressable onPress={startCapture} style={{ flex: 1 }}>
+                <Pressable onPress={startRetake} style={{ flex: 1 }}>
                   {({ pressed }) => (
                     <View
                       style={{
@@ -514,7 +691,7 @@ export default function IotSputumScreen() {
                     </View>
                   )}
                 </Pressable>
-                <Pressable onPress={() => goToReview(true)} style={{ flex: 1 }}>
+                <Pressable onPress={goToReview} style={{ flex: 1 }}>
                   {({ pressed }) => (
                     <View
                       style={{
@@ -530,9 +707,9 @@ export default function IotSputumScreen() {
                 </Pressable>
               </View>
             )}
-            {!timeline.running && (
+            {!running && (
               <Pressable
-                onPress={() => goToReview(timeline.done)}
+                onPress={goToReview}
                 style={{
                   backgroundColor: "rgba(255,255,255,0.06)",
                   borderWidth: 1,
@@ -543,7 +720,7 @@ export default function IotSputumScreen() {
                 }}
               >
                 <Text style={{ fontSize: 14, fontWeight: "500", color: "rgba(255,255,255,0.6)" }}>
-                  {timeline.done ? "Skip to review" : "Skip — no sample"}
+                  {done ? "Skip to review" : "Skip — no sample"}
                 </Text>
               </Pressable>
             )}

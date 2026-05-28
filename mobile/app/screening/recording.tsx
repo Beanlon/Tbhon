@@ -687,11 +687,12 @@ export default function RecordingScreen() {
                   resetSession();
                   const recordedUris = audioUris.filter((u) => typeof u === "string" && u.length > 0) as string[];
                   router.push({
-                    pathname: "/screening/phlegm",
+                    pathname: "/screening/iot-sputum",
                     params: {
                       audioDone: recordedUris.length === COUGH_TOTAL ? "1" : "0",
                       audioUris: JSON.stringify(recordedUris),
                       checklist: typeof params.checklist === "string" ? params.checklist : "",
+                      deviceSputum: "1",
                       ...(screeningSessionId ? { sessionId: screeningSessionId } : {}),
                     },
                   } as any);

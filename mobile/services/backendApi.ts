@@ -199,21 +199,23 @@ export async function ensureScreeningSessionId(existing?: string | null): Promis
   }
 }
 
-/**
- * Queue `image` on the device — same HTTP call as terminal, with optional context:
- * POST /iot/device-command  { command, userId, sessionId }  +  X-IoT-Key
- * Device GET returns one-line JSON when userId+sessionId are set.
- */
-export async function queueIotDeviceImageCommand(args: {
-  userId: string;
-  sessionId: string;
-}): Promise<{
+export type IotDeviceCommandResult = {
   ok: boolean;
   message: string;
   command: string;
   userId: string | null;
   sessionId: string | null;
-}> {
+};
+
+/**
+ * Queue a firmware command — same HTTP call as terminal:
+ * POST /iot/device-command  { command, userId, sessionId }  +  X-IoT-Key
+ */
+export async function queueIotDeviceCommand(args: {
+  command: "image" | "audio" | "stop audio" | "audio upload";
+  userId: string;
+  sessionId: string;
+}): Promise<IotDeviceCommandResult> {
   const key =
     typeof process !== "undefined"
       ? (process.env.EXPO_PUBLIC_IOT_API_KEY as string | undefined)
@@ -234,7 +236,7 @@ export async function queueIotDeviceImageCommand(args: {
       "X-IoT-Key": key.trim(),
     },
     body: JSON.stringify({
-      command: "image",
+      command: args.command,
       userId: args.userId.trim(),
       sessionId: args.sessionId.trim(),
     }),
@@ -248,19 +250,37 @@ export async function queueIotDeviceImageCommand(args: {
   if (!text) {
     return {
       ok: true,
-      message: "Queued 'image' command for device",
-      command: "image",
+      message: `Queued '${args.command}' command for device`,
+      command: args.command,
       userId: args.userId,
       sessionId: args.sessionId,
     };
   }
-  return JSON.parse(text) as {
-    ok: boolean;
-    message: string;
-    command: string;
-    userId: string | null;
-    sessionId: string | null;
-  };
+  return JSON.parse(text) as IotDeviceCommandResult;
+}
+
+/** Queue `image` on the device (sputum still photo). */
+export async function queueIotDeviceImageCommand(args: {
+  userId: string;
+  sessionId: string;
+}): Promise<IotDeviceCommandResult> {
+  return queueIotDeviceCommand({ command: "image", ...args });
+}
+
+/** Queue `audio` on the device (start bench recording). */
+export async function queueIotDeviceAudioStartCommand(args: {
+  userId: string;
+  sessionId: string;
+}): Promise<IotDeviceCommandResult> {
+  return queueIotDeviceCommand({ command: "audio", ...args });
+}
+
+/** Queue stop/upload — ends recording and triggers device upload. */
+export async function queueIotDeviceStopAudioCommand(args: {
+  userId: string;
+  sessionId: string;
+}): Promise<IotDeviceCommandResult> {
+  return queueIotDeviceCommand({ command: "audio upload", ...args });
 }
 
 /** Queue ESP32 capture via JWT when deployed; otherwise use {@link queueIotDeviceImageCommand}. */
@@ -277,26 +297,38 @@ export async function requestIotCapture(args: {
       },
     });
   } catch (e) {
-    if (
-      e instanceof ApiError &&
-      e.status === 404 &&
-      args.command === "image" &&
-      args.sessionId
-    ) {
+    if (e instanceof ApiError && e.status === 404 && args.sessionId) {
       const { user } = await getMe();
-      const direct = await queueIotDeviceImageCommand({
-        userId: user.userId,
-        sessionId: args.sessionId,
-      });
-      return {
-        ok: direct.ok,
-        message: direct.message,
-        command: "image" as IotCaptureCommand,
-        minSeconds: null,
-        maxSeconds: null,
-        queuedAt: new Date().toISOString(),
-        sessionId: args.sessionId ?? null,
-      };
+      if (args.command === "image") {
+        const direct = await queueIotDeviceImageCommand({
+          userId: user.userId,
+          sessionId: args.sessionId,
+        });
+        return {
+          ok: direct.ok,
+          message: direct.message,
+          command: "image" as IotCaptureCommand,
+          minSeconds: null,
+          maxSeconds: null,
+          queuedAt: new Date().toISOString(),
+          sessionId: args.sessionId ?? null,
+        };
+      }
+      if (args.command === "audio") {
+        const direct = await queueIotDeviceAudioStartCommand({
+          userId: user.userId,
+          sessionId: args.sessionId,
+        });
+        return {
+          ok: direct.ok,
+          message: direct.message,
+          command: "audio" as IotCaptureCommand,
+          minSeconds: 3,
+          maxSeconds: 10,
+          queuedAt: new Date().toISOString(),
+          sessionId: args.sessionId ?? null,
+        };
+      }
     }
     throw e;
   }
@@ -421,6 +453,137 @@ export async function downloadSessionSputumToCache(sessionId: string): Promise<s
   });
   if (result.status < 200 || result.status >= 300) {
     throw new ApiError(result.status, `Failed to download device photo (HTTP ${result.status})`);
+  }
+  return result.uri;
+}
+
+export type SessionCoughRecordingPreview = {
+  sessionId: string;
+  recordingId: string;
+  byteSize: number;
+  mimeType: string | null;
+  source: string | null;
+};
+
+export function coughRecordingFingerprint(preview: SessionCoughRecordingPreview): string {
+  return `${preview.recordingId}|${preview.byteSize}`;
+}
+
+/** IoT cough rows with raw bytes for a draft session. */
+export async function fetchSessionCoughRecordings(
+  sessionId: string,
+): Promise<SessionCoughRecordingPreview[]> {
+  try {
+    const { session } = await getScreening(sessionId);
+    if (session.sessionId !== sessionId) return [];
+    return session.coughRecordings
+      .filter(
+        (r): r is typeof r & { recordingId: string } =>
+          Boolean(r.hasRawData) &&
+          typeof r.recordingId === "string" &&
+          r.recordingId.length > 0 &&
+          (r.byteSize ?? 0) > 0,
+      )
+      .map((r) => ({
+        sessionId,
+        recordingId: r.recordingId,
+        byteSize: r.byteSize ?? 0,
+        mimeType: r.mimeType ?? null,
+        source: r.source ?? null,
+      }));
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return [];
+    throw e;
+  }
+}
+
+export type PollCoughRecordingOptions = {
+  timeoutMs?: number;
+  intervalMs?: number;
+  onProgress?: (elapsedMs: number, attempt: number) => void;
+  signal?: AbortSignal;
+};
+
+/** Poll until a new cough recording appears (retake-safe via fingerprint baseline). */
+export async function pollForNewCoughRecording(
+  sessionId: string,
+  baselineFingerprints: Set<string>,
+  timeoutMsOrOptions: number | PollCoughRecordingOptions = 120_000,
+  intervalMsLegacy = 2500,
+): Promise<SessionCoughRecordingPreview> {
+  const options: PollCoughRecordingOptions =
+    typeof timeoutMsOrOptions === "number"
+      ? { timeoutMs: timeoutMsOrOptions, intervalMs: intervalMsLegacy }
+      : timeoutMsOrOptions;
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  const intervalMs = options.intervalMs ?? 2500;
+  const started = Date.now();
+  let attempt = 0;
+
+  while (Date.now() - started < timeoutMs) {
+    if (options.signal?.aborted) {
+      throw new Error("Upload wait cancelled");
+    }
+    attempt += 1;
+    options.onProgress?.(Date.now() - started, attempt);
+
+    const rows = await fetchSessionCoughRecordings(sessionId);
+    for (const row of rows) {
+      const fp = coughRecordingFingerprint(row);
+      if (!baselineFingerprints.has(fp)) return row;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(resolve, intervalMs);
+      if (options.signal) {
+        const onAbort = () => {
+          clearTimeout(t);
+          reject(new Error("Upload wait cancelled"));
+        };
+        if (options.signal.aborted) {
+          clearTimeout(t);
+          reject(new Error("Upload wait cancelled"));
+          return;
+        }
+        options.signal.addEventListener("abort", onAbort, { once: true });
+      }
+    });
+  }
+  throw new Error("Timed out waiting for device audio");
+}
+
+function coughFileExtension(mimeType: string | null | undefined): string {
+  const mime = (mimeType ?? "").toLowerCase();
+  if (mime.includes("mp4") || mime.includes("m4a")) return ".m4a";
+  if (mime.includes("3gp")) return ".3gp";
+  if (mime.includes("caf")) return ".caf";
+  if (mime.includes("ogg")) return ".ogg";
+  return ".wav";
+}
+
+/** Download server cough bytes for in-app playback. */
+export async function downloadSessionCoughToCache(
+  sessionId: string,
+  recordingId: string,
+  mimeType?: string | null,
+): Promise<string> {
+  const token = await getAuthToken();
+  if (!token) throw new ApiError(401, "Not signed in");
+  const url = resolveMediaUrl(
+    `/screenings/${encodeURIComponent(sessionId)}/cough-recordings/${encodeURIComponent(recordingId)}/file`,
+  );
+  if (!url) throw new Error("Missing cough file URL");
+  const ext = coughFileExtension(mimeType);
+  const dest = `${cacheDirectory}iot_cough_${sessionId}_${recordingId}_${Date.now()}${ext}`;
+  const downloadTask = FileSystem.downloadAsync(url, dest, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const timeoutTask = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("Audio download timed out")), 45_000),
+  );
+  const result = await Promise.race([downloadTask, timeoutTask]);
+  if (result.status < 200 || result.status >= 300) {
+    throw new ApiError(result.status, `Failed to download device audio (HTTP ${result.status})`);
   }
   return result.uri;
 }

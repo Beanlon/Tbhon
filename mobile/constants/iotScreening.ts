@@ -36,19 +36,7 @@ export const IOT_HARDWARE_CHECKS = [
   {
     id: "bluetooth",
     title: "Bluetooth enabled",
-    detail: "Turn on Bluetooth on your phone to connect with the screening device.",
-  },
-  {
-    id: "pair",
-    title: "Pair with device",
-    detail: "Scan and connect to your TBhon screening device via Bluetooth.",
-    actionLabel: "Scan for device",
-  },
-  {
-    id: "wifi_creds",
-    title: "Wi‑Fi setup",
-    detail: "Enter your Wi‑Fi network details so the device can upload data to the cloud.",
-    actionLabel: "Configure Wi‑Fi",
+    detail: "Turn on Bluetooth on your phone if you use a wireless screening device.",
   },
   {
     id: "health",
@@ -56,4 +44,9 @@ export const IOT_HARDWARE_CHECKS = [
     detail: "Verifies the device can reach TBhon servers over your Wi‑Fi network.",
     actionLabel: "Check connection",
   },
-] as const;
+] as const satisfies ReadonlyArray<{
+  id: string;
+  title: string;
+  detail: string;
+  actionLabel?: string;
+}>;

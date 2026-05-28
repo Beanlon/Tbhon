@@ -374,7 +374,7 @@ export default function ResultScreen() {
               ) : null}
               <Text className="mb-1.5 text-sm font-bold" style={{ color: isDark ? "#FCA5A5" : "#7F1D1D" }}>Could not complete analysis</Text>
               <Text className="text-xs leading-5" style={{ color: isDark ? "#FECACA" : "#450A0A" }}>
-                We couldn't connect to the analysis service. Please check your internet connection and try again.
+                We could not connect to the analysis service. Please check your internet connection and try again.
                 If the problem persists, contact support.
               </Text>
             </View>
