@@ -2,6 +2,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import { resolveApiBaseUrl } from "../utils/apiBaseUrl";
 import { getAuthToken } from "../utils/authStorage";
 
+const cacheDirectory = FileSystem.cacheDirectory ?? "";
+
 const API_REQUEST_TIMEOUT_MS = 15000;
 const RAW_UPLOAD_TIMEOUT_MS = 20000;
 
@@ -155,12 +157,277 @@ export async function getMe() {
   return apiRequest<{ user: ApiUserPayload }>("/users/me", { method: "GET" });
 }
 
+export type IotCaptureCommand = "image" | "audio";
+
+export type RequestIotCaptureResponse = {
+  ok: boolean;
+  message: string;
+  command: IotCaptureCommand;
+  minSeconds: number | null;
+  maxSeconds: number | null;
+  queuedAt: string;
+  sessionId: string | null;
+};
+
+/** Open a screening session before IoT sample capture (same sessionId for retakes). */
+export async function createScreeningDraft() {
+  return apiRequest<{ ok: boolean; sessionId: string }>("/screenings/draft", { method: "POST" });
+}
+
+/** Local UUID when POST /screenings/draft is not on the server yet (IoT upload still creates the row). */
+export function createLocalScreeningSessionId(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.floor(Math.random() * 16) % 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/** Prefer server draft; fall back to a client id so the button is never blocked by 404 draft. */
+export async function ensureScreeningSessionId(existing?: string | null): Promise<string> {
+  const trimmed = existing?.trim();
+  if (trimmed) return trimmed;
+  try {
+    const { sessionId } = await createScreeningDraft();
+    return sessionId;
+  } catch {
+    return createLocalScreeningSessionId();
+  }
+}
+
+/**
+ * Queue `image` on the device — same HTTP call as terminal, with optional context:
+ * POST /iot/device-command  { command, userId, sessionId }  +  X-IoT-Key
+ * Device GET returns one-line JSON when userId+sessionId are set.
+ */
+export async function queueIotDeviceImageCommand(args: {
+  userId: string;
+  sessionId: string;
+}): Promise<{
+  ok: boolean;
+  message: string;
+  command: string;
+  userId: string | null;
+  sessionId: string | null;
+}> {
+  const key =
+    typeof process !== "undefined"
+      ? (process.env.EXPO_PUBLIC_IOT_API_KEY as string | undefined)
+      : undefined;
+  if (!key?.trim()) {
+    throw new Error(
+      "Missing EXPO_PUBLIC_IOT_API_KEY in mobile/.env (use the same value as IOT_API_KEY on the backend).",
+    );
+  }
+
+  const base = resolveApiBaseUrl();
+  const url = `${base}/iot/device-command`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-IoT-Key": key.trim(),
+    },
+    body: JSON.stringify({
+      command: "image",
+      userId: args.userId.trim(),
+      sessionId: args.sessionId.trim(),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await parseErrorMessage(response));
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return {
+      ok: true,
+      message: "Queued 'image' command for device",
+      command: "image",
+      userId: args.userId,
+      sessionId: args.sessionId,
+    };
+  }
+  return JSON.parse(text) as {
+    ok: boolean;
+    message: string;
+    command: string;
+    userId: string | null;
+    sessionId: string | null;
+  };
+}
+
+/** Queue ESP32 capture via JWT when deployed; otherwise use {@link queueIotDeviceImageCommand}. */
+export async function requestIotCapture(args: {
+  command: IotCaptureCommand;
+  sessionId?: string;
+}) {
+  try {
+    return await apiRequest<RequestIotCaptureResponse>("/screenings/iot/request-capture", {
+      method: "POST",
+      json: {
+        command: args.command,
+        ...(args.sessionId ? { sessionId: args.sessionId } : {}),
+      },
+    });
+  } catch (e) {
+    if (
+      e instanceof ApiError &&
+      e.status === 404 &&
+      args.command === "image" &&
+      args.sessionId
+    ) {
+      const { user } = await getMe();
+      const direct = await queueIotDeviceImageCommand({
+        userId: user.userId,
+        sessionId: args.sessionId,
+      });
+      return {
+        ok: direct.ok,
+        message: direct.message,
+        command: "image" as IotCaptureCommand,
+        minSeconds: null,
+        maxSeconds: null,
+        queuedAt: new Date().toISOString(),
+        sessionId: args.sessionId ?? null,
+      };
+    }
+    throw e;
+  }
+}
+
+/** True when this session already has sputum bytes on the server (IoT or prior upload). */
+export async function sessionHasStoredSputumBytes(sessionId: string): Promise<boolean> {
+  const preview = await fetchSessionSputumPreview(sessionId);
+  return Boolean(preview && preview.byteSize > 0);
+}
+
+/** Latest IoT/mobile sputum preview for a draft session (null if not uploaded yet). */
+export async function fetchSessionSputumPreview(sessionId: string) {
+  try {
+    const { session } = await getScreening(sessionId);
+    const img = session.sputumImage;
+    if (session.sessionId !== sessionId) return null;
+    if (!img?.hasRawData) return null;
+    if (typeof img.sessionId === "string" && img.sessionId.length > 0 && img.sessionId !== sessionId) {
+      return null;
+    }
+    return {
+      sessionId,
+      imageId: img.imageId ?? "",
+      byteSize: img.byteSize ?? 0,
+      source: img.source ?? null,
+      capturedAt: typeof img.capturedAt === "string" ? img.capturedAt : null,
+    };
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+/** Poll until the IoT sputum row for this session has image bytes. */
+export async function waitForSessionSputumImage(args: {
+  sessionId: string;
+  timeoutMs?: number;
+  intervalMs?: number;
+}): Promise<{ sessionId: string; imageId: string }> {
+  const timeoutMs = args.timeoutMs ?? 120_000;
+  const intervalMs = args.intervalMs ?? 2500;
+  const started = Date.now();
+
+  while (Date.now() - started < timeoutMs) {
+    const { session } = await getScreening(args.sessionId);
+    const img = session.sputumImage;
+    const rowSessionId = typeof img?.sessionId === "string" ? img.sessionId : session.sessionId;
+    if (
+      session.sessionId === args.sessionId &&
+      img?.hasRawData &&
+      rowSessionId === args.sessionId
+    ) {
+      return { sessionId: args.sessionId, imageId: img.imageId ?? "" };
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error("Timed out waiting for device photo");
+}
+
+/** Bearer headers for streaming /screenings/.../sputum-image/file in Image. */
+export async function getAuthMediaHeaders(): Promise<Record<string, string>> {
+  const token = await getAuthToken();
+  if (!token) throw new ApiError(401, "Not signed in");
+  return { Authorization: `Bearer ${token}` };
+}
+
+/** True when a media URL targets this screening session (not another session's file). */
+export function mediaUrlMatchesSession(url: string, sessionId: string): boolean {
+  const sid = sessionId.trim();
+  if (!sid) return false;
+  const encoded = encodeURIComponent(sid);
+  return (
+    url.includes(`/screenings/${encoded}/`) ||
+    url.includes(`/screenings/${sid}/`)
+  );
+}
+
+/** Authenticated URL for sputum bytes for exactly this sessionId (null if not on server). */
+export function buildServerSputumImageUrl(
+  sessionId: string,
+  sputum:
+    | {
+        hasRawData?: boolean;
+        sessionId?: string | null;
+        byteSize?: number | null;
+        capturedAt?: string | null;
+      }
+    | null
+    | undefined,
+): string | null {
+  const sid = sessionId.trim();
+  if (!sid || !sputum?.hasRawData) return null;
+  if (
+    typeof sputum.sessionId === "string" &&
+    sputum.sessionId.length > 0 &&
+    sputum.sessionId !== sid
+  ) {
+    return null;
+  }
+  const base = resolveMediaUrl(`/screenings/${encodeURIComponent(sid)}/sputum-image/file`);
+  if (!base) return null;
+  const v =
+    typeof sputum.byteSize === "number" && sputum.byteSize > 0
+      ? String(sputum.byteSize)
+      : typeof sputum.capturedAt === "string" && sputum.capturedAt.length > 0
+        ? sputum.capturedAt
+        : "0";
+  const q = new URLSearchParams({ sid, v });
+  return `${base}?${q.toString()}`;
+}
+
+/** Download server sputum bytes to a local file for ML upload / review navigation. */
+export async function downloadSessionSputumToCache(sessionId: string): Promise<string> {
+  const token = await getAuthToken();
+  if (!token) throw new ApiError(401, "Not signed in");
+  const url = resolveMediaUrl(`/screenings/${encodeURIComponent(sessionId)}/sputum-image/file`);
+  if (!url) throw new Error("Missing sputum file URL");
+  const dest = `${cacheDirectory}iot_sputum_${sessionId}_${Date.now()}.jpg`;
+  const result = await FileSystem.downloadAsync(url, dest, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (result.status < 200 || result.status >= 300) {
+    throw new ApiError(result.status, `Failed to download device photo (HTTP ${result.status})`);
+  }
+  return result.uri;
+}
+
 export type CompleteScreeningPayload = {
   riskLevel: "low" | "moderate" | "high";
   recommendation: string;
   checklist?: string;
   audioUris: string[];
   imageUri?: string;
+  sessionId?: string;
   uploadError?: boolean;
   invalidAudio?: boolean;
   invalidAudioLabel?: string;
@@ -346,6 +613,8 @@ export type ScreeningSessionDetail = {
   }>;
   sputumImage: {
     imageId?: string;
+    sessionId?: string;
+    capturedAt?: string | null;
     fileUri: string | null;
     /** Server-relative URL to stream the raw image bytes (with Bearer auth). */
     fileUrl?: string | null;

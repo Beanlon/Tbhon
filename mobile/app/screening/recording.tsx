@@ -7,11 +7,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
+import { createScreeningDraft } from "../../services/backendApi";
 
 const COUGH_TOTAL = 3;
 const MIN_RECORD_SECONDS = 3;
 const MAX_RECORD_SECONDS = 10;
-const QUALITY_CHECK_TIMEOUT_MS = 8000;
+const QUALITY_CHECK_TIMEOUT_MS = 25000;
 
 type QualityStatus = "checking" | "ok" | "bad" | "skipped";
 type QualityLabel = "silence" | "speech" | "replay" | "noise" | "invalid" | "";
@@ -172,6 +173,7 @@ export default function RecordingScreen() {
   const [levels, setLevels] = useState<number[]>(() => Array.from({ length: 26 }, () => 0.15));
   const [qualityStatus, setQualityStatus] = useState<QualityStatus>("skipped");
   const [qualityLabel, setQualityLabel] = useState<QualityLabel>("");
+  const [screeningSessionId, setScreeningSessionId] = useState<string | null>(null);
 
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -184,6 +186,21 @@ export default function RecordingScreen() {
     const s = seconds % 60;
     return `${pad2(m)}:${pad2(s)}`;
   }, [seconds]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { sessionId } = await createScreeningDraft();
+        if (!cancelled) setScreeningSessionId(sessionId);
+      } catch (e) {
+        console.log("[Recording] draft session failed:", String((e as Error)?.message ?? e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clearTimers = () => {
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
@@ -675,6 +692,7 @@ export default function RecordingScreen() {
                       audioDone: recordedUris.length === COUGH_TOTAL ? "1" : "0",
                       audioUris: JSON.stringify(recordedUris),
                       checklist: typeof params.checklist === "string" ? params.checklist : "",
+                      ...(screeningSessionId ? { sessionId: screeningSessionId } : {}),
                     },
                   } as any);
                 }}

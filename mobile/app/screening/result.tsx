@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -6,10 +6,14 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ApiError,
+  fetchSessionSputumPreview,
   postCompleteScreening,
+  sessionHasStoredSputumBytes,
   uploadCoughRecordingRaw,
   uploadSputumImageRaw,
+  buildServerSputumImageUrl,
 } from "../../services/backendApi";
+import SputumSamplePhoto from "../components/SputumSamplePhoto";
 import { clearScreeningCache } from "../../utils/screeningHistoryCache";
 import { getAuthToken } from "../../utils/authStorage";
 
@@ -110,6 +114,10 @@ export default function ResultScreen() {
     phlegmProbs?: string;
     phlegmError?: string;
     phlegmErrorDetail?: string;
+    sessionId?: string;
+    deviceSputum?: string;
+    sputumByteSize?: string;
+    sputumCapturedAt?: string;
   }>();
 
   const risk: RiskLevel =
@@ -131,6 +139,19 @@ export default function ResultScreen() {
       ? Number(params.phlegmConfidence)
       : null;
   const phlegmFailed = params.phlegmError === "1";
+
+  const imageUriParam =
+    typeof params.imageUri === "string" && params.imageUri.trim().length > 0
+      ? params.imageUri.trim()
+      : "";
+
+  /** Prefer server-stored sputum bytes once screening is saved (not phone-local file). */
+  const [displayImageUri, setDisplayImageUri] = useState("");
+
+  const [savedSessionId, setSavedSessionId] = useState<string | null>(() => {
+    const id = typeof params.sessionId === "string" ? params.sessionId.trim() : "";
+    return id.length > 0 ? id : null;
+  });
 
   const persistScreeningAttempted = useRef(false);
   useEffect(() => {
@@ -173,12 +194,29 @@ export default function ResultScreen() {
             ? params.imageUri.trim()
             : "";
 
+        const draftSessionId =
+          typeof params.sessionId === "string" && params.sessionId.trim().length > 0
+            ? params.sessionId.trim()
+            : undefined;
+
+        const isLocalImage =
+          imageUriParam.startsWith("file://") || imageUriParam.startsWith("content://");
+
+        const serverHasSputumBefore =
+          draftSessionId && (params.deviceSputum === "1" || isLocalImage)
+            ? await sessionHasStoredSputumBytes(draftSessionId)
+            : false;
+
+        const includeLocalImageUriInComplete =
+          imageUriParam.length > 0 && (!isLocalImage || !serverHasSputumBefore);
+
         const response = await postCompleteScreening({
           riskLevel: risk,
           recommendation: cfg.recommendation,
+          ...(draftSessionId ? { sessionId: draftSessionId } : {}),
           ...(checklist.length > 0 ? { checklist } : {}),
           audioUris: audioList,
-          ...(imageUriParam.length > 0 ? { imageUri: imageUriParam } : {}),
+          ...(includeLocalImageUriInComplete ? { imageUri: imageUriParam } : {}),
           ...(uploadError ? { uploadError: true } : {}),
           ...(invalidAudio ? { invalidAudio: true } : {}),
           ...(invalidLabel.length > 0 ? { invalidAudioLabel: invalidLabel } : {}),
@@ -203,6 +241,7 @@ export default function ResultScreen() {
         // are best-effort; the screening metadata is already saved.
         const sessionId = response?.session?.sessionId;
         if (typeof sessionId === "string" && sessionId.length > 0) {
+          setSavedSessionId(sessionId);
           const recordings = Array.isArray(response.session.coughRecordings)
             ? response.session.coughRecordings
             : [];
@@ -227,7 +266,13 @@ export default function ResultScreen() {
             }
           }
 
-          if (imageUriParam.length > 0) {
+          const serverHasSputumAfter = await sessionHasStoredSputumBytes(sessionId);
+          const skipStaleLocalSputumUpload =
+            isLocalImage &&
+            imageUriParam.length > 0 &&
+            (serverHasSputumBefore || serverHasSputumAfter || params.deviceSputum === "1");
+
+          if (imageUriParam.length > 0 && isLocalImage && !skipStaleLocalSputumUpload) {
             try {
               await uploadSputumImageRaw({ sessionId, localUri: imageUriParam });
             } catch (e) {
@@ -237,7 +282,31 @@ export default function ResultScreen() {
                 console.warn("[Screening] sputum raw upload failed:", msg);
               }
             }
+          } else if (__DEV__ && skipStaleLocalSputumUpload) {
+            console.log(
+              "[Screening] Skipped local sputum re-upload; using server bytes for session",
+              sessionId,
+            );
           }
+
+          try {
+            const preview = await fetchSessionSputumPreview(sessionId);
+            const serverUrl = buildServerSputumImageUrl(
+              sessionId,
+              preview
+                ? {
+                    hasRawData: true,
+                    sessionId: preview.sessionId,
+                    byteSize: preview.byteSize,
+                    capturedAt: preview.capturedAt,
+                  }
+                : null,
+            );
+            if (serverUrl) setDisplayImageUri(serverUrl);
+          } catch {
+            /* details screen refetches from API */
+          }
+
           clearScreeningCache();
         }
       } catch (e) {
@@ -383,6 +452,16 @@ export default function ResultScreen() {
             </Text>
           </View>
 
+          <View className="mb-6">
+            <SputumSamplePhoto
+              key={savedSessionId ?? "no-session"}
+              sessionId={savedSessionId}
+              uri={displayImageUri}
+              height={220}
+              label={displayImageUri.length > 0 ? "Sputum sample (from server)" : undefined}
+            />
+          </View>
+
           {(() => {
             const hasCough = typeof probTb === "number" && Number.isFinite(probTb);
             const hasPhlegm = phlegmAnalyzed && phlegmLoad.length > 0;
@@ -494,7 +573,7 @@ export default function ResultScreen() {
                   risk,
                   probTb: typeof probTb === "number" && Number.isFinite(probTb) ? String(probTb) : "",
                   audioUris: typeof params.audioUris === "string" ? params.audioUris : "[]",
-                  imageUri: typeof params.imageUri === "string" ? params.imageUri : "",
+                  ...(savedSessionId ? { sessionId: savedSessionId } : {}),
                   checklist,
                   invalidAudio: invalidAudio ? "1" : "0",
                   invalidLabel,
