@@ -6,8 +6,14 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Audio } from "expo-av";
+import { CoughQualityBadge } from "../../components/CoughQualityBadge";
 import { IOT_COUGH_COUNT, IOT_COUGH_STEPS } from "../../constants/iotScreening";
 import { palette } from "../../constants/palette";
+import {
+  checkCoughRecordingQuality,
+  type CoughQualityLabel,
+  type CoughQualityStatus,
+} from "../../utils/coughQualityCheck";
 import {
   ApiError,
   coughRecordingFingerprint,
@@ -32,15 +38,25 @@ const GRADIENT_COLORS = [palette.deepNavy, palette.navy, palette.signupBg] as co
 const IOT_POLL_MS = 2500;
 const IOT_UPLOAD_TIMEOUT_MS = 90_000;
 const MIN_RECORD_SECONDS = 3;
+const MAX_RECORD_SECONDS = 10;
 
 type CoughSlot = {
   recordingId: string;
   localUri: string;
   fingerprint: string;
+  qualityStatus: CoughQualityStatus;
+  qualityLabel: CoughQualityLabel;
 };
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function formatMs(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 function PulseRing({ delay = 0, active }: { delay?: number; active: boolean }) {
@@ -272,6 +288,10 @@ export default function IotCoughScreen() {
   const [audioHint, setAudioHint] = useState<string | null>(null);
   const [canStopRecording, setCanStopRecording] = useState(false);
   const [waveAmplitude, setWaveAmplitude] = useState(0);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(MAX_RECORD_SECONDS);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playPositionMs, setPlayPositionMs] = useState(0);
+  const [playDurationMs, setPlayDurationMs] = useState(0);
 
   const userIdRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string>(
@@ -285,6 +305,8 @@ export default function IotCoughScreen() {
   const micScale = useRef(new Animated.Value(1)).current;
   const playingRef = useRef<Audio.Sound | null>(null);
   const uploadPollAbortRef = useRef<AbortController | null>(null);
+  const autoStopTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopAudioCaptureRef = useRef<() => void>(() => {});
 
   const completedCoughs = slots.filter(Boolean).length;
   const allDone = completedCoughs >= IOT_COUGH_COUNT;
@@ -354,8 +376,16 @@ export default function IotCoughScreen() {
   useEffect(() => {
     return () => {
       uploadPollAbortRef.current?.abort();
-      void playingRef.current?.unloadAsync();
-      playingRef.current = null;
+      if (autoStopTimerRef.current) {
+        clearInterval(autoStopTimerRef.current);
+        autoStopTimerRef.current = null;
+      }
+      const s = playingRef.current;
+      if (s) {
+        s.setOnPlaybackStatusUpdate(null);
+        playingRef.current = null;
+        void s.stopAsync().catch(() => {}).then(() => s.unloadAsync()).catch(() => {});
+      }
     };
   }, []);
 
@@ -374,7 +404,7 @@ export default function IotCoughScreen() {
   const applyCapturedPreview = useCallback(
     async (preview: SessionCoughRecordingPreview, sessionId: string) => {
       setStatusText("Downloading audio…");
-      setActiveIndex(stepIndex("uploading"));
+      setActiveIndex(-1);
       const localUri = await downloadSessionCoughToCache(
         sessionId,
         preview.recordingId,
@@ -382,9 +412,16 @@ export default function IotCoughScreen() {
       );
       const fingerprint = coughRecordingFingerprint(preview);
       const slotIndex = coughIndexRef.current - 1;
+      const recordingId = preview.recordingId;
       setSlots((prev) => {
         const next = [...prev];
-        next[slotIndex] = { recordingId: preview.recordingId, localUri, fingerprint };
+        next[slotIndex] = {
+          recordingId,
+          localUri,
+          fingerprint,
+          qualityStatus: "checking",
+          qualityLabel: "",
+        };
         return next;
       });
       setCompletedThrough(IOT_COUGH_STEPS.length - 1);
@@ -392,6 +429,16 @@ export default function IotCoughScreen() {
       setCaptured(true);
       setIsRecording(false);
       setStatusText("Audio received from device. Listen, then proceed or retake.");
+
+      const { status, label } = await checkCoughRecordingQuality(localUri);
+      setSlots((prev) => {
+        const next = [...prev];
+        const cur = next[slotIndex];
+        if (cur?.recordingId === recordingId) {
+          next[slotIndex] = { ...cur, qualityStatus: status, qualityLabel: label };
+        }
+        return next;
+      });
     },
     [],
   );
@@ -429,9 +476,9 @@ export default function IotCoughScreen() {
       setErrorText(`${msg}${sidHint}`);
     }
 
-    setStatusText(phase === "upload" ? "Upload did not complete — see message below." : null);
-    setActiveIndex(phase === "upload" ? stepIndex("uploading") : -1);
-    setCompletedThrough(phase === "upload" ? stepIndex("uploading") - 1 : -1);
+    setStatusText(phase === "upload" ? "Audio not received — see message below." : null);
+    setActiveIndex(-1);
+    setCompletedThrough(-1);
     setIsRecording(false);
     setCaptured(false);
     setCanStopRecording(false);
@@ -471,13 +518,33 @@ export default function IotCoughScreen() {
       await queueIotDeviceAudioStartCommand({
         userId: user.userId,
         sessionId: ensuredSessionId,
+        coughAttempt: coughIndexRef.current,
       });
       setCompletedThrough(stepIndex("started"));
 
       setActiveIndex(stepIndex("recording"));
-      setStatusText("Recording on device — tap Stop when finished (min 3 s)");
+      setStatusText(
+        `Recording on device — auto-stops in ${MAX_RECORD_SECONDS}s (min ${MIN_RECORD_SECONDS}s)`,
+      );
       setIsRecording(true);
       setRunning(false);
+      setSecondsRemaining(MAX_RECORD_SECONDS);
+
+      // Start countdown: tick every second, auto-stop at 0.
+      const startedAt = Date.now();
+      if (autoStopTimerRef.current) clearInterval(autoStopTimerRef.current);
+      autoStopTimerRef.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+        const remaining = Math.max(0, MAX_RECORD_SECONDS - elapsed);
+        setSecondsRemaining(remaining);
+        if (remaining <= 0) {
+          if (autoStopTimerRef.current) {
+            clearInterval(autoStopTimerRef.current);
+            autoStopTimerRef.current = null;
+          }
+          stopAudioCaptureRef.current();
+        }
+      }, 250);
 
       await sleep(MIN_RECORD_SECONDS * 1000);
       setCanStopRecording(true);
@@ -488,6 +555,11 @@ export default function IotCoughScreen() {
   }, [collectBaselineFingerprints, handleIoTError, screeningSessionId]);
 
   const stopAudioCapture = useCallback(async () => {
+    if (autoStopTimerRef.current) {
+      clearInterval(autoStopTimerRef.current);
+      autoStopTimerRef.current = null;
+    }
+
     const userId = userIdRef.current;
     const sessionId = sessionIdRef.current.trim();
     if (!userId || !sessionId) {
@@ -501,17 +573,18 @@ export default function IotCoughScreen() {
 
     try {
       setActiveIndex(stepIndex("ended"));
-      setStatusText("Stopping recording and uploading…");
+      setStatusText("Stopping recording…");
       await queueIotDeviceStopAudioCommand({ userId, sessionId });
       setCompletedThrough(stepIndex("ended"));
 
-      setActiveIndex(stepIndex("uploading"));
+      setActiveIndex(-1);
       uploadPollAbortRef.current?.abort();
       uploadPollAbortRef.current = new AbortController();
       const preview = await pollForNewCoughRecording(sessionId, baselineFingerprintsRef.current, {
         timeoutMs: IOT_UPLOAD_TIMEOUT_MS,
         intervalMs: IOT_POLL_MS,
         signal: uploadPollAbortRef.current.signal,
+        coughAttempt: coughIndexRef.current,
         onProgress: (elapsedMs) => {
           const sec = Math.floor(elapsedMs / 1000);
           setStatusText(
@@ -531,7 +604,18 @@ export default function IotCoughScreen() {
     }
   }, [applyCapturedPreview, handleIoTError]);
 
+  useEffect(() => {
+    stopAudioCaptureRef.current = () => {
+      void stopAudioCapture();
+    };
+  }, [stopAudioCapture]);
+
   const retakeCurrent = useCallback(async () => {
+    if (autoStopTimerRef.current) {
+      clearInterval(autoStopTimerRef.current);
+      autoStopTimerRef.current = null;
+    }
+    await stopCurrent();
     setSlots((prev) => {
       const next = [...prev];
       next[coughIndex - 1] = null;
@@ -539,32 +623,82 @@ export default function IotCoughScreen() {
     });
     setCaptured(false);
     await startAudioCapture();
-  }, [coughIndex, startAudioCapture]);
+  }, [coughIndex, startAudioCapture, stopCurrent]);
+
+  const stopCurrent = useCallback(async () => {
+    const s = playingRef.current;
+    if (!s) return;
+    s.setOnPlaybackStatusUpdate(null);
+    playingRef.current = null;
+    setIsPlaying(false);
+    setPlayPositionMs(0);
+    setPlayDurationMs(0);
+    try { await s.stopAsync(); } catch { /* ignore */ }
+    try { await s.unloadAsync(); } catch { /* ignore */ }
+  }, []);
 
   const playCurrent = useCallback(async () => {
+    if (isPlaying) {
+      await stopCurrent();
+      return;
+    }
     const uri = currentSlot?.localUri;
     if (!uri) {
       setAudioHint("No recording to play yet.");
       return;
     }
     setAudioHint(null);
+    setPlayPositionMs(0);
+    setPlayDurationMs(0);
     try {
-      await playingRef.current?.unloadAsync();
+      await stopCurrent();
+
+      // Switch audio session out of recording mode so the speaker is used.
+      // Without this on iOS the audio plays silently (or not at all) because
+      // the session is still locked to the microphone after the IoT capture.
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
+
       const sound = new Audio.Sound();
       playingRef.current = sound;
       await sound.loadAsync({ uri }, { shouldPlay: true });
+
+      // Seed duration immediately — some codecs (WAV PCM from ESP32) only
+      // populate durationMillis in the first getStatusAsync call, not callbacks.
+      const initialStatus = await sound.getStatusAsync();
+      if (initialStatus.isLoaded) {
+        if (initialStatus.durationMillis) setPlayDurationMs(initialStatus.durationMillis);
+        setIsPlaying(initialStatus.isPlaying ?? true);
+      }
+
       sound.setOnPlaybackStatusUpdate((status) => {
-        if (!status.isLoaded || status.didJustFinish) {
-          void sound.unloadAsync();
+        if (!status.isLoaded) return;
+        setIsPlaying(status.isPlaying ?? false);
+        setPlayPositionMs(status.positionMillis ?? 0);
+        if (status.durationMillis) setPlayDurationMs(status.durationMillis);
+        if (status.didJustFinish) {
+          sound.setOnPlaybackStatusUpdate(null);
           if (playingRef.current === sound) playingRef.current = null;
+          setIsPlaying(false);
+          setPlayPositionMs(0);
+          void sound.unloadAsync();
         }
       });
-    } catch {
-      setAudioHint("Could not play this recording right now.");
+    } catch (e) {
+      setAudioHint(
+        `Could not play this recording: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
-  }, [currentSlot]);
+  }, [currentSlot, isPlaying, stopCurrent]);
 
   const continueNext = useCallback(() => {
+    const qs = currentSlot?.qualityStatus ?? "skipped";
+    if (qs === "checking" || qs === "bad") return;
+
+    void stopCurrent();
     setAudioHint(null);
     setErrorText(null);
     setStatusText(null);
@@ -578,6 +712,7 @@ export default function IotCoughScreen() {
     }
 
     const audioUris = slots.map((s) => s?.localUri ?? "").filter((u) => u.length > 0);
+    const iotRecordingIds = slots.map((s) => s?.recordingId ?? "").filter((id) => id.length > 0);
     router.push({
       pathname: "/screening/iot-sputum",
       params: {
@@ -585,10 +720,11 @@ export default function IotCoughScreen() {
         audioDone: "1",
         iotMode: "1",
         audioUris: JSON.stringify(audioUris),
+        iotRecordingIds: JSON.stringify(iotRecordingIds),
         ...(screeningSessionId.trim().length > 0 ? { sessionId: screeningSessionId.trim() } : {}),
       },
     } as any);
-  }, [checklist, completedCoughs, router, screeningSessionId, slots]);
+  }, [checklist, completedCoughs, currentSlot, router, screeningSessionId, slots, stopCurrent]);
 
   const { mainLabel, subLabel } = useMemo(() => {
     if (allDone && captured) {
@@ -607,8 +743,8 @@ export default function IotCoughScreen() {
       return {
         mainLabel: "Recording on device…",
         subLabel: canStopRecording
-          ? "Tap Stop when you have finished coughing"
-          : `Wait ${MIN_RECORD_SECONDS}s before stopping`,
+          ? `Auto-stops in ${secondsRemaining}s — tap Stop anytime`
+          : `Wait ${MIN_RECORD_SECONDS}s before stopping (auto-stops in ${secondsRemaining}s)`,
       };
     }
     if (running) {
@@ -621,7 +757,7 @@ export default function IotCoughScreen() {
       mainLabel: "Ready to record",
       subLabel: `Tap Record to start cough ${coughIndex} on the screening device`,
     };
-  }, [allDone, canStopRecording, captured, coughIndex, isRecording, running]);
+  }, [allDone, canStopRecording, captured, coughIndex, isRecording, running, secondsRemaining]);
 
   const micBgColor = captured || allDone
     ? SUCCESS_GREEN
@@ -631,7 +767,7 @@ export default function IotCoughScreen() {
 
   const sessionLabel = screeningSessionId?.trim().length ? screeningSessionId.trim() : "Pending assignment";
 
-  const isWaitingForUpload = running && activeIndex === stepIndex("uploading");
+  const isWaitingForUpload = running && completedThrough >= stepIndex("ended");
   const showRecordButton = !running && !isRecording && !captured;
   const showStopButton = isRecording && !running;
   const showCancelUpload = isWaitingForUpload;
@@ -656,20 +792,7 @@ export default function IotCoughScreen() {
                 paddingVertical: 8,
               }}
             >
-              <Pressable
-                onPress={() => router.back()}
-                disabled={running || isRecording}
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  backgroundColor: "rgba(255,255,255,0.12)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
-              </Pressable>
+              <View style={{ width: 44, height: 44 }} />
               <View style={{ alignItems: "center" }}>
                 <Text style={{ fontSize: 16, fontWeight: "600", color: "#fff", letterSpacing: -0.2 }}>
                   Cough {coughIndex} of {IOT_COUGH_COUNT}
@@ -965,20 +1088,36 @@ export default function IotCoughScreen() {
 
               {showReviewActions && (
                 <View style={{ gap: 10 }}>
+                  <CoughQualityBadge
+                    status={currentSlot?.qualityStatus ?? "skipped"}
+                    label={currentSlot?.qualityLabel ?? ""}
+                  />
                   <View style={{ flexDirection: "row", gap: 10 }}>
                     <Pressable onPress={playCurrent} style={{ flex: 1 }}>
                       {({ pressed }) => (
                         <View
                           style={{
-                            backgroundColor: pressed ? "rgba(26,52,120,0.75)" : "rgba(26,52,120,0.55)",
+                            backgroundColor: isPlaying
+                              ? pressed ? "rgba(239,68,68,0.75)" : "rgba(239,68,68,0.55)"
+                              : pressed ? "rgba(26,52,120,0.75)" : "rgba(26,52,120,0.55)",
                             borderRadius: 16,
-                            paddingVertical: 14,
+                            paddingVertical: 11,
                             alignItems: "center",
                             borderWidth: 1,
-                            borderColor: "rgba(255,255,255,0.16)",
+                            borderColor: isPlaying ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.16)",
+                            gap: 2,
                           }}
                         >
-                          <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff" }}>Play</Text>
+                          <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff" }}>
+                            {isPlaying ? "Stop" : "Play"}
+                          </Text>
+                          {playDurationMs > 0 ? (
+                            <Text style={{ fontSize: 11, fontWeight: "600", color: "rgba(255,255,255,0.65)" }}>
+                              {isPlaying
+                                ? `${formatMs(playPositionMs)} / ${formatMs(playDurationMs)}`
+                                : formatMs(playDurationMs)}
+                            </Text>
+                          ) : null}
                         </View>
                       )}
                     </Pressable>
@@ -999,29 +1138,52 @@ export default function IotCoughScreen() {
                       )}
                     </Pressable>
                   </View>
-                  <Pressable onPress={continueNext}>
-                    {({ pressed }) => (
-                      <View
-                        style={{
-                          backgroundColor: pressed ? "#2bc295" : SUCCESS_GREEN,
-                          borderRadius: 18,
-                          paddingVertical: 16,
-                          alignItems: "center",
-                          shadowColor: SUCCESS_GREEN,
-                          shadowOffset: { width: 0, height: 8 },
-                          shadowOpacity: 0.3,
-                          shadowRadius: 24,
-                          elevation: 6,
-                        }}
-                      >
-                        <Text style={{ fontSize: 15, fontWeight: "700", color: "#fff", letterSpacing: -0.2 }}>
-                          {completedCoughs >= IOT_COUGH_COUNT
+                  {(() => {
+                    const qs = currentSlot?.qualityStatus ?? "skipped";
+                    const proceedDisabled = qs === "checking" || qs === "bad";
+                    const proceedLabel =
+                      qs === "checking"
+                        ? "Checking…"
+                        : qs === "ok" || qs === "skipped"
+                          ? completedCoughs >= IOT_COUGH_COUNT
                             ? "Proceed to sputum capture"
-                            : `Proceed to cough ${coughIndex + 1}`}
-                        </Text>
-                      </View>
-                    )}
-                  </Pressable>
+                            : `Proceed to cough ${coughIndex + 1}`
+                          : "Retake to continue";
+                    return (
+                      <Pressable onPress={continueNext} disabled={proceedDisabled}>
+                        {({ pressed }) => (
+                          <View
+                            style={{
+                              backgroundColor: proceedDisabled
+                                ? "rgba(56,217,169,0.35)"
+                                : pressed
+                                  ? "#2bc295"
+                                  : SUCCESS_GREEN,
+                              borderRadius: 18,
+                              paddingVertical: 16,
+                              alignItems: "center",
+                              shadowColor: SUCCESS_GREEN,
+                              shadowOffset: { width: 0, height: 8 },
+                              shadowOpacity: proceedDisabled ? 0 : 0.3,
+                              shadowRadius: 24,
+                              elevation: proceedDisabled ? 0 : 6,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 15,
+                                fontWeight: "700",
+                                color: proceedDisabled ? "rgba(255,255,255,0.55)" : "#fff",
+                                letterSpacing: -0.2,
+                              }}
+                            >
+                              {proceedLabel}
+                            </Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  })()}
                 </View>
               )}
 

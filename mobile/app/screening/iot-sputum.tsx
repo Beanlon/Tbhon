@@ -220,6 +220,7 @@ export default function IotSputumScreen() {
     checklist?: string;
     audioDone?: string;
     audioUris?: string;
+    iotRecordingIds?: string;
     iotMode?: string;
     imageUri?: string;
     sessionId?: string;
@@ -230,6 +231,7 @@ export default function IotSputumScreen() {
   const checklist = typeof params.checklist === "string" ? params.checklist : "";
   const audioDone = params.audioDone === "1" ? "1" : "0";
   const audioUris = typeof params.audioUris === "string" ? params.audioUris : "[]";
+  const iotRecordingIds = typeof params.iotRecordingIds === "string" ? params.iotRecordingIds : "[]";
   const iotMode = params.iotMode === "1";
 
   const initialSessionId =
@@ -289,7 +291,7 @@ export default function IotSputumScreen() {
     }
   }, [isCapturing, iconScale]);
 
-  const REQUEST_STEPS = [IOT_SPUTUM_STEPS[0], IOT_SPUTUM_STEPS[1], IOT_SPUTUM_STEPS[3], IOT_SPUTUM_STEPS[4]];
+  const REQUEST_STEPS = IOT_SPUTUM_STEPS;
 
   const goToReview = useCallback(() => {
     const hasImage = Boolean(previewImageUri && previewImageUri.length > 0);
@@ -303,6 +305,7 @@ export default function IotSputumScreen() {
       params: {
         audioDone,
         audioUris,
+        iotRecordingIds,
         checklist,
         imageUri: hasImage ? previewImageUri : "",
         ...(iotMode ? { iotMode: "1" } : {}),
@@ -310,7 +313,7 @@ export default function IotSputumScreen() {
         ...deviceSputumNavParams,
       },
     } as any);
-  }, [router, audioDone, audioUris, checklist, previewImageUri, iotMode, screeningSessionId, sputumByteSize, sputumCapturedAt]);
+  }, [router, audioDone, audioUris, iotRecordingIds, checklist, previewImageUri, iotMode, screeningSessionId, sputumByteSize, sputumCapturedAt]);
 
   const pollForSputumPreview = useCallback(
     async (sessionId: string, baselineFingerprint: string | null) => {

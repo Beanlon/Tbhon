@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Audio } from "expo-av";
 import { useTheme } from "../../contexts/ThemeContext";
+import { IOT_COUGH_COUNT } from "../../constants/iotScreening";
 
 export default function ReviewInputsScreen() {
   const router = useRouter();
@@ -14,6 +15,7 @@ export default function ReviewInputsScreen() {
   const params = useLocalSearchParams<{
     audioDone?: string;
     audioUris?: string;
+    iotRecordingIds?: string;
     imageUri?: string;
     checklist?: string;
     sessionId?: string;
@@ -29,6 +31,7 @@ export default function ReviewInputsScreen() {
   const imageUri = imageDone && !params.imageUri?.startsWith("iot://") ? (params.imageUri as string) : null;
   const iotImageUploaded = imageDone && params.imageUri?.startsWith("iot://");
   const audioUris = typeof params.audioUris === "string" ? params.audioUris : "[]";
+  const iotRecordingIds = typeof params.iotRecordingIds === "string" ? params.iotRecordingIds : "[]";
   const checklist = typeof params.checklist === "string" ? params.checklist : "";
   const sessionId =
     typeof params.sessionId === "string" && params.sessionId.trim().length > 0
@@ -59,8 +62,28 @@ export default function ReviewInputsScreen() {
   const [imageOpen, setImageOpen] = useState(false);
   const [audioHint, setAudioHint] = useState<string | null>(null);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
   const canAnalyze = audioDone;
+
+  useEffect(() => {
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.setOnPlaybackStatusUpdate(null);
+        void soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+    };
+  }, []);
+
+  const stopCurrentSound = async () => {
+    if (soundRef.current) {
+      soundRef.current.setOnPlaybackStatusUpdate(null);
+      await soundRef.current.stopAsync().catch(() => {});
+      await soundRef.current.unloadAsync().catch(() => {});
+      soundRef.current = null;
+    }
+  };
 
   const playAudioAt = async (index: number) => {
     const uri = coughUris[index];
@@ -68,20 +91,42 @@ export default function ReviewInputsScreen() {
       setAudioHint("Playback will be available when device audio sync is connected.");
       return;
     }
+
+    if (playingIndex === index) {
+      await stopCurrentSound();
+      setPlayingIndex(null);
+      return;
+    }
+
+    await stopCurrentSound();
     setAudioHint(null);
     setPlayingIndex(index);
+
     try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
       const sound = new Audio.Sound();
+      soundRef.current = sound;
       await sound.loadAsync({ uri }, { shouldPlay: true });
       sound.setOnPlaybackStatusUpdate((status) => {
-        if (!status.isLoaded || status.didJustFinish) {
-          void sound.unloadAsync();
+        if (status.isLoaded && status.didJustFinish) {
+          sound.setOnPlaybackStatusUpdate(null);
           setPlayingIndex((current) => (current === index ? null : current));
+          void sound.unloadAsync();
+          if (soundRef.current === sound) {
+            soundRef.current = null;
+          }
         }
       });
-    } catch {
-      setAudioHint("Could not play this audio clip right now.");
+    } catch (e) {
+      setAudioHint(
+        `Could not play this audio clip: ${e instanceof Error ? e.message : String(e)}`,
+      );
       setPlayingIndex(null);
+      soundRef.current = null;
     }
   };
 
@@ -132,15 +177,7 @@ export default function ReviewInputsScreen() {
       <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
       <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["top", "right", "bottom", "left"]}>
       <View className="flex-row items-center justify-between border-b px-4 pb-3.5 pt-2 sm:px-5 md:px-6" style={{ borderColor: colors.borderLight }}>
-        <Pressable
-          onPress={() => router.back()}
-          className="size-11 items-center justify-center rounded-full active:opacity-90"
-          style={{ backgroundColor: colors.surfaceAlt }}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
-        </Pressable>
+        <View className="size-11" />
 
         <View className="min-w-0 flex-1 items-center px-2">
           <Text
@@ -184,7 +221,7 @@ export default function ReviewInputsScreen() {
               </Text>
               {audioDone && (
                 <View className="mt-3 gap-2">
-                  {Array.from({ length: Math.max(coughUris.length, 3) }).map((_, i) => {
+                  {Array.from({ length: iotMode ? IOT_COUGH_COUNT : Math.max(coughUris.length, 3) }).map((_, i) => {
                     const label = `Cough ${i + 1}`;
                     const uri = coughUris[i] ?? "";
                     const canPlay = uri.length > 0 && !uri.startsWith("iot://");
@@ -279,6 +316,7 @@ export default function ReviewInputsScreen() {
                   params: {
                     audioDone: audioDone ? "1" : "0",
                     audioUris,
+                    iotRecordingIds,
                     checklist,
                     ...(iotMode ? { iotMode: "1" } : {}),
                     ...sessionNavParams,
@@ -306,6 +344,7 @@ export default function ReviewInputsScreen() {
               params: {
                 audioDone: audioDone ? "1" : "0",
                 audioUris,
+                iotRecordingIds,
                 imageUri: iotImageUploaded ? "iot://sputum-uploaded" : (imageUri ?? ""),
                 checklist,
                 ...(iotMode ? { iotMode: "1" } : {}),

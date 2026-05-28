@@ -6,76 +6,23 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
-import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
+import { CoughQualityBadge } from "../../components/CoughQualityBadge";
 import { createScreeningDraft } from "../../services/backendApi";
+import {
+  checkCoughRecordingQuality,
+  normalizeAudioFileUri,
+  type CoughQualityLabel,
+  type CoughQualityStatus,
+} from "../../utils/coughQualityCheck";
 
 const COUGH_TOTAL = 3;
 const MIN_RECORD_SECONDS = 3;
 const MAX_RECORD_SECONDS = 10;
-const QUALITY_CHECK_TIMEOUT_MS = 25000;
-
-type QualityStatus = "checking" | "ok" | "bad" | "skipped";
-type QualityLabel = "silence" | "speech" | "replay" | "noise" | "invalid" | "";
-
-const QUALITY_LABEL_MSG: Record<string, string> = {
-  silence: "Too quiet — cough louder",
-  speech: "Sounds like speech, not a cough",
-  replay: "Sounds like a recording/replay",
-  noise: "Too much background noise",
-  invalid: "Could not validate recording",
-};
 
 type Phase = "ready" | "countdown" | "recording" | "done";
 
 function pad2(n: number) {
   return String(Math.max(0, Math.floor(n))).padStart(2, "0");
-}
-
-function normalizeFileUri(uri: string): string {
-  const trimmed = String(uri || "").trim();
-  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
-  return hasScheme ? trimmed : `file://${trimmed}`;
-}
-
-function pickMimeAndName(uri: string): { name: string; mimeType: string } {
-  const lower = uri.toLowerCase();
-  if (lower.endsWith(".m4a") || lower.endsWith(".mp4") || lower.endsWith(".aac")) {
-    return { name: "cough.m4a", mimeType: "audio/mp4" };
-  }
-  if (lower.endsWith(".3gp") || lower.endsWith(".3gpp")) {
-    return { name: "cough.3gp", mimeType: "audio/3gpp" };
-  }
-  if (lower.endsWith(".caf")) {
-    return { name: "cough.caf", mimeType: "audio/x-caf" };
-  }
-  if (lower.endsWith(".ogg") || lower.endsWith(".oga") || lower.endsWith(".opus")) {
-    return { name: "cough.ogg", mimeType: "audio/ogg" };
-  }
-  return { name: "cough.wav", mimeType: "audio/wav" };
-}
-
-async function uploadAudioForCheck(base: string, uri: string): Promise<any | null> {
-  const fileUri = normalizeFileUri(uri);
-  const { name, mimeType } = pickMimeAndName(fileUri);
-  const url = `${base.replace(/\/$/, "")}/check-quality`;
-  const result = await Promise.race([
-    FileSystem.uploadAsync(url, fileUri, {
-      httpMethod: "POST",
-      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-      fieldName: "file",
-      mimeType,
-      parameters: { filename: name },
-    }),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("check-quality timed out")), QUALITY_CHECK_TIMEOUT_MS),
-    ),
-  ]);
-  if (result.status < 200 || result.status >= 300) return null;
-  try {
-    return JSON.parse(result.body || "{}");
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -84,7 +31,7 @@ async function uploadAudioForCheck(base: string, uri: string): Promise<any | nul
  * is reachable from later screens (e.g. Processing/Predict).
  */
 async function persistRecordingToDocs(srcUri: string, coughIndex: number): Promise<string> {
-  const src = normalizeFileUri(srcUri);
+  const src = normalizeAudioFileUri(srcUri);
   const docs = FileSystem.documentDirectory ?? "";
   if (!docs) return src;
   const dirUri = `${docs}coughs`;
@@ -117,47 +64,6 @@ async function persistRecordingToDocs(srcUri: string, coughIndex: number): Promi
   }
 }
 
-function QualityBadge({ status, label }: { status: QualityStatus; label: QualityLabel }) {
-  if (status === "skipped") return null;
-
-  if (status === "checking") {
-    return (
-      <View className="mt-3.5 flex-row items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5">
-        <Ionicons name="sync-outline" size={18} color="rgba(255,255,255,0.7)" />
-        <Text className="text-sm font-semibold text-white/70">
-          Checking recording quality…
-        </Text>
-      </View>
-    );
-  }
-
-  if (status === "ok") {
-    return (
-      <View className="mt-3.5 flex-row items-center gap-2 rounded-xl border border-emerald-400/35 bg-emerald-400/15 px-4 py-2.5">
-        <Ionicons name="checkmark-circle" size={18} color="#34D399" />
-        <Text className="text-sm font-bold text-emerald-400">
-          Good take — cough detected
-        </Text>
-      </View>
-    );
-  }
-
-  const msg = QUALITY_LABEL_MSG[label] ?? "Recording may not be a clear cough";
-  return (
-    <View className="mt-3.5 flex-row items-start gap-2 rounded-xl border border-amber-400/35 bg-amber-400/10 px-4 py-2.5">
-      <View className="mt-px">
-        <Ionicons name="warning-outline" size={18} color="#fbbf24" />
-      </View>
-      <View className="flex-1">
-        <Text className="mb-0.5 text-sm font-bold text-amber-400">
-          Poor quality — redo recommended
-        </Text>
-        <Text className="text-sm text-amber-400/85">{msg}</Text>
-      </View>
-    </View>
-  );
-}
-
 export default function RecordingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ checklist?: string }>();
@@ -171,8 +77,8 @@ export default function RecordingScreen() {
   const [audioUris, setAudioUris] = useState<(string | null)[]>(() => Array.from({ length: COUGH_TOTAL }, () => null));
   const [micReady, setMicReady] = useState(false);
   const [levels, setLevels] = useState<number[]>(() => Array.from({ length: 26 }, () => 0.15));
-  const [qualityStatus, setQualityStatus] = useState<QualityStatus>("skipped");
-  const [qualityLabel, setQualityLabel] = useState<QualityLabel>("");
+  const [qualityStatus, setQualityStatus] = useState<CoughQualityStatus>("skipped");
+  const [qualityLabel, setQualityLabel] = useState<CoughQualityLabel>("");
   const [screeningSessionId, setScreeningSessionId] = useState<string | null>(null);
 
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -354,29 +260,9 @@ export default function RecordingScreen() {
     if (uri) {
       setQualityStatus("checking");
       setQualityLabel("");
-      const apiBases = resolveTbApiBaseUrls();
-      try {
-        let data: any = null;
-        for (const base of apiBases) {
-          try {
-            const result = await uploadAudioForCheck(base, uri);
-            if (result) {
-              data = result;
-              break;
-            }
-          } catch (e) {
-            console.log(`[Recording] check-quality failed at ${base}:`, String((e as any)?.message ?? e));
-          }
-        }
-        if (!data) {
-          setQualityStatus("skipped");
-          return;
-        }
-        setQualityStatus(data?.ok === true ? "ok" : "bad");
-        setQualityLabel((data?.label ?? "") as QualityLabel);
-      } catch {
-        setQualityStatus("skipped");
-      }
+      const { status, label } = await checkCoughRecordingQuality(uri);
+      setQualityStatus(status);
+      setQualityLabel(label);
     } else {
       setQualityStatus("skipped");
     }
@@ -561,7 +447,7 @@ export default function RecordingScreen() {
             <Text className="max-w-md text-center text-xs leading-5 text-white/75 sm:text-sm">
               Duration {timeLabel}. Next: cough {coughIndex + 1} of {COUGH_TOTAL}.
             </Text>
-            <QualityBadge status={qualityStatus} label={qualityLabel} />
+            <CoughQualityBadge status={qualityStatus} label={qualityLabel} />
           </>
         )}
 
@@ -573,7 +459,7 @@ export default function RecordingScreen() {
             <Text className="max-w-md text-center text-xs leading-5 text-white/75 sm:text-sm">
               Last clip: {timeLabel}. You can redo the last cough if needed.
             </Text>
-            <QualityBadge status={qualityStatus} label={qualityLabel} />
+            <CoughQualityBadge status={qualityStatus} label={qualityLabel} />
           </>
         )}
       </View>

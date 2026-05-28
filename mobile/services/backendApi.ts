@@ -1,4 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
+import { IOT_COUGH_COUNT } from "../constants/iotScreening";
 import { resolveApiBaseUrl } from "../utils/apiBaseUrl";
 import { getAuthToken } from "../utils/authStorage";
 
@@ -205,16 +206,26 @@ export type IotDeviceCommandResult = {
   command: string;
   userId: string | null;
   sessionId: string | null;
+  coughAttempt: number | null;
 };
 
 /**
  * Queue a firmware command — same HTTP call as terminal:
- * POST /iot/device-command  { command, userId, sessionId }  +  X-IoT-Key
+ * POST /iot/device-command  { command, userId, sessionId, coughAttempt? }  +  X-IoT-Key
  */
+function clampCoughAttempt(attempt: number): number {
+  const n = Math.floor(attempt);
+  if (n < 1) return 1;
+  if (n > IOT_COUGH_COUNT) return IOT_COUGH_COUNT;
+  return n;
+}
+
 export async function queueIotDeviceCommand(args: {
   command: "image" | "audio" | "stop audio" | "audio upload";
   userId: string;
   sessionId: string;
+  /** Which cough slot (1-based, 1–3) this audio command is for. Retakes reuse the same slot. */
+  coughAttempt?: number;
 }): Promise<IotDeviceCommandResult> {
   const key =
     typeof process !== "undefined"
@@ -239,6 +250,9 @@ export async function queueIotDeviceCommand(args: {
       command: args.command,
       userId: args.userId.trim(),
       sessionId: args.sessionId.trim(),
+      ...(args.coughAttempt != null
+        ? { coughAttempt: clampCoughAttempt(args.coughAttempt) }
+        : {}),
     }),
   });
 
@@ -254,6 +268,7 @@ export async function queueIotDeviceCommand(args: {
       command: args.command,
       userId: args.userId,
       sessionId: args.sessionId,
+      coughAttempt: args.coughAttempt ?? null,
     };
   }
   return JSON.parse(text) as IotDeviceCommandResult;
@@ -271,6 +286,8 @@ export async function queueIotDeviceImageCommand(args: {
 export async function queueIotDeviceAudioStartCommand(args: {
   userId: string;
   sessionId: string;
+  /** Which cough slot (1-based) this recording is for (e.g. 1, 2, or 3). */
+  coughAttempt: number;
 }): Promise<IotDeviceCommandResult> {
   return queueIotDeviceCommand({ command: "audio", ...args });
 }
@@ -318,6 +335,7 @@ export async function requestIotCapture(args: {
         const direct = await queueIotDeviceAudioStartCommand({
           userId: user.userId,
           sessionId: args.sessionId,
+          coughAttempt: 1,
         });
         return {
           ok: direct.ok,
@@ -463,6 +481,8 @@ export type SessionCoughRecordingPreview = {
   byteSize: number;
   mimeType: string | null;
   source: string | null;
+  /** Which cough slot (1-based) this recording belongs to. Null for legacy rows. */
+  coughAttempt: number | null;
 };
 
 export function coughRecordingFingerprint(preview: SessionCoughRecordingPreview): string {
@@ -490,6 +510,7 @@ export async function fetchSessionCoughRecordings(
         byteSize: r.byteSize ?? 0,
         mimeType: r.mimeType ?? null,
         source: r.source ?? null,
+        coughAttempt: (r.coughAttempt as number | null | undefined) ?? null,
       }));
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) return [];
@@ -502,6 +523,12 @@ export type PollCoughRecordingOptions = {
   intervalMs?: number;
   onProgress?: (elapsedMs: number, attempt: number) => void;
   signal?: AbortSignal;
+  /**
+   * When provided, the poll will match the row whose coughAttempt equals this
+   * value (primary) or fall back to any new fingerprint (for legacy firmware
+   * that doesn't send coughAttempt). 1-based slot number.
+   */
+  coughAttempt?: number;
 };
 
 /** Poll until a new cough recording appears (retake-safe via fingerprint baseline). */
@@ -518,16 +545,29 @@ export async function pollForNewCoughRecording(
   const timeoutMs = options.timeoutMs ?? 120_000;
   const intervalMs = options.intervalMs ?? 2500;
   const started = Date.now();
-  let attempt = 0;
+  let pollAttempt = 0;
 
   while (Date.now() - started < timeoutMs) {
     if (options.signal?.aborted) {
       throw new Error("Upload wait cancelled");
     }
-    attempt += 1;
-    options.onProgress?.(Date.now() - started, attempt);
+    pollAttempt += 1;
+    options.onProgress?.(Date.now() - started, pollAttempt);
 
     const rows = await fetchSessionCoughRecordings(sessionId);
+
+    // Primary: match by coughAttempt when the firmware sent one.
+    if (options.coughAttempt != null) {
+      const bySlot = rows.find((r) => r.coughAttempt === options.coughAttempt);
+      if (bySlot) {
+        const fp = coughRecordingFingerprint(bySlot);
+        // Accept whether it's brand new or was a retake (same slot, new bytes).
+        if (!baselineFingerprints.has(fp)) return bySlot;
+        // Row exists but same bytes as baseline — still waiting for retake upload.
+      }
+    }
+
+    // Fallback: any new fingerprint not in the baseline (legacy firmware, no coughAttempt).
     for (const row of rows) {
       const fp = coughRecordingFingerprint(row);
       if (!baselineFingerprints.has(fp)) return row;
@@ -804,6 +844,8 @@ export type ScreeningSessionDetail = {
     mimeType?: string;
     byteSize?: number | null;
     source?: string | null;
+    /** Which cough slot (1-based) this recording belongs to. Null for legacy rows. */
+    coughAttempt?: number | null;
     qualityCheck: { ok: boolean; label: string | null; reasonsJson: unknown } | null;
     audioPrediction: { probTb: number; probNoTb: number } | null;
   }>;
