@@ -274,7 +274,16 @@ async function uploadAudioForPredict(base: string, uri: string, extras?: Record<
 
 export default function ProcessingScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string; imageUri?: string; checklist?: string }>();
+  const params = useLocalSearchParams<{
+    audioDone?: string;
+    audioUris?: string;
+    imageUri?: string;
+    checklist?: string;
+    sessionId?: string;
+    deviceSputum?: string;
+    sputumByteSize?: string;
+    sputumCapturedAt?: string;
+  }>();
 
   useEffect(() => {
     let cancelled = false;
@@ -305,8 +314,23 @@ export default function ProcessingScreen() {
       const uris = parseUris();
       const imageUriStr = typeof params.imageUri === "string" ? params.imageUri : "";
       const checklistStr = typeof params.checklist === "string" ? params.checklist : "";
+      const sessionIdStr =
+        typeof params.sessionId === "string" && params.sessionId.trim().length > 0
+          ? params.sessionId.trim()
+          : "";
       /** Forward to every path so result/details persist + display checklist after analysis */
       const checklistNavParams = checklistStr.length > 0 ? ({ checklist: checklistStr } as const) : {};
+      const sessionNavParams = sessionIdStr.length > 0 ? ({ sessionId: sessionIdStr } as const) : {};
+      const deviceSputumNavParams =
+        params.deviceSputum === "1"
+          ? {
+              deviceSputum: "1" as const,
+              sputumByteSize:
+                typeof params.sputumByteSize === "string" ? params.sputumByteSize : "",
+              sputumCapturedAt:
+                typeof params.sputumCapturedAt === "string" ? params.sputumCapturedAt : "",
+            }
+          : {};
       const uploadExtras = checklistStr.length ? { checklist: checklistStr } : undefined;
       const emptyPhlegm: PhlegmPred = {
         analyzed: false,
@@ -325,6 +349,8 @@ export default function ProcessingScreen() {
             audioUris: params.audioUris ?? "[]",
             imageUri: "",
             ...checklistNavParams,
+            ...sessionNavParams,
+            ...deviceSputumNavParams,
             ...phlegmNavParams(emptyPhlegm),
           },
         } as any);
@@ -352,6 +378,8 @@ export default function ProcessingScreen() {
             wifiRequired: "1",
             apiAttempt: apiBases.join(" | "),
             ...checklistNavParams,
+            ...sessionNavParams,
+            ...deviceSputumNavParams,
             ...phlegmNavParams(emptyPhlegm),
           },
         } as any);
@@ -370,6 +398,8 @@ export default function ProcessingScreen() {
             audioUris: params.audioUris ?? "[]",
             imageUri: imageUriStr,
             ...checklistNavParams,
+            ...sessionNavParams,
+            ...deviceSputumNavParams,
             ...phlegmNavParams(phlegm),
           },
         } as any);
@@ -427,6 +457,8 @@ export default function ProcessingScreen() {
                 invalidLabel: spoofLabel ?? "",
                 invalidReasons: JSON.stringify(spoofReasons),
                 ...checklistNavParams,
+                ...sessionNavParams,
+                ...deviceSputumNavParams,
                 ...phlegmNavParams(phlegm),
               },
             } as any);
@@ -446,6 +478,8 @@ export default function ProcessingScreen() {
               audioUris: params.audioUris ?? "[]",
               imageUri: imageUriStr,
               ...checklistNavParams,
+              ...sessionNavParams,
+              ...deviceSputumNavParams,
               ...phlegmNavParams(phlegm),
             },
           } as any);
@@ -463,6 +497,8 @@ export default function ProcessingScreen() {
               audioUris: params.audioUris ?? "[]",
               imageUri: imageUriStr,
               ...checklistNavParams,
+              ...sessionNavParams,
+              ...deviceSputumNavParams,
               uploadError: "1",
               apiAttempt: apiBases.join(" | "),
               ...phlegmNavParams(phlegm),

@@ -13,14 +13,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Image } from "expo-image";
 import { Audio } from "expo-av";
 import {
   ApiError,
+  buildServerSputumImageUrl,
   getScreening,
   resolveMediaUrl,
   type ScreeningSessionDetail,
 } from "../../services/backendApi";
+import SputumSamplePhoto from "../components/SputumSamplePhoto";
 import { getAuthToken } from "../../utils/authStorage";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
 
@@ -267,21 +268,16 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
     }
   }
 
-  // Prefer the server-managed media URL (cross-device) and fall back to the
-  // legacy phone-local `file://` path (only meaningful on the original
-  // device that recorded it).
+  // Only server-persisted media (hasRawData + fileUrl). Never use phone-local file:// paths.
   const audioUris = s.coughRecordings
     .map((r) => {
-      if (r.hasRawData && typeof r.fileUrl === "string" && r.fileUrl.length > 0) return r.fileUrl;
-      return typeof r.fileUri === "string" ? r.fileUri : "";
+      if (!r.hasRawData || typeof r.fileUrl !== "string" || r.fileUrl.length === 0) return "";
+      return resolveMediaUrl(r.fileUrl) ?? "";
     })
     .filter((u) => u.length > 0);
 
-  const img = s.sputumImage;
-  const imageUri =
-    img?.hasRawData && typeof img.fileUrl === "string" && img.fileUrl.length > 0
-      ? img.fileUrl
-      : (img?.fileUri ?? "");
+  const img = s.sputumImage ?? null;
+  const imageUri = buildServerSputumImageUrl(s.sessionId, img) ?? "";
   const pp = img?.phlegmPrediction ?? null;
   const imageAnalyzed = Boolean(pp);
   const phlegmLoad = pp?.predictedLoad ?? "";
@@ -289,7 +285,7 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
     pp && typeof pp.confidence === "number" && Number.isFinite(pp.confidence)
       ? pp.confidence
       : null;
-  const imageProvided = imageUri.length > 0;
+  const imageProvided = Boolean(img?.hasRawData && imageUri.length > 0);
   const phlegmFailed = imageProvided && !imageAnalyzed;
 
   const rawReasons = s.result?.invalidAudioReasonsJson;
@@ -379,10 +375,14 @@ export default function ScreeningDetailsScreen() {
     let cancelled = false;
     setRemoteLoading(true);
     setRemoteError(null);
+    setRemoteVm(null);
     void (async () => {
       try {
         const { session } = await getScreening(sessionId);
         if (cancelled) return;
+        if (session.sessionId !== sessionId) {
+          throw new Error("Screening session mismatch.");
+        }
         setRemoteVm(mapSessionToViewModel(session));
       } catch (e) {
         if (cancelled) return;
@@ -410,9 +410,11 @@ export default function ScreeningDetailsScreen() {
     const probTbRaw = typeof params.probTb === "string" ? Number(params.probTb) : NaN;
     const probTb = Number.isFinite(probTbRaw) ? probTbRaw : null;
 
-    const audioUris = parseAudioUris(params.audioUris);
-    const imageUri = typeof params.imageUri === "string" ? params.imageUri : "";
-    const imageProvided = imageUri.length > 0;
+    const audioUris = parseAudioUris(params.audioUris).filter(
+      (u) => !u.toLowerCase().startsWith("file://") && !u.toLowerCase().startsWith("content://"),
+    );
+    const imageUri = "";
+    const imageProvided = false;
     const imageAnalyzed = params.phlegmAnalyzed === "1";
     const phlegmLoad = typeof params.phlegmLoad === "string" ? params.phlegmLoad : "";
     const phlegmConfStr =
@@ -777,6 +779,16 @@ export default function ScreeningDetailsScreen() {
                     </Animated.View>
                   ) : null}
                 </View>
+
+                <Card title="Sputum sample">
+                  <SputumSamplePhoto
+                    key={sessionId ?? "no-session"}
+                    sessionId={sessionId}
+                    uri={imageUri}
+                    height={260}
+                    label={imageProvided ? "Stored on your account (server)" : undefined}
+                  />
+                </Card>
 
                 <Card title="Input Summary">
                   <CheckRow

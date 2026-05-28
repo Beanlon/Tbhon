@@ -8,13 +8,37 @@ import { Image } from "expo-image";
 
 export default function ReviewInputsScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ audioDone?: string; audioUris?: string; imageUri?: string; checklist?: string }>();
+  const params = useLocalSearchParams<{
+    audioDone?: string;
+    audioUris?: string;
+    imageUri?: string;
+    checklist?: string;
+    sessionId?: string;
+    deviceSputum?: string;
+    sputumByteSize?: string;
+    sputumCapturedAt?: string;
+  }>();
 
   const audioDone = params.audioDone === "1";
   const imageDone = typeof params.imageUri === "string" && params.imageUri.length > 0;
   const imageUri = imageDone ? (params.imageUri as string) : null;
   const audioUris = typeof params.audioUris === "string" ? params.audioUris : "[]";
   const checklist = typeof params.checklist === "string" ? params.checklist : "";
+  const sessionId =
+    typeof params.sessionId === "string" && params.sessionId.trim().length > 0
+      ? params.sessionId.trim()
+      : "";
+  const sessionNavParams = sessionId.length > 0 ? ({ sessionId } as const) : {};
+  const deviceSputumNavParams =
+    params.deviceSputum === "1"
+      ? {
+          deviceSputum: "1" as const,
+          sputumByteSize:
+            typeof params.sputumByteSize === "string" ? params.sputumByteSize : "",
+          sputumCapturedAt:
+            typeof params.sputumCapturedAt === "string" ? params.sputumCapturedAt : "",
+        }
+      : {};
 
   const [audioOpen, setAudioOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
@@ -159,7 +183,7 @@ export default function ReviewInputsScreen() {
               onPress={() =>
                 router.replace({
                   pathname: "/screening/phlegm",
-                  params: { audioDone: audioDone ? "1" : "0", audioUris, checklist },
+                  params: { audioDone: audioDone ? "1" : "0", audioUris, checklist, ...sessionNavParams },
                 } as any)
               }
               className="flex-1 items-center justify-center rounded-2xl border border-navy/10 bg-navy/5 py-3.5 active:bg-navy/10 sm:py-4"
@@ -178,7 +202,14 @@ export default function ReviewInputsScreen() {
           onPress={() => {
             router.push({
               pathname: "/screening/processing",
-                params: { audioDone: audioDone ? "1" : "0", audioUris, imageUri: imageUri ?? "", checklist },
+              params: {
+                audioDone: audioDone ? "1" : "0",
+                audioUris,
+                imageUri: imageUri ?? "",
+                checklist,
+                ...sessionNavParams,
+                ...deviceSputumNavParams,
+              },
             } as any);
           }}
           disabled={!canAnalyze}
