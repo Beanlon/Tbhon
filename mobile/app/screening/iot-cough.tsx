@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Animated, Easing, Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { resetToAuthenticatedHome } from "../../utils/authNavigation";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -36,9 +37,11 @@ const LIGHT_LOADING_TINT = "#CFD9FF";
 const GRADIENT_COLORS = [palette.deepNavy, palette.navy, palette.signupBg] as const;
 
 const IOT_POLL_MS = 2500;
-const IOT_UPLOAD_TIMEOUT_MS = 90_000;
+const IOT_UPLOAD_TIMEOUT_MS = 180_000;
 const MIN_RECORD_SECONDS = 3;
 const MAX_RECORD_SECONDS = 10;
+const RETAKE_COOLDOWN_SECONDS = 5;
+const COUNTDOWN_START = 3;
 
 type CoughSlot = {
   recordingId: string;
@@ -50,6 +53,10 @@ type CoughSlot = {
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function isUploadWaitTimeout(e: unknown): boolean {
+  return e instanceof Error && e.message.includes("Timed out waiting for device audio");
 }
 
 function formatMs(ms: number): string {
@@ -126,6 +133,88 @@ function WaveBars({ amplitude }: { amplitude: number }) {
           }}
         />
       ))}
+    </View>
+  );
+}
+
+function CountdownOverlay({
+  count,
+  coughIndex,
+}: {
+  count: number | "Go";
+  coughIndex: number;
+}) {
+  const isNum = typeof count === "number";
+  const scaleAnim = useRef(new Animated.Value(1.5)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    scaleAnim.setValue(1.5);
+    opacityAnim.setValue(0);
+    Animated.parallel([
+      Animated.timing(scaleAnim, {
+        toValue: 0.75,
+        duration: 880,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 160,
+          useNativeDriver: true,
+        }),
+        Animated.delay(560),
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 160,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, [count, scaleAnim, opacityAnim]);
+
+  return (
+    <View
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 60,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(10,18,50,0.78)",
+      }}
+    >
+      <Animated.Text
+        style={{
+          fontSize: count === "Go" ? 64 : 88,
+          fontWeight: "800",
+          color: count === "Go" ? SUCCESS_GREEN : "#FFFFFF",
+          lineHeight: count === "Go" ? 70 : 96,
+          letterSpacing: -2,
+          textShadowColor: count === "Go" ? SUCCESS_GREEN : ACCENT_BLUE,
+          textShadowOffset: { width: 0, height: 0 },
+          textShadowRadius: 40,
+          transform: [{ scale: scaleAnim }],
+          opacity: opacityAnim,
+        }}
+      >
+        {count}
+      </Animated.Text>
+      <Text
+        style={{
+          color: count === "Go" ? SUCCESS_GREEN : "rgba(255,255,255,0.55)",
+          fontSize: count === "Go" ? 16 : 15,
+          fontWeight: count === "Go" ? "600" : "400",
+          marginTop: 16,
+          letterSpacing: 0.3,
+        }}
+      >
+        {count === "Go" ? "Cough now" : `Get ready for cough ${coughIndex}`}
+      </Text>
     </View>
   );
 }
@@ -259,6 +348,7 @@ function StepRow({
 
 export default function IotCoughScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const params = useLocalSearchParams<{
     checklist?: string;
     audioUris?: string;
@@ -280,6 +370,7 @@ export default function IotCoughScreen() {
 
   const [running, setRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [captured, setCaptured] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [completedThrough, setCompletedThrough] = useState(-1);
@@ -292,6 +383,11 @@ export default function IotCoughScreen() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playPositionMs, setPlayPositionMs] = useState(0);
   const [playDurationMs, setPlayDurationMs] = useState(0);
+  const [showCountdown, setShowCountdown] = useState(false);
+  const [countdownValue, setCountdownValue] = useState<number | "Go">(COUNTDOWN_START);
+  const [retakeCooldown, setRetakeCooldown] = useState(0);
+  const [recordedDurationMs, setRecordedDurationMs] = useState(0);
+  const [uploadSlowPrompt, setUploadSlowPrompt] = useState(false);
 
   const userIdRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string>(
@@ -307,6 +403,9 @@ export default function IotCoughScreen() {
   const uploadPollAbortRef = useRef<AbortController | null>(null);
   const autoStopTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopAudioCaptureRef = useRef<() => void>(() => {});
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retakeCooldownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const uploadElapsedBaseRef = useRef(0);
 
   const completedCoughs = slots.filter(Boolean).length;
   const allDone = completedCoughs >= IOT_COUGH_COUNT;
@@ -334,7 +433,7 @@ export default function IotCoughScreen() {
   }, []);
 
   useEffect(() => {
-    if (isRecording || (running && !captured)) {
+    if (isRecording || isUploading || (running && !captured)) {
       let t = 0;
       waveRef.current = setInterval(() => {
         t += 0.12;
@@ -347,10 +446,10 @@ export default function IotCoughScreen() {
     return () => {
       if (waveRef.current) clearInterval(waveRef.current);
     };
-  }, [isRecording, running, captured]);
+  }, [isRecording, isUploading, running, captured]);
 
   useEffect(() => {
-    if (isRecording) {
+    if (isRecording || isUploading) {
       const micLoop = Animated.loop(
         Animated.sequence([
           Animated.timing(micScale, {
@@ -371,7 +470,7 @@ export default function IotCoughScreen() {
       return () => micLoop.stop();
     }
     micScale.setValue(1);
-  }, [isRecording, micScale]);
+  }, [isRecording, isUploading, micScale]);
 
   useEffect(() => {
     return () => {
@@ -379,6 +478,14 @@ export default function IotCoughScreen() {
       if (autoStopTimerRef.current) {
         clearInterval(autoStopTimerRef.current);
         autoStopTimerRef.current = null;
+      }
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+      if (retakeCooldownIntervalRef.current) {
+        clearInterval(retakeCooldownIntervalRef.current);
+        retakeCooldownIntervalRef.current = null;
       }
       const s = playingRef.current;
       if (s) {
@@ -391,7 +498,54 @@ export default function IotCoughScreen() {
 
   const cancelUploadWait = useCallback(() => {
     uploadPollAbortRef.current?.abort();
+    uploadElapsedBaseRef.current = 0;
+    setUploadSlowPrompt(false);
   }, []);
+
+  const startRetakeCooldown = useCallback(() => {
+    setRetakeCooldown(RETAKE_COOLDOWN_SECONDS);
+    if (retakeCooldownIntervalRef.current) {
+      clearInterval(retakeCooldownIntervalRef.current);
+    }
+    retakeCooldownIntervalRef.current = setInterval(() => {
+      setRetakeCooldown((prev) => {
+        if (prev <= 1) {
+          if (retakeCooldownIntervalRef.current) {
+            clearInterval(retakeCooldownIntervalRef.current);
+            retakeCooldownIntervalRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  const handleBackPress = useCallback(() => {
+    Alert.alert(
+      "Exit Screening?",
+      "Going back will exit the entire screening process. Any recorded data will be lost. Are you sure you want to exit?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Exit Screening",
+          style: "destructive",
+          onPress: () => {
+            uploadPollAbortRef.current?.abort();
+            if (autoStopTimerRef.current) {
+              clearInterval(autoStopTimerRef.current);
+              autoStopTimerRef.current = null;
+            }
+            if (countdownIntervalRef.current) {
+              clearInterval(countdownIntervalRef.current);
+              countdownIntervalRef.current = null;
+            }
+            resetToAuthenticatedHome(navigation);
+          },
+        },
+      ],
+    );
+  }, [navigation]);
 
   const collectBaselineFingerprints = useCallback(() => {
     const set = new Set<string>();
@@ -428,7 +582,10 @@ export default function IotCoughScreen() {
       setActiveIndex(-1);
       setCaptured(true);
       setIsRecording(false);
+      setUploadSlowPrompt(false);
+      uploadElapsedBaseRef.current = 0;
       setStatusText("Audio received from device. Listen, then proceed or retake.");
+      startRetakeCooldown();
 
       const { status, label } = await checkCoughRecordingQuality(localUri);
       setSlots((prev) => {
@@ -440,43 +597,43 @@ export default function IotCoughScreen() {
         return next;
       });
     },
-    [],
+    [startRetakeCooldown],
   );
 
   const handleIoTError = useCallback((e: unknown, phase: "start" | "stop" | "upload" = "upload") => {
     const msg = e instanceof Error ? e.message : "Failed to capture audio";
     const sid = sessionIdRef.current.trim();
-    const sidHint = sid.length > 0 ? ` Session: ${sid.slice(0, 8)}…` : "";
+    const sidShort = sid.length > 0 ? sid.slice(0, 8) : "";
 
     if (e instanceof ApiError && e.status === 401) {
       setErrorText(
-        "Sign in on the app, or check EXPO_PUBLIC_IOT_API_KEY in mobile/.env if you are already signed in.",
+        "Please sign in to continue. If you're already signed in, the app may need to be restarted.",
       );
     } else if (e instanceof ApiError && e.status === 403) {
-      setErrorText("Sign in to link the device capture to your screening.");
+      setErrorText("Please sign in to link this recording to your screening session.");
     } else if (e instanceof ApiError && e.status === 409) {
       setErrorText(
         e.message.includes("seconds")
-          ? `Wait at least ${MIN_RECORD_SECONDS} seconds after recording starts, then tap Stop.`
+          ? `Please wait at least ${MIN_RECORD_SECONDS} seconds before stopping the recording.`
           : e.message.includes("No active audio")
-            ? `Stop was rejected — the device may not have started recording yet.${sidHint} Tap Record, wait for the device, then Stop again.`
+            ? "The device hasn't started recording yet. Tap Record and wait a moment before stopping."
             : msg,
       );
     } else if (msg.includes("Upload wait cancelled")) {
       setErrorText(
-        `Upload cancelled.${sidHint} Tap Record again after the device has finished uploading.`,
+        "Upload was cancelled. If the device is still uploading, wait for it to finish, then tap Record again.",
       );
     } else if (msg.includes("Timed out waiting for device audio")) {
       setErrorText(
-        `No audio reached the server within 90s.${sidHint} The ESP32 must POST to /iot/cough-recordings with the same userId and sessionId. Check Serial Monitor, then tap Record again.`,
+        `The screening device didn't send the audio in time.\n\nPlease check:\n• Device is powered on\n• Device is connected to Wi-Fi\n• Device shows recording activity\n\nThen tap Record to try again.${sidShort ? `\n\n[Session: ${sidShort}…]` : ""}`,
       );
     } else if (phase === "stop") {
-      setErrorText(`${msg}${sidHint}`);
+      setErrorText(`Something went wrong while stopping the recording. Please try again.${sidShort ? ` [${sidShort}…]` : ""}`);
     } else {
-      setErrorText(`${msg}${sidHint}`);
+      setErrorText(`Something went wrong. Please try again.${sidShort ? ` [${sidShort}…]` : ""}`);
     }
 
-    setStatusText(phase === "upload" ? "Audio not received — see message below." : null);
+    setStatusText(phase === "upload" ? null : null);
     setActiveIndex(-1);
     setCompletedThrough(-1);
     setIsRecording(false);
@@ -484,18 +641,24 @@ export default function IotCoughScreen() {
     setCanStopRecording(false);
   }, []);
 
-  const startAudioCapture = useCallback(async () => {
+  const beginRecordingAfterCountdown = useCallback(async () => {
+    setShowCountdown(false);
     setErrorText(null);
     setStatusText(null);
     setAudioHint(null);
     setCaptured(false);
+    setUploadSlowPrompt(false);
+    uploadElapsedBaseRef.current = 0;
     setRunning(true);
-    setActiveIndex(stepIndex("preparing"));
+    setActiveIndex(stepIndex("started"));
     setCompletedThrough(-1);
     setCanStopRecording(false);
 
     try {
       baselineFingerprintsRef.current = collectBaselineFingerprints();
+      const currentAttempt = coughIndexRef.current;
+      console.log(`[IoT Cough] Starting recording for cough ${currentAttempt}`);
+      console.log(`[IoT Cough] Local slots baseline: ${baselineFingerprintsRef.current.size} fingerprints`);
 
       setStatusText("Preparing session…");
       const { user } = await getMe();
@@ -505,21 +668,28 @@ export default function IotCoughScreen() {
       );
       sessionIdRef.current = ensuredSessionId;
       setScreeningSessionId(ensuredSessionId);
+      console.log(`[IoT Cough] Session: ${ensuredSessionId}, User: ${user.userId}`);
 
       const existing = await fetchSessionCoughRecordings(ensuredSessionId);
+      console.log(`[IoT Cough] Server has ${existing.length} recordings:`, existing.map(r => `slot${r.coughAttempt}:${r.recordingId?.slice(0,8)}:${r.byteSize}:${r.recordedAt?.slice(11,19) ?? 'no-time'}`).join(', '));
       for (const row of existing) {
+        // Add ALL server recordings to baseline including current slot's OLD recording
+        // This ensures we don't detect the OLD recording as "new" on retakes
         baselineFingerprintsRef.current.add(coughRecordingFingerprint(row));
+        if (row.coughAttempt === currentAttempt) {
+          console.log(`[IoT Cough] Added OLD slot ${row.coughAttempt} to baseline: ${coughRecordingFingerprint(row)}`);
+        }
       }
+      console.log(`[IoT Cough] Final baseline: ${baselineFingerprintsRef.current.size} fingerprints`);
 
-      setCompletedThrough(stepIndex("preparing"));
-
-      setActiveIndex(stepIndex("started"));
       setStatusText("Starting device recording…");
+      console.log(`[IoT Cough] Sending audio start command to device...`);
       await queueIotDeviceAudioStartCommand({
         userId: user.userId,
         sessionId: ensuredSessionId,
         coughAttempt: coughIndexRef.current,
       });
+      console.log(`[IoT Cough] Audio start command sent successfully`);
       setCompletedThrough(stepIndex("started"));
 
       setActiveIndex(stepIndex("recording"));
@@ -530,7 +700,6 @@ export default function IotCoughScreen() {
       setRunning(false);
       setSecondsRemaining(MAX_RECORD_SECONDS);
 
-      // Start countdown: tick every second, auto-stop at 0.
       const startedAt = Date.now();
       if (autoStopTimerRef.current) clearInterval(autoStopTimerRef.current);
       autoStopTimerRef.current = setInterval(() => {
@@ -554,7 +723,50 @@ export default function IotCoughScreen() {
     }
   }, [collectBaselineFingerprints, handleIoTError, screeningSessionId]);
 
+  const startAudioCapture = useCallback(() => {
+    setShowCountdown(true);
+    setCountdownValue(COUNTDOWN_START);
+
+    let count = COUNTDOWN_START;
+    countdownIntervalRef.current = setInterval(() => {
+      count--;
+      if (count === 0) {
+        setCountdownValue("Go");
+      } else if (count < 0) {
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+        }
+        void beginRecordingAfterCountdown();
+      } else {
+        setCountdownValue(count);
+      }
+    }, 900);
+  }, [beginRecordingAfterCountdown]);
+
+  const runUploadPoll = useCallback(async (sessionId: string) => {
+    uploadPollAbortRef.current?.abort();
+    uploadPollAbortRef.current = new AbortController();
+    console.log(`[IoT Cough] Waiting for upload, polling for cough ${coughIndexRef.current}...`);
+    console.log(`[IoT Cough] Baseline has ${baselineFingerprintsRef.current.size} fingerprints to exclude`);
+    const preview = await pollForNewCoughRecording(sessionId, baselineFingerprintsRef.current, {
+      timeoutMs: IOT_UPLOAD_TIMEOUT_MS,
+      intervalMs: IOT_POLL_MS,
+      signal: uploadPollAbortRef.current.signal,
+      coughAttempt: coughIndexRef.current,
+      onProgress: (elapsedMs) => {
+        const sec = Math.floor((uploadElapsedBaseRef.current + elapsedMs) / 1000);
+        setStatusText(`Sending audio to the server… ${sec}s`);
+      },
+    });
+    uploadPollAbortRef.current = null;
+    return preview;
+  }, []);
+
   const stopAudioCapture = useCallback(async () => {
+    const elapsedRecordingSecs = MAX_RECORD_SECONDS - secondsRemaining;
+    setRecordedDurationMs(elapsedRecordingSecs * 1000);
+
     if (autoStopTimerRef.current) {
       clearInterval(autoStopTimerRef.current);
       autoStopTimerRef.current = null;
@@ -568,41 +780,99 @@ export default function IotCoughScreen() {
     }
 
     setRunning(true);
+    setIsRecording(false);
     setErrorText(null);
     setCanStopRecording(false);
 
+    let enteredSlowPrompt = false;
     try {
       setActiveIndex(stepIndex("ended"));
       setStatusText("Stopping recording…");
       await queueIotDeviceStopAudioCommand({ userId, sessionId });
       setCompletedThrough(stepIndex("ended"));
 
-      setActiveIndex(-1);
-      uploadPollAbortRef.current?.abort();
-      uploadPollAbortRef.current = new AbortController();
-      const preview = await pollForNewCoughRecording(sessionId, baselineFingerprintsRef.current, {
-        timeoutMs: IOT_UPLOAD_TIMEOUT_MS,
-        intervalMs: IOT_POLL_MS,
-        signal: uploadPollAbortRef.current.signal,
-        coughAttempt: coughIndexRef.current,
-        onProgress: (elapsedMs) => {
-          const sec = Math.floor(elapsedMs / 1000);
-          setStatusText(
-            `Waiting for device upload… ${sec}s (ESP32 must send audio to the server)`,
-          );
-        },
-      });
-      uploadPollAbortRef.current = null;
+      setActiveIndex(stepIndex("uploading"));
+      setIsUploading(true);
+      setUploadSlowPrompt(false);
+      setStatusText("Sending audio to the server…");
+      const preview = await runUploadPoll(sessionId);
+      console.log(`[IoT Cough] Received upload! recordingId: ${preview.recordingId?.slice(0,8)}, byteSize: ${preview.byteSize}, recordedAt: ${preview.recordedAt?.slice(11,19) ?? 'no-time'}`);
+      setCompletedThrough(stepIndex("uploading"));
       await applyCapturedPreview(preview, sessionId);
     } catch (e) {
-      const phase =
-        e instanceof ApiError && (e.status === 409 || e.status === 400) ? "stop" : "upload";
-      handleIoTError(e, phase);
+      if (isUploadWaitTimeout(e)) {
+        enteredSlowPrompt = true;
+        uploadElapsedBaseRef.current += IOT_UPLOAD_TIMEOUT_MS;
+        setUploadSlowPrompt(true);
+        setStatusText(
+          "Upload is taking longer than usual. Your device may still be sending over a slow connection.",
+        );
+      } else {
+        const phase =
+          e instanceof ApiError && (e.status === 409 || e.status === 400) ? "stop" : "upload";
+        handleIoTError(e, phase);
+      }
     } finally {
-      setRunning(false);
-      setIsRecording(false);
+      if (!enteredSlowPrompt) {
+        setRunning(false);
+        setIsRecording(false);
+        setIsUploading(false);
+      }
     }
-  }, [applyCapturedPreview, handleIoTError]);
+  }, [applyCapturedPreview, handleIoTError, runUploadPoll, secondsRemaining]);
+
+  const keepWaitingForUpload = useCallback(async () => {
+    const sessionId = sessionIdRef.current.trim();
+    if (!sessionId) {
+      setErrorText("Session not ready. Tap Record cough again to prepare the session.");
+      return;
+    }
+
+    setUploadSlowPrompt(false);
+    setErrorText(null);
+    setRunning(true);
+    setIsUploading(true);
+    setStatusText("Sending audio to the server…");
+
+    let enteredSlowPrompt = false;
+    try {
+      const preview = await runUploadPoll(sessionId);
+      console.log(`[IoT Cough] Received upload! recordingId: ${preview.recordingId?.slice(0,8)}, byteSize: ${preview.byteSize}, recordedAt: ${preview.recordedAt?.slice(11,19) ?? 'no-time'}`);
+      setCompletedThrough(stepIndex("uploading"));
+      await applyCapturedPreview(preview, sessionId);
+    } catch (e) {
+      if (isUploadWaitTimeout(e)) {
+        enteredSlowPrompt = true;
+        uploadElapsedBaseRef.current += IOT_UPLOAD_TIMEOUT_MS;
+        setUploadSlowPrompt(true);
+        setStatusText(
+          "Upload is taking longer than usual. Your device may still be sending over a slow connection.",
+        );
+      } else {
+        handleIoTError(e, "upload");
+      }
+    } finally {
+      if (!enteredSlowPrompt) {
+        setRunning(false);
+        setIsUploading(false);
+      }
+    }
+  }, [applyCapturedPreview, handleIoTError, runUploadPoll]);
+
+  const tryAgainAfterSlowUpload = useCallback(() => {
+    uploadPollAbortRef.current?.abort();
+    uploadPollAbortRef.current = null;
+    uploadElapsedBaseRef.current = 0;
+    setUploadSlowPrompt(false);
+    setRunning(false);
+    setIsUploading(false);
+    setCompletedThrough(-1);
+    setActiveIndex(-1);
+    setErrorText(null);
+    setStatusText(
+      "If your device is still uploading, wait for it to finish before recording again. Tap Record cough when you're ready.",
+    );
+  }, []);
 
   useEffect(() => {
     stopAudioCaptureRef.current = () => {
@@ -611,19 +881,47 @@ export default function IotCoughScreen() {
   }, [stopAudioCapture]);
 
   const retakeCurrent = useCallback(async () => {
+    console.log(`[IoT Cough] Retake requested for cough ${coughIndex}`);
     if (autoStopTimerRef.current) {
       clearInterval(autoStopTimerRef.current);
       autoStopTimerRef.current = null;
     }
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    if (retakeCooldownIntervalRef.current) {
+      clearInterval(retakeCooldownIntervalRef.current);
+      retakeCooldownIntervalRef.current = null;
+    }
+    uploadPollAbortRef.current?.abort();
     await stopCurrent();
     setSlots((prev) => {
       const next = [...prev];
       next[coughIndex - 1] = null;
+      console.log(`[IoT Cough] Cleared slot ${coughIndex}, remaining slots:`, next.map((s, i) => s ? `slot${i+1}:${s.recordingId?.slice(0,8)}` : `slot${i+1}:empty`).join(', '));
       return next;
     });
     setCaptured(false);
-    await startAudioCapture();
-  }, [coughIndex, startAudioCapture, stopCurrent]);
+    setRunning(false);
+    setIsRecording(false);
+    setIsUploading(false);
+    setUploadSlowPrompt(false);
+    uploadElapsedBaseRef.current = 0;
+    setShowCountdown(false);
+    setCompletedThrough(-1);
+    setActiveIndex(-1);
+    setStatusText(null);
+    setErrorText(null);
+    setAudioHint(null);
+    setCanStopRecording(false);
+    setRetakeCooldown(0);
+    setPlayPositionMs(0);
+    setPlayDurationMs(0);
+    setRecordedDurationMs(0);
+    setSecondsRemaining(MAX_RECORD_SECONDS);
+    console.log(`[IoT Cough] Retake state reset complete, ready for new recording`);
+  }, [coughIndex, stopCurrent]);
 
   const stopCurrent = useCallback(async () => {
     const s = playingRef.current;
@@ -735,16 +1033,26 @@ export default function IotCoughScreen() {
     }
     if (captured) {
       return {
-        mainLabel: "Cough captured!",
-        subLabel: "Play back the recording. Retake if it is not clear enough.",
+        mainLabel: "Cough captured",
+        subLabel: "Play back to verify, or retake if unclear.",
+      };
+    }
+    if (isUploading) {
+      if (uploadSlowPrompt) {
+        return {
+          mainLabel: "Upload taking longer…",
+          subLabel: "Your device may still be sending over a slow connection.",
+        };
+      }
+      return {
+        mainLabel: "Uploading audio…",
+        subLabel: "",
       };
     }
     if (isRecording) {
       return {
-        mainLabel: "Recording on device…",
-        subLabel: canStopRecording
-          ? `Auto-stops in ${secondsRemaining}s — tap Stop anytime`
-          : `Wait ${MIN_RECORD_SECONDS}s before stopping (auto-stops in ${secondsRemaining}s)`,
+        mainLabel: "Recording in progress",
+        subLabel: "",
       };
     }
     if (running) {
@@ -757,20 +1065,23 @@ export default function IotCoughScreen() {
       mainLabel: "Ready to record",
       subLabel: `Tap Record to start cough ${coughIndex} on the screening device`,
     };
-  }, [allDone, canStopRecording, captured, coughIndex, isRecording, running, secondsRemaining]);
+  }, [allDone, canStopRecording, captured, coughIndex, isRecording, isUploading, running, secondsRemaining, uploadSlowPrompt]);
 
   const micBgColor = captured || allDone
     ? SUCCESS_GREEN
-    : isRecording
-      ? ACCENT_BLUE
-      : "#314188";
+    : isUploading
+      ? palette.softViolet
+      : isRecording
+        ? ACCENT_BLUE
+        : "#314188";
 
   const sessionLabel = screeningSessionId?.trim().length ? screeningSessionId.trim() : "Pending assignment";
 
   const isWaitingForUpload = running && completedThrough >= stepIndex("ended");
-  const showRecordButton = !running && !isRecording && !captured;
+  const showRecordButton = !running && !isRecording && !captured && !uploadSlowPrompt;
   const showStopButton = isRecording && !running;
-  const showCancelUpload = isWaitingForUpload;
+  const showCancelUpload = isWaitingForUpload && !uploadSlowPrompt;
+  const showUploadSlowPrompt = uploadSlowPrompt && isUploading;
   const showReviewActions = captured && !running && !isRecording;
 
   return (
@@ -778,6 +1089,9 @@ export default function IotCoughScreen() {
       <StatusBar style="light" backgroundColor={palette.deepNavy} translucent={false} />
       <LinearGradient colors={GRADIENT_COLORS} style={{ flex: 1 }}>
         <SafeAreaView style={{ flex: 1 }} edges={["top", "right", "bottom", "left"]}>
+          {showCountdown && (
+            <CountdownOverlay count={countdownValue} coughIndex={coughIndex} />
+          )}
           <ScrollView
             bounces={false}
             showsVerticalScrollIndicator={false}
@@ -788,42 +1102,46 @@ export default function IotCoughScreen() {
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
-                paddingHorizontal: 28,
+                paddingHorizontal: 20,
                 paddingVertical: 8,
               }}
             >
-              <View style={{ width: 44, height: 44 }} />
-              <View style={{ alignItems: "center" }}>
-                <Text style={{ fontSize: 16, fontWeight: "600", color: "#fff", letterSpacing: -0.2 }}>
+              <Pressable
+                onPress={handleBackPress}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: "rgba(255,255,255,0.08)",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.1)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.8)" />
+              </Pressable>
+              <View style={{ alignItems: "center", flex: 1, paddingHorizontal: 12 }}>
+                <Text style={{ fontSize: 15, fontWeight: "700", color: "#fff", letterSpacing: -0.2 }}>
                   Cough {coughIndex} of {IOT_COUGH_COUNT}
                 </Text>
                 <Text
-                  style={{ fontSize: 12, fontWeight: "500", color: "rgba(255,255,255,0.5)", marginTop: 2 }}
+                  style={{ fontSize: 11, fontWeight: "500", color: "rgba(255,255,255,0.45)", marginTop: 2 }}
                 >
                   Device audio capture
                 </Text>
-                <View
+                <Text
                   style={{
-                    marginTop: 8,
-                    borderWidth: 1,
-                    borderColor: "rgba(255,255,255,0.16)",
-                    borderRadius: 999,
-                    paddingHorizontal: 10,
-                    paddingVertical: 4,
-                    backgroundColor: "rgba(255,255,255,0.08)",
+                    marginTop: 6,
+                    fontSize: 9,
+                    fontWeight: "500",
+                    color: "rgba(255,255,255,0.35)",
+                    letterSpacing: 0.3,
                   }}
+                  numberOfLines={1}
                 >
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      fontWeight: "700",
-                      color: "rgba(255,255,255,0.86)",
-                      letterSpacing: 0.2,
-                    }}
-                  >
-                    Session ID: {sessionLabel}
-                  </Text>
-                </View>
+                  {sessionLabel}
+                </Text>
               </View>
               <View style={{ width: 40 }} />
             </View>
@@ -887,11 +1205,11 @@ export default function IotCoughScreen() {
                   position: "absolute",
                 }}
               />
-              {isRecording && (
+              {(isRecording || isUploading) && (
                 <>
-                  <PulseRing delay={0} active={isRecording} />
-                  <PulseRing delay={600} active={isRecording} />
-                  <PulseRing delay={1200} active={isRecording} />
+                  <PulseRing delay={0} active={isRecording || isUploading} />
+                  <PulseRing delay={600} active={isRecording || isUploading} />
+                  <PulseRing delay={1200} active={isRecording || isUploading} />
                 </>
               )}
               <Animated.View
@@ -912,6 +1230,8 @@ export default function IotCoughScreen() {
               >
                 {captured ? (
                   <Ionicons name="checkmark" size={32} color="#fff" />
+                ) : isUploading ? (
+                  <Ionicons name="cloud-upload" size={30} color="#fff" />
                 ) : (
                   <Ionicons
                     name="mic"
@@ -928,7 +1248,7 @@ export default function IotCoughScreen() {
                 style={{
                   fontSize: 26,
                   fontWeight: "700",
-                  color: captured ? SUCCESS_GREEN : isRecording || running ? COOL_VIOLET_TEXT : "#fff",
+                  color: captured ? SUCCESS_GREEN : isRecording || isUploading || running ? COOL_VIOLET_TEXT : "#fff",
                   letterSpacing: -0.5,
                   marginBottom: 8,
                   textAlign: "center",
@@ -936,18 +1256,157 @@ export default function IotCoughScreen() {
               >
                 {mainLabel}
               </Text>
-              <Text
+              {subLabel.length > 0 && (
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: "rgba(255,255,255,0.7)",
+                    textAlign: "center",
+                    lineHeight: 20,
+                    maxWidth: 260,
+                  }}
+                >
+                  {subLabel}
+                </Text>
+              )}
+            </View>
+
+            {/* Recording countdown bar - positioned like playback bar */}
+            {isRecording && (
+              <View
                 style={{
-                  fontSize: 14,
-                  color: "rgba(255,255,255,0.7)",
-                  textAlign: "center",
-                  lineHeight: 20,
-                  maxWidth: 260,
+                  marginHorizontal: 28,
+                  marginBottom: 20,
+                  backgroundColor: "rgba(239,68,68,0.1)",
+                  borderWidth: 1,
+                  borderColor: "rgba(239,68,68,0.22)",
+                  borderRadius: 18,
+                  padding: 16,
+                  paddingHorizontal: 20,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
                 }}
               >
-                {subLabel}
-              </Text>
-            </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Animated.View
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 5,
+                      backgroundColor: "#EF4444",
+                      opacity: waveAmplitude > 0.5 ? 1 : 0.4,
+                    }}
+                  />
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "700",
+                      color: "rgba(255,255,255,0.55)",
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Recording
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "baseline", gap: 3 }}>
+                  <Text
+                    style={{
+                      fontSize: 28,
+                      fontWeight: "800",
+                      color: "#EF4444",
+                      lineHeight: 32,
+                      letterSpacing: -1,
+                    }}
+                  >
+                    {String(MAX_RECORD_SECONDS - secondsRemaining).padStart(2, "0")}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: "600",
+                      color: "rgba(255,255,255,0.28)",
+                    }}
+                  >
+                    /{MAX_RECORD_SECONDS}s
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Playback bar - shown when captured */}
+            {captured && currentSlot?.localUri && (() => {
+              const displayDuration = playDurationMs > 0 ? playDurationMs : recordedDurationMs;
+              const progressPct = displayDuration > 0 ? (playPositionMs / displayDuration) * 100 : 0;
+              return (
+                <View
+                  style={{
+                    marginHorizontal: 28,
+                    marginBottom: 20,
+                    backgroundColor: "rgba(255,255,255,0.08)",
+                    borderWidth: 1,
+                    borderColor: "rgba(255,255,255,0.12)",
+                    borderRadius: 18,
+                    padding: 16,
+                    paddingHorizontal: 18,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+                    <Pressable
+                      onPress={playCurrent}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 22,
+                        backgroundColor: SUCCESS_GREEN,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        shadowColor: SUCCESS_GREEN,
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.4,
+                        shadowRadius: 12,
+                        elevation: 4,
+                      }}
+                    >
+                      <Ionicons
+                        name={isPlaying ? "pause" : "play"}
+                        size={18}
+                        color="#fff"
+                        style={{ marginLeft: isPlaying ? 0 : 2 }}
+                      />
+                    </Pressable>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 7 }}>
+                        <Text style={{ fontSize: 12.5, fontWeight: "600", color: "rgba(255,255,255,0.75)" }}>
+                          Cough {coughIndex} recording
+                        </Text>
+                        <Text style={{ fontSize: 12, color: "rgba(255,255,255,0.52)" }}>
+                          {formatMs(playPositionMs)} / {formatMs(displayDuration)}
+                        </Text>
+                      </View>
+                      <View
+                        style={{
+                          height: 4,
+                          backgroundColor: "rgba(255,255,255,0.1)",
+                          borderRadius: 2,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <View
+                          style={{
+                            height: "100%",
+                            width: `${Math.min(100, progressPct)}%`,
+                            backgroundColor: SUCCESS_GREEN,
+                            borderRadius: 2,
+                          }}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              );
+            })()}
 
             <View
               style={{
@@ -1030,7 +1489,7 @@ export default function IotCoughScreen() {
                 </Pressable>
               )}
 
-              {running && !showCancelUpload && (
+              {running && !showCancelUpload && !showUploadSlowPrompt && (
                 <View
                   style={{
                     backgroundColor: "rgba(255,255,255,0.06)",
@@ -1086,58 +1545,118 @@ export default function IotCoughScreen() {
                 </View>
               )}
 
+              {showUploadSlowPrompt && (
+                <View style={{ gap: 10 }}>
+                  <View
+                    style={{
+                      backgroundColor: "rgba(255,255,255,0.06)",
+                      borderRadius: 18,
+                      paddingVertical: 14,
+                      paddingHorizontal: 16,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontWeight: "600",
+                        color: "rgba(255,255,255,0.7)",
+                        textAlign: "center",
+                        lineHeight: 20,
+                      }}
+                    >
+                      {statusText}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => void keepWaitingForUpload()}>
+                    {({ pressed }) => (
+                      <View
+                        style={{
+                          backgroundColor: pressed ? CTA_BLUE_PRESSED : CTA_BLUE,
+                          borderRadius: 18,
+                          paddingVertical: 16,
+                          alignItems: "center",
+                          shadowColor: CTA_BLUE,
+                          shadowOffset: { width: 0, height: 8 },
+                          shadowOpacity: 0.3,
+                          shadowRadius: 24,
+                          elevation: 6,
+                        }}
+                      >
+                        <Text style={{ fontSize: 15, fontWeight: "700", color: "#fff" }}>Keep waiting</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                  <Pressable onPress={tryAgainAfterSlowUpload}>
+                    {({ pressed }) => (
+                      <View
+                        style={{
+                          backgroundColor: pressed ? "rgba(26,52,120,0.75)" : "rgba(26,52,120,0.55)",
+                          borderRadius: 18,
+                          paddingVertical: 14,
+                          alignItems: "center",
+                          borderWidth: 1,
+                          borderColor: "rgba(255,255,255,0.16)",
+                        }}
+                      >
+                        <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff" }}>Try again</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                </View>
+              )}
+
               {showReviewActions && (
                 <View style={{ gap: 10 }}>
                   <CoughQualityBadge
                     status={currentSlot?.qualityStatus ?? "skipped"}
                     label={currentSlot?.qualityLabel ?? ""}
                   />
-                  <View style={{ flexDirection: "row", gap: 10 }}>
-                    <Pressable onPress={playCurrent} style={{ flex: 1 }}>
-                      {({ pressed }) => (
-                        <View
+                  {/* Retake button - shows countdown during cooldown, icon + "Retake" after */}
+                  <Pressable
+                    onPress={retakeCurrent}
+                    disabled={retakeCooldown > 0}
+                  >
+                    {({ pressed }) => (
+                      <View
+                        style={{
+                          backgroundColor:
+                            retakeCooldown > 0
+                              ? "rgba(255,255,255,0.04)"
+                              : pressed
+                                ? "rgba(26,52,120,0.75)"
+                                : "rgba(26,52,120,0.55)",
+                          borderRadius: 16,
+                          paddingVertical: 14,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexDirection: "row",
+                          gap: 8,
+                          borderWidth: 1,
+                          borderColor:
+                            retakeCooldown > 0
+                              ? "rgba(255,255,255,0.06)"
+                              : "rgba(255,255,255,0.16)",
+                          opacity: retakeCooldown > 0 ? 0.5 : 1,
+                        }}
+                      >
+                        <Ionicons
+                          name="refresh"
+                          size={16}
+                          color={retakeCooldown > 0 ? "rgba(255,255,255,0.25)" : "#fff"}
+                        />
+                        <Text
                           style={{
-                            backgroundColor: isPlaying
-                              ? pressed ? "rgba(239,68,68,0.75)" : "rgba(239,68,68,0.55)"
-                              : pressed ? "rgba(26,52,120,0.75)" : "rgba(26,52,120,0.55)",
-                            borderRadius: 16,
-                            paddingVertical: 11,
-                            alignItems: "center",
-                            borderWidth: 1,
-                            borderColor: isPlaying ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.16)",
-                            gap: 2,
+                            fontSize: 14,
+                            fontWeight: "700",
+                            color: retakeCooldown > 0 ? "rgba(255,255,255,0.25)" : "#fff",
                           }}
                         >
-                          <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff" }}>
-                            {isPlaying ? "Stop" : "Play"}
-                          </Text>
-                          {playDurationMs > 0 ? (
-                            <Text style={{ fontSize: 11, fontWeight: "600", color: "rgba(255,255,255,0.65)" }}>
-                              {isPlaying
-                                ? `${formatMs(playPositionMs)} / ${formatMs(playDurationMs)}`
-                                : formatMs(playDurationMs)}
-                            </Text>
-                          ) : null}
-                        </View>
-                      )}
-                    </Pressable>
-                    <Pressable onPress={retakeCurrent} style={{ flex: 1 }}>
-                      {({ pressed }) => (
-                        <View
-                          style={{
-                            backgroundColor: pressed ? "rgba(26,52,120,0.75)" : "rgba(26,52,120,0.55)",
-                            borderRadius: 16,
-                            paddingVertical: 14,
-                            alignItems: "center",
-                            borderWidth: 1,
-                            borderColor: "rgba(255,255,255,0.16)",
-                          }}
-                        >
-                          <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff" }}>Retake</Text>
-                        </View>
-                      )}
-                    </Pressable>
-                  </View>
+                          {retakeCooldown > 0 ? `Retake (${retakeCooldown}s)` : "Retake"}
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
                   {(() => {
                     const qs = currentSlot?.qualityStatus ?? "skipped";
                     const proceedDisabled = qs === "checking" || qs === "bad";
@@ -1188,17 +1707,43 @@ export default function IotCoughScreen() {
               )}
 
               {errorText ? (
-                <Text
+                <View
                   style={{
-                    marginTop: 4,
-                    textAlign: "center",
-                    color: "rgba(255,255,255,0.78)",
-                    fontSize: 13,
-                    fontWeight: "600",
+                    marginTop: 12,
+                    backgroundColor: "rgba(239,68,68,0.12)",
+                    borderWidth: 1,
+                    borderColor: "rgba(239,68,68,0.25)",
+                    borderRadius: 16,
+                    padding: 16,
+                    flexDirection: "row",
+                    gap: 12,
                   }}
                 >
-                  {errorText}
-                </Text>
+                  <View
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 14,
+                      backgroundColor: "rgba(239,68,68,0.2)",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Ionicons name="alert-circle" size={16} color="#EF4444" />
+                  </View>
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: "rgba(255,255,255,0.85)",
+                      fontSize: 13,
+                      fontWeight: "500",
+                      lineHeight: 19,
+                    }}
+                  >
+                    {errorText}
+                  </Text>
+                </View>
               ) : null}
               {audioHint ? (
                 <Text
@@ -1212,7 +1757,7 @@ export default function IotCoughScreen() {
                   {audioHint}
                 </Text>
               ) : null}
-              {!errorText && statusText && !showReviewActions && !running ? (
+              {!errorText && statusText && !showReviewActions && !running && !isRecording ? (
                 <Text
                   style={{
                     textAlign: "center",

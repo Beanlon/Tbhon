@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Pressable, Text, View } from "react-native";
+import { Alert, Animated, Easing, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { resetToAuthenticatedHome } from "../../utils/authNavigation";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -27,6 +28,7 @@ const GRADIENT_COLORS = [palette.deepNavy, palette.navy, palette.signupBg] as co
 
 const IOT_POLL_MS = 2500;
 const IOT_TIMEOUT_MS = 120_000;
+const RETAKE_COOLDOWN_SECONDS = 5;
 
 type SputumPreview = Awaited<ReturnType<typeof fetchSessionSputumPreview>>;
 
@@ -216,6 +218,7 @@ function StepRow({
 
 export default function IotSputumScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const params = useLocalSearchParams<{
     checklist?: string;
     audioDone?: string;
@@ -257,6 +260,9 @@ export default function IotSputumScreen() {
   const [completedThrough, setCompletedThrough] = useState(-1);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
+  const [retakeCooldown, setRetakeCooldown] = useState(0);
+
+  const retakeCooldownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const done = completedThrough >= IOT_SPUTUM_STEPS.length - 1 && !running && !errorText;
 
@@ -292,6 +298,54 @@ export default function IotSputumScreen() {
   }, [isCapturing, iconScale]);
 
   const REQUEST_STEPS = IOT_SPUTUM_STEPS;
+
+  useEffect(() => {
+    return () => {
+      if (retakeCooldownIntervalRef.current) {
+        clearInterval(retakeCooldownIntervalRef.current);
+        retakeCooldownIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  const startRetakeCooldown = useCallback(() => {
+    setRetakeCooldown(RETAKE_COOLDOWN_SECONDS);
+    if (retakeCooldownIntervalRef.current) {
+      clearInterval(retakeCooldownIntervalRef.current);
+    }
+    retakeCooldownIntervalRef.current = setInterval(() => {
+      setRetakeCooldown((prev) => {
+        if (prev <= 1) {
+          if (retakeCooldownIntervalRef.current) {
+            clearInterval(retakeCooldownIntervalRef.current);
+            retakeCooldownIntervalRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  const handleBackPress = useCallback(() => {
+    Alert.alert(
+      "Exit Screening?",
+      "Going back will exit the entire screening process. Any recorded data will be lost. Are you sure you want to exit?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Exit Screening",
+          style: "destructive",
+          onPress: () => {
+            router.replace({
+              pathname: "/screening/checklist",
+              params: { checklist },
+            } as any);
+          },
+        },
+      ],
+    );
+  }, [navigation]);
 
   const goToReview = useCallback(() => {
     const hasImage = Boolean(previewImageUri && previewImageUri.length > 0);
@@ -384,6 +438,7 @@ export default function IotSputumScreen() {
         setCompletedThrough(IOT_SPUTUM_STEPS.length - 1);
         setActiveIndex(-1);
         setStatusText("Photo received from device. Proceed or retake.");
+        startRetakeCooldown();
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Failed to capture image";
         if (e instanceof ApiError && e.status === 401) {
@@ -403,7 +458,7 @@ export default function IotSputumScreen() {
         setRunning(false);
       }
     },
-    [pollForSputumPreview, screeningSessionId],
+    [pollForSputumPreview, screeningSessionId, startRetakeCooldown],
   );
 
   const startCapture = useCallback(async () => {
@@ -437,55 +492,46 @@ export default function IotSputumScreen() {
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
-              paddingHorizontal: 28,
+              paddingHorizontal: 20,
               paddingVertical: 8,
             }}
           >
             <Pressable
-              onPress={() => router.back()}
-              disabled={running}
+              onPress={handleBackPress}
               style={{
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                backgroundColor: "rgba(255,255,255,0.12)",
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                backgroundColor: "rgba(255,255,255,0.08)",
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.1)",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+              <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.8)" />
             </Pressable>
-            <View style={{ alignItems: "center" }}>
-              <Text style={{ fontSize: 16, fontWeight: "600", color: "#fff", letterSpacing: -0.2 }}>
+            <View style={{ alignItems: "center", flex: 1, paddingHorizontal: 12 }}>
+              <Text style={{ fontSize: 15, fontWeight: "700", color: "#fff", letterSpacing: -0.2 }}>
                 Device sputum sample
               </Text>
               <Text
-                style={{ fontSize: 12, fontWeight: "500", color: "rgba(255,255,255,0.5)", marginTop: 2 }}
+                style={{ fontSize: 11, fontWeight: "500", color: "rgba(255,255,255,0.45)", marginTop: 2 }}
               >
                 Request a still photo from the bench device
               </Text>
-              <View
+              <Text
                 style={{
-                  marginTop: 8,
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.16)",
-                  borderRadius: 999,
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                  backgroundColor: "rgba(255,255,255,0.08)",
+                  marginTop: 6,
+                  fontSize: 9,
+                  fontWeight: "500",
+                  color: "rgba(255,255,255,0.35)",
+                  letterSpacing: 0.3,
                 }}
+                numberOfLines={1}
               >
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontWeight: "700",
-                    color: "rgba(255,255,255,0.86)",
-                    letterSpacing: 0.2,
-                  }}
-                >
-                  Session ID: {sessionLabel}
-                </Text>
-              </View>
+                {sessionLabel}
+              </Text>
             </View>
             <View style={{ width: 40 }} />
           </View>
@@ -678,19 +724,48 @@ export default function IotSputumScreen() {
             )}
             {done && (
               <View style={{ flexDirection: "row", gap: 12 }}>
-                <Pressable onPress={startRetake} style={{ flex: 1 }}>
+                <Pressable
+                  onPress={startRetake}
+                  disabled={retakeCooldown > 0}
+                  style={{ flex: 1 }}
+                >
                   {({ pressed }) => (
                     <View
                       style={{
-                        backgroundColor: pressed ? "rgba(26,52,120,0.72)" : "rgba(26,52,120,0.5)",
+                        backgroundColor:
+                          retakeCooldown > 0
+                            ? "rgba(255,255,255,0.04)"
+                            : pressed
+                              ? "rgba(26,52,120,0.72)"
+                              : "rgba(26,52,120,0.5)",
                         borderRadius: 18,
                         paddingVertical: 17,
                         alignItems: "center",
+                        justifyContent: "center",
+                        flexDirection: "row",
+                        gap: 8,
                         borderWidth: 1,
-                        borderColor: "rgba(255,255,255,0.16)",
+                        borderColor:
+                          retakeCooldown > 0
+                            ? "rgba(255,255,255,0.06)"
+                            : "rgba(255,255,255,0.16)",
+                        opacity: retakeCooldown > 0 ? 0.5 : 1,
                       }}
                     >
-                      <Text style={{ fontSize: 15, fontWeight: "700", color: "#fff" }}>Retake</Text>
+                      <Ionicons
+                        name="refresh"
+                        size={16}
+                        color={retakeCooldown > 0 ? "rgba(255,255,255,0.25)" : "#fff"}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          fontWeight: "700",
+                          color: retakeCooldown > 0 ? "rgba(255,255,255,0.25)" : "#fff",
+                        }}
+                      >
+                        {retakeCooldown > 0 ? `Retake (${retakeCooldown}s)` : "Retake"}
+                      </Text>
                     </View>
                   )}
                 </Pressable>
