@@ -8,10 +8,10 @@ export type IotStep = {
 };
 
 export const IOT_COUGH_STEPS: IotStep[] = [
-  { id: "preparing", label: "Preparing device", duration: 1200 },
   { id: "started", label: "Recording started", duration: 800 },
   { id: "recording", label: "Recording in progress", duration: 3000 },
   { id: "ended", label: "Recording ended", duration: 600 },
+  { id: "uploading", label: "Uploading to server", duration: 2000 },
 ];
 
 export const IOT_COUGH_STATUS_LABELS = IOT_COUGH_STEPS.map((s) => s.label);

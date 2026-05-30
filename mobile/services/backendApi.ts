@@ -483,10 +483,13 @@ export type SessionCoughRecordingPreview = {
   source: string | null;
   /** Which cough slot (1-based) this recording belongs to. Null for legacy rows. */
   coughAttempt: number | null;
+  /** When the recording was last updated (for detecting retakes with same byteSize). */
+  recordedAt: string | null;
 };
 
 export function coughRecordingFingerprint(preview: SessionCoughRecordingPreview): string {
-  return `${preview.recordingId}|${preview.byteSize}`;
+  // Include recordedAt to detect retakes even when byteSize is identical
+  return `${preview.recordingId}|${preview.byteSize}|${preview.recordedAt ?? ""}`;
 }
 
 /** IoT cough rows with raw bytes for a draft session. */
@@ -511,6 +514,7 @@ export async function fetchSessionCoughRecordings(
         mimeType: r.mimeType ?? null,
         source: r.source ?? null,
         coughAttempt: (r.coughAttempt as number | null | undefined) ?? null,
+        recordedAt: (r.recordedAt as string | null | undefined) ?? null,
       }));
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) return [];
