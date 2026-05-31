@@ -15,9 +15,11 @@ QUALITY_THRESHOLDS = {
     "speech_periodicity": 0.58,
     "speech_flatness": 0.28,
     "speech_burst_ratio": 1.25,
+    "speech_max_crest": 2.55,
     "replay_tonalness": 70.0,
     "fast_pass_burst_ratio": 2.0,
     "fast_pass_min_rms": 0.02,
+    "fast_pass_max_flatness": 0.65,
     "noise_flatness": 0.75,
     "noise_periodicity": 0.45,
 }
@@ -112,16 +114,20 @@ def cough_authenticity_metrics(
     heavy_clipping = clipped > th["max_clip_frac"]
     steady_noise = burst_ratio < th["steady_burst_ratio"]
 
-    # Speech-like only when voiced *and* not bursty (steady talking/throat-clear).
+    # Speech-like: sustained voicing (periodic + tonal), not a sharp cough transient.
     speech_like = (
         periodicity > th["speech_periodicity"]
         and flatness < th["speech_flatness"]
-        and burst_ratio < th["speech_burst_ratio"]
+        and crest < th["speech_max_crest"]
     )
 
     replay_like = tonal > th["replay_tonalness"] and (steady_noise or speech_like)
 
-    fast_pass = burst_ratio >= th["fast_pass_burst_ratio"] and rms >= th["fast_pass_min_rms"]
+    fast_pass = (
+        burst_ratio >= th["fast_pass_burst_ratio"]
+        and rms >= th["fast_pass_min_rms"]
+        and flatness <= th["fast_pass_max_flatness"]
+    )
 
     noise_like = (
         steady_noise
@@ -143,31 +149,27 @@ def cough_authenticity_metrics(
     if noise_like:
         reasons.append("noise_like")
 
-    if fast_pass and not too_quiet and not heavy_clipping:
+    hard_block = too_quiet or heavy_clipping or replay_like or speech_like or noise_like
+    soft_block = steady_noise and rms < th["steady_noise_max_rms"]
+
+    if hard_block or soft_block:
+        ok = False
+        if too_quiet:
+            label = "silence"
+        elif replay_like:
+            label = "replay"
+        elif speech_like:
+            label = "speech"
+        elif noise_like or steady_noise:
+            label = "noise"
+        else:
+            label = "invalid"
+    elif fast_pass:
         ok = True
         label = "ok"
     else:
-        blocked = (
-            too_quiet
-            or heavy_clipping
-            or replay_like
-            or speech_like
-            or noise_like
-            or (steady_noise and rms < th["steady_noise_max_rms"])
-        )
-        ok = not blocked
+        ok = True
         label = "ok"
-        if blocked:
-            if too_quiet:
-                label = "silence"
-            elif replay_like:
-                label = "replay"
-            elif speech_like:
-                label = "speech"
-            elif noise_like or steady_noise:
-                label = "noise"
-            else:
-                label = "invalid"
 
     return {
         "ok": ok,

@@ -296,6 +296,8 @@ export async function queueIotDeviceAudioStartCommand(args: {
 export async function queueIotDeviceStopAudioCommand(args: {
   userId: string;
   sessionId: string;
+  /** Same 1-based slot as the matching `audio` start command. */
+  coughAttempt?: number;
 }): Promise<IotDeviceCommandResult> {
   return queueIotDeviceCommand({ command: "audio upload", ...args });
 }
@@ -307,6 +309,7 @@ export async function queueIotDeviceStopAudioCommand(args: {
 export async function probeIotDeviceAudioActive(args: {
   userId: string;
   sessionId: string;
+  coughAttempt?: number;
 }): Promise<boolean> {
   try {
     await queueIotDeviceStopAudioCommand(args);
@@ -621,21 +624,24 @@ export async function pollForNewCoughRecording(
 
     const rows = await fetchSessionCoughRecordings(sessionId);
 
+    const rowsHaveAttempts = rows.some((r) => r.coughAttempt != null);
+
     // Primary: match by coughAttempt when the firmware sent one.
     if (options.coughAttempt != null) {
       const bySlot = rows.find((r) => r.coughAttempt === options.coughAttempt);
       if (bySlot) {
         const fp = coughRecordingFingerprint(bySlot);
-        // Accept whether it's brand new or was a retake (same slot, new bytes).
         if (!baselineFingerprints.has(fp)) return bySlot;
-        // Row exists but same bytes as baseline — still waiting for retake upload.
       }
     }
 
-    // Fallback: any new fingerprint not in the baseline (legacy firmware, no coughAttempt).
-    for (const row of rows) {
-      const fp = coughRecordingFingerprint(row);
-      if (!baselineFingerprints.has(fp)) return row;
+    // Legacy firmware (no coughAttempt tags): accept any new row.
+    // Tagged firmware: never grab another slot's upload while waiting for a specific slot.
+    if (options.coughAttempt == null || !rowsHaveAttempts) {
+      for (const row of rows) {
+        const fp = coughRecordingFingerprint(row);
+        if (!baselineFingerprints.has(fp)) return row;
+      }
     }
 
     await new Promise<void>((resolve, reject) => {

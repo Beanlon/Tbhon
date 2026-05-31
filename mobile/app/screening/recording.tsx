@@ -509,7 +509,10 @@ export default function RecordingScreen() {
         )}
 
         {phase === "done" && !allDone && (() => {
-          const advanceDisabled = qualityStatus === "checking" || qualityStatus === "bad";
+          const advanceDisabled =
+            qualityStatus === "checking" ||
+            qualityStatus === "bad" ||
+            qualityStatus === "unavailable";
           const advanceLabel =
             qualityStatus === "checking"
               ? "Checking…"
@@ -552,7 +555,7 @@ export default function RecordingScreen() {
         })()}
 
         {phase === "done" && allDone && (() => {
-          const canContinue = qualityStatus === "ok" || qualityStatus === "skipped";
+          const canContinue = qualityStatus === "ok";
           const continueDisabled = !canContinue;
           const continueLabel = qualityStatus === "checking" ? "Checking…" : canContinue ? "Continue" : "Redo to continue";
           return (

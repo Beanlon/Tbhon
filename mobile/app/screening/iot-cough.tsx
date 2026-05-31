@@ -37,7 +37,7 @@ const COOL_VIOLET_TEXT = "#B7C6FF";
 const LIGHT_LOADING_TINT = "#CFD9FF";
 const GRADIENT_COLORS = [palette.deepNavy, palette.navy, palette.signupBg] as const;
 
-const IOT_POLL_MS = 2500;
+const IOT_POLL_MS = 1500;
 const IOT_UPLOAD_TIMEOUT_MS = 180_000;
 const MIN_RECORD_SECONDS = 3;
 const MAX_RECORD_SECONDS = 10;
@@ -45,8 +45,8 @@ const RETAKE_COOLDOWN_SECONDS = 5;
 const COUNTDOWN_START = 3;
 /** Queue IoT start this many seconds before "Go" so the device can pick up the command. */
 const IOT_START_COUNTDOWN_AT = 2;
-const IOT_DEVICE_READY_TIMEOUT_MS = 12_000;
-const IOT_DEVICE_READY_POLL_MS = 400;
+const IOT_DEVICE_READY_TIMEOUT_MS = 20_000;
+const IOT_DEVICE_READY_POLL_MS = 500;
 
 type CoughSlot = {
   recordingId: string;
@@ -950,7 +950,11 @@ export default function IotCoughScreen() {
     try {
       setActiveIndex(stepIndex("ended"));
       setStatusText("Stopping recording…");
-      await queueIotDeviceStopAudioCommand({ userId, sessionId });
+      await queueIotDeviceStopAudioCommand({
+        userId,
+        sessionId,
+        coughAttempt: coughIndexRef.current,
+      });
       setCompletedThrough(stepIndex("ended"));
 
       setActiveIndex(stepIndex("uploading"));
@@ -1161,7 +1165,7 @@ export default function IotCoughScreen() {
 
   const continueNext = useCallback(() => {
     const qs = currentSlot?.qualityStatus ?? "skipped";
-    if (qs === "checking" || qs === "bad") return;
+    if (qs === "checking" || qs === "bad" || qs === "unavailable") return;
 
     void stopCurrent();
     setAudioHint(null);
@@ -1831,11 +1835,14 @@ export default function IotCoughScreen() {
                   </Pressable>
                   {(() => {
                     const qs = currentSlot?.qualityStatus ?? "skipped";
-                    const proceedDisabled = qs === "checking" || qs === "bad";
+                    const proceedDisabled =
+                      qs === "checking" || qs === "bad" || qs === "unavailable";
                     const proceedLabel =
                       qs === "checking"
                         ? "Checking…"
-                        : qs === "ok" || qs === "skipped"
+                        : qs === "unavailable"
+                          ? "Fix ML API connection"
+                          : qs === "ok"
                           ? completedCoughs >= IOT_COUGH_COUNT
                             ? "Proceed to sputum capture"
                             : `Proceed to cough ${coughIndex + 1}`

@@ -1,7 +1,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { resolveTbApiBaseUrls } from "./tbApiUrl";
 
-export type CoughQualityStatus = "checking" | "ok" | "bad" | "skipped";
+export type CoughQualityStatus = "checking" | "ok" | "bad" | "skipped" | "unavailable";
 export type CoughQualityLabel = "silence" | "speech" | "replay" | "noise" | "invalid" | "";
 
 export const COUGH_QUALITY_LABEL_MSG: Record<string, string> = {
@@ -73,13 +73,13 @@ export async function checkCoughRecordingQuality(
       }
     }
     if (!data) {
-      return { status: "skipped", label: "" };
+      return { status: "unavailable", label: "" };
     }
     return {
       status: data?.ok === true ? "ok" : "bad",
       label: (data?.label ?? "") as CoughQualityLabel,
     };
   } catch {
-    return { status: "skipped", label: "" };
+    return { status: "unavailable", label: "" };
   }
 }
