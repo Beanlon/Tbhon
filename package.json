@@ -1,16 +1,15 @@
 {
   "name": "tbhon",
   "private": true,
-  "description": "Tbhon monorepo (mobile + ml + infra)",
+  "description": "Tbhon monorepo (mobile + ml + infra). Run Expo from mobile/ only.",
   "scripts": {
+    "start": "npm run mobile:start",
+    "start:tunnel": "npm run mobile:start:tunnel",
     "mobile:start": "npm --prefix mobile run start",
     "mobile:start:tunnel": "npm --prefix mobile run start:tunnel",
     "mobile:start:remote": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel-expo.ps1",
     "tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1",
     "tunnel:api": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1 -ApiOnly",
     "tunnel:ml": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1 -MlOnly"
-  },
-  "dependencies": {
-    "expo": "^46.0.21"
   }
 }

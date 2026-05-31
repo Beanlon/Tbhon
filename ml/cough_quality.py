@@ -22,6 +22,11 @@ QUALITY_THRESHOLDS = {
     "fast_pass_max_flatness": 0.65,
     "noise_flatness": 0.75,
     "noise_periodicity": 0.45,
+    # A cough is a transient: loud burst(s) with quieter gaps. Fans / AC / drones
+    # are steady (uniform envelope). Real Kaggle coughs: dyn p02=2.8, quiet p02=0.10.
+    # Fans measured: dyn 1.1-1.6, quiet 0.0. Require transient structure to pass.
+    "min_dynamic_range": 2.2,
+    "min_quiet_frac": 0.05,
 }
 
 
@@ -66,7 +71,13 @@ def cough_authenticity_metrics(
     e = np.array(frames, dtype=np.float32)
     e_med = float(np.median(e))
     e_p95 = float(np.percentile(e, 95))
+    e_p90 = float(np.percentile(e, 90))
+    e_p10 = float(np.percentile(e, 10))
     burst_ratio = float(e_p95 / (e_med + 1e-12))
+    # Envelope dynamic range + quiet-gap fraction: separates transient coughs
+    # from steady fans / AC / drones (which have a near-flat loudness envelope).
+    dynamic_range = float(e_p90 / (e_p10 + 1e-12))
+    quiet_frac = float(np.mean(e < 0.35 * e_p90)) if e_p90 > 0 else 0.0
 
     def _frame_feats(seg1: np.ndarray) -> tuple[float, float, float]:
         win = np.hanning(seg1.size).astype(np.float32)
@@ -136,6 +147,15 @@ def cough_authenticity_metrics(
         and periodicity < th["noise_periodicity"]
     )
 
+    # Steady / non-transient sound (fan, AC, hum, sustained drone): audible but
+    # lacks the loud-burst-then-quiet structure of a real cough. This is the
+    # positive cough-evidence requirement that catches fan noise.
+    no_cough_burst = (
+        not too_quiet
+        and dynamic_range < th["min_dynamic_range"]
+        and quiet_frac < th["min_quiet_frac"]
+    )
+
     if too_quiet:
         reasons.append("too_quiet")
     if heavy_clipping:
@@ -148,8 +168,17 @@ def cough_authenticity_metrics(
         reasons.append("replay_like")
     if noise_like:
         reasons.append("noise_like")
+    if no_cough_burst:
+        reasons.append("no_cough_burst")
 
-    hard_block = too_quiet or heavy_clipping or replay_like or speech_like or noise_like
+    hard_block = (
+        too_quiet
+        or heavy_clipping
+        or replay_like
+        or speech_like
+        or noise_like
+        or no_cough_burst
+    )
     soft_block = steady_noise and rms < th["steady_noise_max_rms"]
 
     if hard_block or soft_block:
@@ -160,7 +189,7 @@ def cough_authenticity_metrics(
             label = "replay"
         elif speech_like:
             label = "speech"
-        elif noise_like or steady_noise:
+        elif noise_like or no_cough_burst or steady_noise:
             label = "noise"
         else:
             label = "invalid"
@@ -180,6 +209,8 @@ def cough_authenticity_metrics(
         "crest": crest,
         "clipped_frac": clipped,
         "burst_ratio": burst_ratio,
+        "dynamic_range": dynamic_range,
+        "quiet_frac": quiet_frac,
         "tonalness": tonal,
         "flatness": flatness,
         "periodicity": periodicity,
