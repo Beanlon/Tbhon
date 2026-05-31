@@ -1,0 +1,23 @@
+{
+  "best_val_f1_macro": 0.40999057492931196,
+  "best_f1_macro": 0.4825391635526921,
+  "decision_threshold": 0.44,
+  "test": {
+    "accuracy": 0.48311588641596315,
+    "f1_macro": 0.4825391635526921,
+    "f1_no_tb": 0.499814333457111,
+    "f1_tb": 0.46526399364827314,
+    "threshold": 0.44,
+    "confusion_matrix": [
+      [
+        673,
+        1176
+      ],
+      [
+        171,
+        586
+      ]
+    ]
+  },
+  "classification_report": "              precision    recall  f1-score   support\n\n           0     0.7974    0.3640    0.4998      1849\n           1     0.3326    0.7741    0.4653       757\n\n    accuracy                         0.4831      2606\n   macro avg     0.5650    0.5690    0.4825      2606\nweighted avg     0.6624    0.4831    0.4898      2606\n"
+}

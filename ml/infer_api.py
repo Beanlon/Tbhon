@@ -18,6 +18,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from torchvision import transforms
 
+from audio_crop import fix_length
+from cough_quality import cough_authenticity_metrics
+from model_arch import LegacySmallAudioCNN, SmallAudioCNN, load_model_from_state, looks_like_legacy_state
+
 # Define the FastAPI app
 app = FastAPI(title="TB cough audio inference")
 
@@ -42,102 +46,12 @@ class InferenceConfig:
   f_max: int = 8000
 
 
-class _LegacySmallAudioCNN(nn.Module):
-  """Original 3-conv SmallAudioCNN. Kept for older checkpoints."""
-
-  def __init__(self) -> None:
-    super().__init__()
-    self.features = nn.Sequential(
-      nn.Conv2d(1, 16, kernel_size=3, padding=1),
-      nn.BatchNorm2d(16),
-      nn.ReLU(inplace=True),
-      nn.MaxPool2d(2),
-      nn.Conv2d(16, 32, kernel_size=3, padding=1),
-      nn.BatchNorm2d(32),
-      nn.ReLU(inplace=True),
-      nn.MaxPool2d(2),
-      nn.Conv2d(32, 64, kernel_size=3, padding=1),
-      nn.BatchNorm2d(64),
-      nn.ReLU(inplace=True),
-      nn.AdaptiveAvgPool2d((4, 4)),
-    )
-    self.classifier = nn.Sequential(
-      nn.Flatten(),
-      nn.Linear(64 * 4 * 4, 128),
-      nn.ReLU(inplace=True),
-      nn.Dropout(0.25),
-      nn.Linear(128, 2),
-    )
-
-  def forward(self, x: torch.Tensor) -> torch.Tensor:
-    x = self.features(x)
-    return self.classifier(x)
-
-
-class _ResBlock(nn.Module):
-  def __init__(self, channels: int) -> None:
-    super().__init__()
-    self.block = nn.Sequential(
-      nn.Conv2d(channels, channels, 3, padding=1, bias=False),
-      nn.BatchNorm2d(channels),
-      nn.ReLU(inplace=True),
-      nn.Conv2d(channels, channels, 3, padding=1, bias=False),
-      nn.BatchNorm2d(channels),
-    )
-    self.relu = nn.ReLU(inplace=True)
-
-  def forward(self, x: torch.Tensor) -> torch.Tensor:
-    return self.relu(x + self.block(x))
-
-
-class SmallAudioCNN(nn.Module):
-  """Current trainer architecture: stem + ResBlock per stage, AdaptiveAvgPool(4,4)."""
-
-  def __init__(self) -> None:
-    super().__init__()
-    self.features = nn.Sequential(
-      nn.Conv2d(1, 32, kernel_size=3, padding=1, bias=False),
-      nn.BatchNorm2d(32),
-      nn.ReLU(inplace=True),
-      nn.MaxPool2d(2),
-      _ResBlock(32),
-      nn.Conv2d(32, 64, kernel_size=3, padding=1, bias=False),
-      nn.BatchNorm2d(64),
-      nn.ReLU(inplace=True),
-      nn.MaxPool2d(2),
-      _ResBlock(64),
-      nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False),
-      nn.BatchNorm2d(128),
-      nn.ReLU(inplace=True),
-      nn.MaxPool2d(2),
-      _ResBlock(128),
-      nn.AdaptiveAvgPool2d((4, 4)),
-    )
-    self.classifier = nn.Sequential(
-      nn.Flatten(),
-      nn.Linear(128 * 4 * 4, 256),
-      nn.ReLU(inplace=True),
-      nn.Dropout(0.4),
-      nn.Linear(256, 64),
-      nn.ReLU(inplace=True),
-      nn.Dropout(0.2),
-      nn.Linear(64, 2),
-    )
-
-  def forward(self, x: torch.Tensor) -> torch.Tensor:
-    x = self.features(x)
-    return self.classifier(x)
+# Re-export for tests; architecture lives in model_arch.py
+_LegacySmallAudioCNN = LegacySmallAudioCNN
 
 
 def _looks_like_legacy_state(state: dict) -> bool:
-  """Detect old (no ResBlock) checkpoints by their state_dict keys/shapes."""
-  if any(".block." in k for k in state):
-    return False
-  w = state.get("features.0.weight")
-  try:
-    return bool(w is not None and w.shape[0] == 16)
-  except Exception:
-    return False
+  return looks_like_legacy_state(state)
 
 
 def _to_mono_float(x: np.ndarray) -> np.ndarray:
@@ -260,151 +174,18 @@ def load_audio_any_format(data: bytes) -> tuple[int, np.ndarray]:
         pass
 
 
-def fix_length(x: torch.Tensor, target_len: int) -> torch.Tensor:
-  if x.numel() == target_len:
-    return x
-  if x.numel() > target_len:
-    return x[:target_len]
-  pad = target_len - x.numel()
-  return torch.nn.functional.pad(x, (0, pad))
-
-
-def cough_authenticity_metrics(wav: np.ndarray, sr: int) -> dict[str, Any]:
-  """
-  Lightweight heuristics to catch obvious "invalid cough take" inputs:
-  - A) silence / very quiet
-  - B) replay / playback (often tonal/periodic, less bursty)
-  - C) speech / throat-clearing (more periodic/voiced)
-  - D) steady noise (fan) or random non-cough noise (not bursty)
-
-  This is a heuristic gate, not a medically validated detector.
-  """
-  x = np.asarray(wav, dtype=np.float32)
-  if x.size == 0 or sr <= 0:
-    return {"ok": False, "reason": "empty_audio"}
-
-  # Trim to a reasonable window for scoring (10s max)
-  max_n = int(min(x.size, sr * 10))
-  x = x[:max_n]
-
-  rms = float(np.sqrt(np.mean(x ** 2)) + 1e-12)
-  peak = float(np.max(np.abs(x)) + 1e-12)
-  crest = float(peak / rms)
-  clipped = float(np.mean(np.abs(x) > 0.98))
-
-  # Frame-based energy: coughs are bursty.
-  frame = int(max(256, min(2048, sr // 20)))  # ~50ms
-  hop = frame // 2
-  if x.size < frame:
-    return {"ok": False, "reason": "too_short"}
-  frames = []
-  for i in range(0, x.size - frame + 1, hop):
-    seg = x[i : i + frame]
-    frames.append(float(np.sqrt(np.mean(seg ** 2)) + 1e-12))
-  e = np.array(frames, dtype=np.float32)
-  e_med = float(np.median(e))
-  e_p95 = float(np.percentile(e, 95))
-  burst_ratio = float(e_p95 / (e_med + 1e-12))
-
-  def _frame_feats(seg1: np.ndarray) -> tuple[float, float, float]:
-    """Return (tonalness, spectral_flatness, periodicity) for one frame."""
-    win = np.hanning(seg1.size).astype(np.float32)
-    s = seg1.astype(np.float32) * win
-    spec = np.abs(np.fft.rfft(s)) + 1e-12
-    tonalness = float(np.max(spec) / (np.mean(spec) + 1e-12))
-    flatness = float(np.exp(np.mean(np.log(spec))) / (np.mean(spec) + 1e-12))
-
-    # crude periodicity: normalized autocorrelation peak excluding lag 0
-    s0 = s - float(np.mean(s))
-    denom = float(np.sum(s0 * s0) + 1e-12)
-    ac = np.correlate(s0, s0, mode="full")[s0.size - 1 :]
-    ac = ac / denom
-    # ignore very small lags; look for pitch-like peaks ~80-400 Hz
-    min_lag = max(1, int(sr / 400))
-    max_lag = min(ac.size - 1, int(sr / 80))
-    if max_lag <= min_lag:
-      periodicity = 0.0
-    else:
-      periodicity = float(np.max(ac[min_lag:max_lag]))
-    return tonalness, flatness, periodicity
-
-  # Compute tonalness/flatness/periodicity over a handful of energetic frames.
-  # This helps distinguish speech/playback from cough-like bursts.
-  e_thresh = float(np.percentile(e, 70))
-  idx = np.where(e >= e_thresh)[0]
-  # sample up to 8 frames evenly
-  if idx.size == 0:
-    idx = np.array([0], dtype=np.int64)
-  pick = idx[np.linspace(0, idx.size - 1, num=min(8, idx.size), dtype=np.int64)]
-  tonals: list[float] = []
-  flats: list[float] = []
-  periods: list[float] = []
-  for fi in pick:
-    start = int(fi * hop)
-    seg = x[start : start + frame]
-    if seg.size < frame:
-      continue
-    t, f, p = _frame_feats(seg)
-    tonals.append(t)
-    flats.append(f)
-    periods.append(p)
-  tonal = float(np.median(tonals)) if tonals else 0.0
-  flatness = float(np.median(flats)) if flats else 0.0
-  periodicity = float(np.median(periods)) if periods else 0.0
-
-  # Scoring (heuristic)
-  reasons: list[str] = []
-
-  too_quiet = rms < 0.003
-  heavy_clipping = clipped > 0.06
-  steady_noise = burst_ratio < 1.25
-
-  # speech / throat-clear tends to have higher periodicity (voiced) and lower flatness
-  speech_like = periodicity > 0.55 and flatness < 0.35
-
-  # replay / playback can look tonal; allow some tonalness, but block strong tonal + not bursty
-  very_tonal = tonal > 55.0
-  replay_like = very_tonal and (steady_noise or speech_like)
-
-  if too_quiet:
-    reasons.append("too_quiet")
-  if heavy_clipping:
-    reasons.append("clipping")
-  if steady_noise:
-    reasons.append("steady_noise")
-  if speech_like:
-    reasons.append("speech_like")
-  if replay_like:
-    reasons.append("replay_like")
-
-  # Block conditions (covers A/B/C/D):
-  blocked = too_quiet or heavy_clipping or replay_like or speech_like or (steady_noise and rms < 0.02)
-  ok = not blocked
-
-  label = "ok"
-  if blocked:
-    if too_quiet:
-      label = "silence"
-    elif replay_like:
-      label = "replay"
-    elif speech_like:
-      label = "speech"
-    elif steady_noise:
-      label = "noise"
-    else:
-      label = "invalid"
+def read_checkpoint_meta(model_path: Path) -> dict[str, Any]:
+  try:
+    ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
+  except TypeError:
+    ckpt = torch.load(model_path, map_location="cpu")
   return {
-    "ok": ok,
-    "label": label,
-    "reasons": reasons,
-    "rms": rms,
-    "peak": peak,
-    "crest": crest,
-    "clipped_frac": clipped,
-    "burst_ratio": burst_ratio,
-    "tonalness": tonal,
-    "flatness": flatness,
-    "periodicity": periodicity,
+    "path": str(model_path),
+    "best_f1_macro": float(ckpt.get("best_f1_macro", 0.0) or 0.0),
+    "test_accuracy": float(ckpt.get("test_accuracy", 0.0) or 0.0),
+    "model_type": ckpt.get("model_type", "cnn"),
+    "decision_threshold": float(ckpt.get("decision_threshold", 0.5)),
+    "config": ckpt.get("config") or {},
   }
 
 
@@ -422,7 +203,7 @@ def make_feature_extractor(cfg: InferenceConfig) -> tuple[nn.Module, nn.Module]:
   return mel, amp_to_db
 
 
-def load_checkpoint(model_path: Path) -> tuple[nn.Module, InferenceConfig]:
+def load_checkpoint(model_path: Path) -> tuple[nn.Module, InferenceConfig, dict[str, Any]]:
   try:
     ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
   except TypeError:
@@ -438,24 +219,31 @@ def load_checkpoint(model_path: Path) -> tuple[nn.Module, InferenceConfig]:
     f_max=int(cfg_dict.get("f_max", 8000)),
   )
   state = ckpt["model_state_dict"]
-  model: nn.Module
-  if _looks_like_legacy_state(state):
-    model = _LegacySmallAudioCNN()
-  else:
-    model = SmallAudioCNN()
-  model.load_state_dict(state)
-  model.eval()
-  return model, cfg
+  legacy = bool(cfg_dict.get("legacy_arch")) or looks_like_legacy_state(state)
+  model = load_model_from_state(state, legacy=legacy)
+  meta = {
+    "decision_threshold": float(ckpt.get("decision_threshold", 0.5)),
+    "best_f1_macro": float(ckpt.get("best_f1_macro", 0.0) or 0.0),
+    "test_accuracy": float(ckpt.get("test_accuracy", 0.0) or 0.0),
+    "model_type": ckpt.get("model_type", "cnn"),
+    "hybrid_bundle": ckpt.get("hybrid_bundle"),
+  }
+  return model, cfg, meta
 
 
-# Default model path: use the newest run if present, else require env var.
+# Default model path: best test macro-F1 under runs/, else explicit env var.
 DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "runs"
+KNOWN_GOOD_MODEL = DEFAULT_MODEL_PATH / "20260504_005928" / "model.pt"
+
+_active_model_path: Path | None = None
+_active_model_meta: dict[str, Any] | None = None
 
 # Sputum / phlegm microscopy CNN (see ../ml (phlegm)/train_phlegm_cnn.py)
 PHLEGM_ROOT = Path(__file__).resolve().parent.parent / "ml (phlegm)"
 DEFAULT_PHLEGM_RUNS = PHLEGM_ROOT / "runs"
 
 _phlegm_train_mod: Any | None = None
+_phlegm_quality_mod: Any | None = None
 _phlegm_bundle: dict[str, Any] | None = None
 
 
@@ -481,8 +269,34 @@ def get_phlegm_train_module() -> Any:
   return _phlegm_train_mod
 
 
-def _checkpoint_is_afb_load_grade(path: Path) -> bool:
-  """True if checkpoint label_map is AFB load (none/low/moderate/high), not stain-color classes."""
+def _load_phlegm_quality_module() -> Any:
+  path = PHLEGM_ROOT / "phlegm_quality.py"
+  if not path.is_file():
+    raise RuntimeError(f"Phlegm quality module not found at {path}")
+  name = "tbhon_phlegm_quality"
+  spec = importlib.util.spec_from_file_location(name, path)
+  if spec is None or spec.loader is None:
+    raise RuntimeError("Could not load phlegm quality module spec")
+  mod = importlib.util.module_from_spec(spec)
+  sys.modules[name] = mod
+  spec.loader.exec_module(mod)
+  return mod
+
+
+def get_phlegm_quality_module() -> Any:
+  global _phlegm_quality_mod
+  if _phlegm_quality_mod is None:
+    _phlegm_quality_mod = _load_phlegm_quality_module()
+  return _phlegm_quality_mod
+
+
+def phlegm_image_quality_from_bytes(data: bytes) -> dict[str, Any]:
+  mod = get_phlegm_quality_module()
+  return mod.phlegm_image_quality_from_bytes(data)
+
+
+def _checkpoint_is_phlegm_model(path: Path) -> bool:
+  """True if checkpoint is binary AFB or legacy 4-class load model (not stain-color)."""
   try:
     try:
       ck = torch.load(path, map_location="cpu", weights_only=False)
@@ -494,7 +308,22 @@ def _checkpoint_is_afb_load_grade(path: Path) -> bool:
   if not isinstance(lm, dict):
     return False
   keys = {str(k).lower() for k in lm.keys()}
+  if "afb_negative" in keys and "afb_positive" in keys:
+    return True
   return "none" in keys and "high" in keys
+
+
+def _read_phlegm_metrics_score(model_path: Path) -> tuple[float, float]:
+  """Return (test_macro_f1, mtime) for ranking checkpoints."""
+  mtime = float(model_path.stat().st_mtime)
+  metrics_path = model_path.parent / "metrics.json"
+  if metrics_path.is_file():
+    try:
+      metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+      return float(metrics.get("test_macro_f1", 0.0) or 0.0), mtime
+    except Exception:
+      pass
+  return 0.0, mtime
 
 
 def resolve_phlegm_model_path() -> Path:
@@ -506,17 +335,20 @@ def resolve_phlegm_model_path() -> Path:
     if p.is_file():
       return p
   if DEFAULT_PHLEGM_RUNS.exists():
-    candidates = sorted(
-      DEFAULT_PHLEGM_RUNS.glob("**/model_best.pt"),
-      key=lambda x: x.stat().st_mtime,
-      reverse=True,
-    )
-    for c in candidates:
-      if _checkpoint_is_afb_load_grade(c):
-        return c
+    best_path: Path | None = None
+    best_key: tuple[float, float] = (-1.0, -1.0)
+    for c in DEFAULT_PHLEGM_RUNS.glob("**/model_best.pt"):
+      if not _checkpoint_is_phlegm_model(c):
+        continue
+      key = _read_phlegm_metrics_score(c)
+      if key > best_key:
+        best_key = key
+        best_path = c
+    if best_path is not None:
+      return best_path
   raise RuntimeError(
-    "No AFB-load phlegm model found. Set TB_PHLEGM_MODEL_PATH to a phlegm_afb …/model_best.pt, "
-    "or train with: python ml (phlegm)/train_phlegm_cnn.py"
+    "No phlegm model found. Set TB_PHLEGM_MODEL_PATH to a phlegm_afb …/model_best.pt, "
+    "or train with: python \"ml (phlegm)/train_phlegm_cnn.py\" --task binary --backbone resnet18"
   )
 
 
@@ -539,6 +371,17 @@ def get_phlegm_bundle() -> dict[str, Any]:
   model.load_state_dict(ckpt["model_state"], strict=False)
   model.eval()
   inv = [k for k, _ in sorted(label_map.items(), key=lambda kv: kv[1])]
+  task = str(ckpt.get("task", "load4"))
+  if "afb_negative" in label_map:
+    task = "binary"
+  decision_threshold = float(ckpt.get("decision_threshold", 0.5))
+  metrics_path = mp.parent / "metrics.json"
+  test_macro_f1 = 0.0
+  if metrics_path.is_file():
+    try:
+      test_macro_f1 = float(json.loads(metrics_path.read_text(encoding="utf-8")).get("test_macro_f1", 0.0))
+    except Exception:
+      pass
   _phlegm_bundle = {
     "model": model,
     "inv_labels": inv,
@@ -546,17 +389,47 @@ def get_phlegm_bundle() -> dict[str, Any]:
     "label_map": label_map,
     "checkpoint": str(mp),
     "load_bins": ckpt.get("load_bins"),
+    "task": task,
+    "decision_threshold": decision_threshold,
+    "test_macro_f1": test_macro_f1,
   }
   return _phlegm_bundle
 
 
-def predict_phlegm_image_bytes(data: bytes) -> dict[str, Any]:
+def get_phlegm_model_info() -> dict[str, Any]:
+  try:
+    mp = resolve_phlegm_model_path()
+    bundle = get_phlegm_bundle()
+    return {
+      "phlegm_model_path": str(mp),
+      "phlegm_task": bundle.get("task", "load4"),
+      "phlegm_test_macro_f1": bundle.get("test_macro_f1", 0.0),
+      "phlegm_decision_threshold": bundle.get("decision_threshold", 0.5),
+    }
+  except RuntimeError as e:
+    return {"phlegm_error": str(e)}
+
+
+def predict_phlegm_image_bytes(data: bytes, *, skip_quality: bool = False) -> dict[str, Any]:
   if not data:
     raise ValueError("empty image")
+  if not skip_quality:
+    qc = phlegm_image_quality_from_bytes(data)
+    if not qc.get("ok", False):
+      return {
+        "spoof": True,
+        "quality_label": qc.get("label", "invalid"),
+        "quality_reasons": qc.get("reasons", []),
+        "quality_metrics": qc,
+      }
+
   bundle = get_phlegm_bundle()
   model: nn.Module = bundle["model"]
   inv: list[str] = bundle["inv_labels"]
   img_size: int = bundle["img_size"]
+  task: str = str(bundle.get("task", "load4"))
+  decision_threshold = float(bundle.get("decision_threshold", 0.5))
+  label_map: dict[str, int] = bundle["label_map"]
   img = Image.open(io.BytesIO(data)).convert("RGB")
   tfm = transforms.Compose(
     [
@@ -569,38 +442,94 @@ def predict_phlegm_image_bytes(data: bytes) -> dict[str, Any]:
   with torch.no_grad():
     logits = model(x)
     prob = torch.softmax(logits, dim=1).squeeze(0).cpu().tolist()
-  idx = int(max(range(len(prob)), key=lambda i: prob[i]))
+
+  if task == "binary":
+    pos_idx = int(label_map.get("afb_positive", 1))
+    neg_idx = int(label_map.get("afb_negative", 0))
+    p_pos = float(prob[pos_idx])
+    p_neg = float(prob[neg_idx])
+    predicted_afb = p_pos >= decision_threshold
+    idx = pos_idx if predicted_afb else neg_idx
+    predicted_load = inv[idx]
+  else:
+    idx = int(max(range(len(prob)), key=lambda i: prob[i]))
+    predicted_load = inv[idx]
+    predicted_afb = predicted_load not in {"none", "afb_negative"}
+
   out: dict[str, Any] = {
+    "spoof": False,
     "checkpoint": bundle["checkpoint"],
-    "predicted_load": inv[idx],
+    "task": task,
+    "predicted_load": predicted_load,
+    "predicted_afb": bool(predicted_afb),
     "confidence": float(prob[idx]),
     "probabilities": {inv[i]: round(float(prob[i]), 6) for i in range(len(inv))},
+    "decision_threshold": decision_threshold,
   }
   if bundle.get("load_bins") is not None:
     out["load_bins"] = bundle["load_bins"]
-  else:
+  elif task == "load4":
     mod = get_phlegm_train_module()
     out["load_bins"] = [{"name": n, "min": lo, "max": hi} for n, lo, hi in mod.LOAD_BINS]
   return out
 
 
 def resolve_model_path() -> Path:
-  env = Path(str(Path.cwd()))
-  _ = env  # keep for potential future use
-  mp = None
-  # Prefer explicit env var
   import os
 
-  if os.environ.get("TB_MODEL_PATH"):
-    mp = Path(os.environ["TB_MODEL_PATH"])
-  else:
-    if DEFAULT_MODEL_PATH.exists():
-      candidates = sorted(DEFAULT_MODEL_PATH.glob("**/model.pt"), key=lambda p: p.stat().st_mtime, reverse=True)
-      if candidates:
-        mp = candidates[0]
-  if not mp or not mp.exists():
-    raise RuntimeError("No model found. Set TB_MODEL_PATH to a trained model.pt or train first.")
-  return mp
+  global _active_model_path, _active_model_meta
+
+  if _active_model_path is not None and _active_model_path.exists():
+    return _active_model_path
+
+  env_path = os.environ.get("TB_MODEL_PATH")
+  if env_path:
+    mp = Path(env_path)
+    if not mp.is_file():
+      raise RuntimeError(f"TB_MODEL_PATH does not exist: {mp}")
+    _active_model_path = mp
+    _active_model_meta = read_checkpoint_meta(mp)
+    return mp
+
+  best_path: Path | None = None
+  best_score = -1.0
+  if DEFAULT_MODEL_PATH.exists():
+    for candidate in DEFAULT_MODEL_PATH.glob("**/model.pt"):
+      try:
+        meta = read_checkpoint_meta(candidate)
+        acc = float(meta.get("test_accuracy", 0.0) or 0.0)
+        f1 = float(meta.get("best_f1_macro", 0.0) or 0.0)
+        score = acc if acc > 0 else f1
+      except Exception:
+        continue
+      if score > best_score:
+        best_score = score
+        best_path = candidate
+
+  if best_path is None and KNOWN_GOOD_MODEL.is_file():
+    best_path = KNOWN_GOOD_MODEL
+
+  if not best_path or not best_path.exists():
+    raise RuntimeError(
+      "No model found. Set TB_MODEL_PATH to a trained model.pt or train first."
+    )
+
+  _active_model_path = best_path
+  _active_model_meta = read_checkpoint_meta(best_path)
+  return best_path
+
+
+def get_active_model_info() -> dict[str, Any]:
+  mp = resolve_model_path()
+  meta = _active_model_meta or read_checkpoint_meta(mp)
+  return {
+    "model_path": str(mp),
+    "best_f1_macro": meta.get("best_f1_macro", 0.0),
+    "test_accuracy": meta.get("test_accuracy", 0.0),
+    "model_type": meta.get("model_type", "cnn"),
+    "decision_threshold": meta.get("decision_threshold", 0.5),
+    "config": meta.get("config", {}),
+  }
 
 
 @app.get("/")
@@ -611,8 +540,9 @@ def root() -> dict[str, Any]:
     "endpoints": {
       "GET /healthz": "Liveness check",
       "POST /check-quality": "Multipart form field `file` (cough quality only)",
+      "POST /check-phlegm-quality": "Multipart form field `file` (sputum image QC only)",
       "POST /predict": "Multipart form field `file` (TB probability + quality gate)",
-      "POST /predict-phlegm": "Multipart form field `file` (sputum image → AFB load grade)",
+      "POST /predict-phlegm": "Multipart form field `file` (sputum image → AFB detected / load grade)",
       "GET /docs": "Interactive API docs (Swagger)",
     },
   }
@@ -620,7 +550,26 @@ def root() -> dict[str, Any]:
 
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
-  return {"ok": True}
+  try:
+    info = get_active_model_info()
+    info.update(get_phlegm_model_info())
+    return {"ok": True, **info}
+  except RuntimeError as e:
+    return {"ok": False, "error": str(e)}
+
+
+@app.post("/check-phlegm-quality")
+async def check_phlegm_quality(file: UploadFile = File(...)) -> dict[str, Any]:
+  """Lightweight sputum image QC — no AFB inference."""
+  data = await file.read()
+  if not data:
+    raise HTTPException(status_code=400, detail="Empty upload")
+  result = phlegm_image_quality_from_bytes(data)
+  return {
+    "ok": result.get("ok", False),
+    "label": result.get("label", "unknown"),
+    "reasons": result.get("reasons", []),
+  }
 
 
 @app.post("/check-quality")
@@ -645,24 +594,54 @@ async def predict(file: UploadFile = File(...)) -> dict[str, Any]:
     raise HTTPException(status_code=400, detail="Empty upload")
 
   model_path = resolve_model_path()
-  model, cfg = load_checkpoint(model_path)
+  meta = _active_model_meta or read_checkpoint_meta(model_path)
 
   sr, wav = load_audio_any_format(data)
   auth = cough_authenticity_metrics(wav, sr)
   if not auth.get("ok", False):
-    # Return a structured response the app can use to ask for re-record.
     return {
       "model_path": str(model_path),
       "spoof": True,
       "spoof_metrics": auth,
     }
 
+  if meta.get("model_type") == "hybrid_cnn" or meta.get("hybrid_bundle"):
+    import tempfile
+    from hybrid_predict import load_hybrid_bundle, predict_hybrid_from_path
+
+    suffix = ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+      tmp.write(data)
+      tmp_path = Path(tmp.name)
+    try:
+      bundle = load_hybrid_bundle(model_path)
+      out = predict_hybrid_from_path(tmp_path, bundle)
+    finally:
+      try:
+        tmp_path.unlink(missing_ok=True)
+      except Exception:
+        pass
+    return {
+      "model_path": str(model_path),
+      "model_type": "hybrid_cnn",
+      "test_accuracy": meta.get("test_accuracy", 0.0),
+      "best_f1_macro": meta.get("best_f1_macro", 0.0),
+      "decision_threshold": out["decision_threshold"],
+      "spoof": False,
+      "prob_no_tb": out["prob_no_tb"],
+      "prob_tb": out["prob_tb"],
+      "pred": out["pred"],
+    }
+
+  model, cfg, meta = load_checkpoint(model_path)
+  threshold = float(meta.get("decision_threshold", 0.5))
+
   x = torch.from_numpy(wav).to(torch.float32)
   x = x.unsqueeze(0)  # [1, T]
   if sr != cfg.sample_rate:
     x = torchaudio.functional.resample(x, sr, cfg.sample_rate)
   x = x.squeeze(0)
-  x = fix_length(x, int(cfg.sample_rate * cfg.clip_seconds))
+  x = fix_length(x, int(cfg.sample_rate * cfg.clip_seconds), train=False)
 
   mel, amp_to_db = make_feature_extractor(cfg)
   feat = amp_to_db(mel(x))
@@ -675,16 +654,18 @@ async def predict(file: UploadFile = File(...)) -> dict[str, Any]:
 
   return {
     "model_path": str(model_path),
+    "best_f1_macro": meta.get("best_f1_macro", 0.0),
+    "decision_threshold": threshold,
     "spoof": False,
     "prob_no_tb": prob[0],
     "prob_tb": prob[1],
-    "pred": int(np.argmax(prob)),
+    "pred": 1 if prob[1] >= threshold else 0,
   }
 
 
 @app.post("/predict-phlegm")
 async def predict_phlegm(file: UploadFile = File(...)) -> dict[str, Any]:
-  """Sputum-smear image → AFB load class (none / low / moderate / high). Requires phlegm CNN checkpoint."""
+  """Sputum-smear image → AFB binary or load grade. Requires phlegm CNN checkpoint."""
   data = await file.read()
   if not data:
     raise HTTPException(status_code=400, detail="Empty upload")

@@ -113,6 +113,13 @@ function pickSessionId(raw: string | string[] | undefined): string | undefined {
   return undefined;
 }
 
+function formatPhlegmLoadLabel(load: string): string {
+  const x = load.toLowerCase();
+  if (x === "afb_positive") return "AFB detected";
+  if (x === "afb_negative") return "AFB not detected";
+  return load || "—";
+}
+
 function formatPhlegmProbsJson(raw: unknown): string {
   if (!raw || typeof raw !== "object") return "";
   const rec = raw as Record<string, number>;
@@ -845,7 +852,7 @@ export default function ScreeningDetailsScreen() {
                     sub={
                       imageProvided
                         ? imageAnalyzed
-                          ? `AFB load grade: ${phlegmLoad || "—"}${
+                          ? `Sputum screening: ${formatPhlegmLoadLabel(phlegmLoad)}${
                               phlegmConf !== null && Number.isFinite(phlegmConf)
                                 ? ` (confidence ${(phlegmConf * 100).toFixed(0)}%)`
                                 : ""
@@ -1005,7 +1012,7 @@ export default function ScreeningDetailsScreen() {
                   ))}
                   {imageAnalyzed && phlegmLoad.length > 0 && (
                     <Bullet
-                      text={`Sputum smear model: ${phlegmLoad} AFB load (none / low / moderate / high). This is not a certified diagnosis.`}
+                      text={`Sputum smear model: ${formatPhlegmLoadLabel(phlegmLoad)}. This is a screening signal, not a certified diagnosis.`}
                     />
                   )}
                   {!imageAnalyzed && imageProvided && phlegmFailed && (

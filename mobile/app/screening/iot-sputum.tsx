@@ -270,7 +270,7 @@ export default function IotSputumScreen() {
   const retakeBaselineRef = useRef<string | null>(null);
   const iconScale = useRef(new Animated.Value(1)).current;
 
-  const isCapturing = running && activeIndex >= 1 && activeIndex <= 2;
+  const isCapturing = running && activeIndex >= 1 && activeIndex <= 3;
 
   useEffect(() => {
     if (isCapturing) {

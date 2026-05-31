@@ -18,8 +18,9 @@ export const IOT_COUGH_STATUS_LABELS = IOT_COUGH_STEPS.map((s) => s.label);
 
 export const IOT_SPUTUM_STEPS: IotStep[] = [
   { id: "preparing", label: "Preparing capture", duration: 1000 },
-  { id: "capturing", label: "Capturing image", duration: 1500 },
-  { id: "processing", label: "Processing image", duration: 1200 },
+  { id: "queueing", label: "Queueing device command", duration: 1200 },
+  { id: "waiting", label: "Waiting for device upload", duration: 1500 },
+  { id: "downloading", label: "Downloading image", duration: 1200 },
 ];
 
 export const IOT_SPUTUM_STATUS_LABELS = IOT_SPUTUM_STEPS.map((s) => s.label);

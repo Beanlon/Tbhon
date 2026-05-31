@@ -7,6 +7,8 @@ import NetInfo from "@react-native-community/netinfo";
 import * as FileSystem from "expo-file-system/legacy";
 import { LinearGradient } from "expo-linear-gradient";
 import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
+import { checkPhlegmImageQuality, phlegmQualityMessage } from "../../utils/phlegmQualityCheck";
+import { downloadSessionSputumToCache } from "../../services/backendApi";
 import { palette } from "../../constants/palette";
 
 const ANALYSIS_UPLOAD_TIMEOUT_MS = 12000;
@@ -66,8 +68,9 @@ type RiskLevel = "low" | "moderate" | "high";
 
 function phlegmLoadToRisk(load: string): RiskLevel {
   const x = load.toLowerCase();
-  if (x === "high") return "high";
+  if (x === "afb_positive" || x === "high") return "moderate";
   if (x === "moderate") return "moderate";
+  if (x === "afb_negative" || x === "none" || x === "low") return "low";
   return "low";
 }
 
@@ -186,7 +189,45 @@ type PhlegmPred = {
   errorDetail: string;
 };
 
-async function tryPredictPhlegm(apiBases: string[], imageUri: string | undefined): Promise<PhlegmPred> {
+async function resolvePhlegmImageUri(
+  imageUri: string | undefined,
+  opts: { deviceSputum: boolean; sessionId: string },
+): Promise<string> {
+  let trimmed = typeof imageUri === "string" ? imageUri.trim() : "";
+  if (trimmed.startsWith("iot://")) trimmed = "";
+
+  const needsDownload =
+    opts.deviceSputum && opts.sessionId.length > 0 && (!trimmed || trimmed.startsWith("iot://"));
+
+  if (needsDownload) {
+    try {
+      const cached = await downloadSessionSputumToCache(opts.sessionId);
+      if (cached) trimmed = cached;
+    } catch (e) {
+      console.log("[Processing] sputum re-download failed:", String((e as any)?.message ?? e));
+    }
+  }
+
+  if (!trimmed) return "";
+
+  try {
+    const info = await FileSystem.getInfoAsync(normalizeFileUri(trimmed));
+    if (!info.exists && opts.deviceSputum && opts.sessionId.length > 0) {
+      const cached = await downloadSessionSputumToCache(opts.sessionId);
+      if (cached) trimmed = cached;
+    }
+  } catch {
+    /* best-effort */
+  }
+
+  return trimmed;
+}
+
+async function tryPredictPhlegm(
+  apiBases: string[],
+  imageUri: string | undefined,
+  opts: { deviceSputum: boolean; sessionId: string },
+): Promise<PhlegmPred> {
   const empty: PhlegmPred = {
     analyzed: false,
     load: "",
@@ -195,11 +236,10 @@ async function tryPredictPhlegm(apiBases: string[], imageUri: string | undefined
     error: "0",
     errorDetail: "",
   };
-  const trimmed = typeof imageUri === "string" ? imageUri.trim() : "";
+
+  const trimmed = await resolvePhlegmImageUri(imageUri, opts);
   if (!trimmed) return empty;
 
-  // Copy into the app's documentDirectory so the URI survives navigation and is reachable
-  // by uploadAsync as a stable file:// path (mirrors what cough recordings do).
   let stableUri = trimmed;
   try {
     stableUri = await persistImageToDocs(trimmed);
@@ -210,11 +250,28 @@ async function tryPredictPhlegm(apiBases: string[], imageUri: string | undefined
     if (__DEV__) console.log("[Processing] persistImageToDocs threw:", String((e as any)?.message ?? e));
   }
 
+  const qc = await checkPhlegmImageQuality(stableUri);
+  if (qc.status === "bad") {
+    return {
+      ...empty,
+      error: "1",
+      errorDetail: phlegmQualityMessage(qc.label || "invalid"),
+    };
+  }
+
   let lastErr: unknown = null;
   for (const base of apiBases) {
     try {
       if (__DEV__) console.log(`[Processing] phlegm POST -> ${base}/predict-phlegm`);
       const data = await uploadImagePhlegm(base, stableUri);
+      if (data?.spoof === true) {
+        const label = typeof data?.quality_label === "string" ? data.quality_label : "invalid";
+        return {
+          ...empty,
+          error: "1",
+          errorDetail: phlegmQualityMessage(label),
+        };
+      }
       const probs = data?.probabilities;
       if (__DEV__) console.log(`[Processing] phlegm OK ${base}/predict-phlegm`, data?.predicted_load);
       return {
@@ -339,6 +396,10 @@ export default function ProcessingScreen() {
             }
           : {};
       const uploadExtras = checklistStr.length ? { checklist: checklistStr } : undefined;
+      const phlegmOpts = {
+        deviceSputum: params.deviceSputum === "1",
+        sessionId: sessionIdStr,
+      };
       const emptyPhlegm: PhlegmPred = {
         analyzed: false,
         load: "",
@@ -396,7 +457,7 @@ export default function ProcessingScreen() {
       }
 
       if (uris.length === 0 && imageUriStr.trim()) {
-        const phlegm = await tryPredictPhlegm(apiBases, imageUriStr);
+        const phlegm = await tryPredictPhlegm(apiBases, imageUriStr, phlegmOpts);
         if (cancelled) return;
         const finalRisk = phlegm.analyzed ? phlegmLoadToRisk(phlegm.load) : "low";
         router.replace({
@@ -452,7 +513,7 @@ export default function ProcessingScreen() {
           if (Number.isFinite(pTb)) probs.push(pTb);
         }
 
-        const phlegm = await tryPredictPhlegm(apiBases, imageUriStr);
+        const phlegm = await tryPredictPhlegm(apiBases, imageUriStr, phlegmOpts);
 
         if (spoofed) {
           if (!cancelled) {
@@ -499,7 +560,7 @@ export default function ProcessingScreen() {
       } catch (err) {
         console.error(`[Processing] Upload/predict failed. Tried: ${apiBases.join(" | ")}`, err);
         if (!cancelled) {
-          const phlegm = await tryPredictPhlegm(apiBases, imageUriStr);
+          const phlegm = await tryPredictPhlegm(apiBases, imageUriStr, phlegmOpts);
           const phR = phlegm.analyzed ? phlegmLoadToRisk(phlegm.load) : ("low" as RiskLevel);
           router.replace({
             pathname: "/screening/result",
