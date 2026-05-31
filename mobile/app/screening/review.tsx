@@ -28,8 +28,7 @@ export default function ReviewInputsScreen() {
   const iotMode = params.iotMode === "1";
   const audioDone = params.audioDone === "1";
   const imageDone = typeof params.imageUri === "string" && params.imageUri.length > 0;
-  const imageUri = imageDone && !params.imageUri?.startsWith("iot://") ? (params.imageUri as string) : null;
-  const iotImageUploaded = imageDone && params.imageUri?.startsWith("iot://");
+  const imageUri = imageDone ? (params.imageUri as string) : null;
   const audioUris = typeof params.audioUris === "string" ? params.audioUris : "[]";
   const iotRecordingIds = typeof params.iotRecordingIds === "string" ? params.iotRecordingIds : "[]";
   const checklist = typeof params.checklist === "string" ? params.checklist : "";
@@ -281,10 +280,6 @@ export default function ReviewInputsScreen() {
                 >
                   <Image source={{ uri: imageUri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
                 </View>
-              ) : iotImageUploaded ? (
-                <Text className="text-xs leading-5 sm:text-sm" style={{ color: colors.textSecondary }}>
-                  Sputum image received from your screening device.
-                </Text>
               ) : (
                 <Text className="text-xs leading-5 sm:text-sm" style={{ color: colors.textSecondary }}>
                   No sample provided. Analysis will use your cough recordings (and checklist) only.
@@ -345,7 +340,7 @@ export default function ReviewInputsScreen() {
                 audioDone: audioDone ? "1" : "0",
                 audioUris,
                 iotRecordingIds,
-                imageUri: iotImageUploaded ? "iot://sputum-uploaded" : (imageUri ?? ""),
+                imageUri: imageUri ?? "",
                 checklist,
                 ...(iotMode ? { iotMode: "1" } : {}),
                 ...sessionNavParams,

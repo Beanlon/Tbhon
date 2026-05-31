@@ -42,6 +42,12 @@ LOAD_BINS: list[tuple[str, int, int | None]] = [
 ]
 LOAD_LABELS: list[str] = [name for name, _, _ in LOAD_BINS]
 
+BINARY_LABELS: list[str] = ["afb_negative", "afb_positive"]
+
+
+def afb_binary_label(count: int) -> str:
+    return "afb_positive" if count > 0 else "afb_negative"
+
 
 def afb_load_label(count: int) -> str:
     for name, lo, hi in LOAD_BINS:
@@ -60,8 +66,9 @@ class Config:
     weight_decay: float = 1e-4
     num_workers: int = 0
     augment: bool = True
-    backbone: str = "small_cnn"  # small_cnn | resnet18
+    backbone: str = "resnet18"  # small_cnn | resnet18
     class_weight: bool = True
+    task: str = "binary"  # binary | load4
 
 
 def set_seed(seed: int) -> None:
@@ -104,9 +111,13 @@ def collect_split(
 
 
 def items_to_xy(
-    items: list[tuple[Path, int]], label_to_idx: dict[str, int]
+    items: list[tuple[Path, int]],
+    label_to_idx: dict[str, int],
+    *,
+    task: str = "load4",
 ) -> list[tuple[Path, int, int]]:
-    return [(p, c, label_to_idx[afb_load_label(c)]) for p, c in items]
+    label_fn = afb_binary_label if task == "binary" else afb_load_label
+    return [(p, c, label_to_idx[label_fn(c)]) for p, c in items]
 
 
 class PhlegmAFBDataset(Dataset):
@@ -195,6 +206,67 @@ def evaluate(
     return acc, y_arr, p_arr
 
 
+@torch.no_grad()
+def collect_probs(
+    model: nn.Module, loader: DataLoader, device: torch.device
+) -> tuple[np.ndarray, np.ndarray]:
+    model.eval()
+    ys: list[int] = []
+    probs: list[list[float]] = []
+    for x, y in loader:
+        x = x.to(device)
+        logits = model(x)
+        p = torch.softmax(logits, dim=1).cpu().numpy()
+        ys.extend(y.numpy().tolist())
+        probs.extend(p.tolist())
+    return np.array(ys), np.array(probs)
+
+
+def tune_decision_threshold(
+    y_true: np.ndarray,
+    probs: np.ndarray,
+    positive_idx: int,
+) -> tuple[float, float]:
+    """Pick threshold on positive-class probability maximizing val macro-F1."""
+    pos_p = probs[:, positive_idx]
+    best_thr = 0.5
+    best_f1 = -1.0
+    for thr in np.linspace(0.05, 0.95, 19):
+        pred = (pos_p >= thr).astype(int)
+        f1 = float(f1_score(y_true, pred, average="macro", zero_division=0))
+        if f1 > best_f1:
+            best_f1 = f1
+            best_thr = float(thr)
+    return best_thr, best_f1
+
+
+def predict_with_threshold(y_probs: np.ndarray, positive_idx: int, threshold: float) -> np.ndarray:
+    return (y_probs[:, positive_idx] >= threshold).astype(int)
+
+
+def checkpoint_payload(
+    model: nn.Module,
+    *,
+    label_to_idx: dict[str, int],
+    cfg: Config,
+    task: str,
+    decision_threshold: float,
+    class_names: list[str],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model_state": model.state_dict(),
+        "label_map": label_to_idx,
+        "backbone": cfg.backbone,
+        "img_size": cfg.img_size,
+        "task": task,
+        "decision_threshold": decision_threshold,
+        "class_names": class_names,
+    }
+    if task == "load4":
+        payload["load_bins"] = [{"name": n, "min": lo, "max": hi} for n, lo, hi in LOAD_BINS]
+    return payload
+
+
 def class_weights(items: list[tuple[Path, int, int]], num_classes: int) -> torch.Tensor:
     counts = np.zeros(num_classes, dtype=np.float64)
     for _, _, y in items:
@@ -219,6 +291,7 @@ def main() -> None:
     p.add_argument("--lr", type=float, default=None)
     p.add_argument("--img-size", type=int, default=None)
     p.add_argument("--backbone", choices=("small_cnn", "resnet18"), default=None)
+    p.add_argument("--task", choices=("binary", "load4"), default=None, help="binary AFB detected vs 4-class load")
     p.add_argument("--no-augment", action="store_true")
     p.add_argument("--no-class-weight", action="store_true")
     args = p.parse_args()
@@ -234,6 +307,8 @@ def main() -> None:
         cfg = dataclasses.replace(cfg, img_size=args.img_size)
     if args.backbone is not None:
         cfg = dataclasses.replace(cfg, backbone=args.backbone)
+    if args.task is not None:
+        cfg = dataclasses.replace(cfg, task=args.task)
     if args.no_augment:
         cfg = dataclasses.replace(cfg, augment=False)
     if args.no_class_weight:
@@ -252,10 +327,12 @@ def main() -> None:
             raise FileNotFoundError(f"Missing split folder: {idir} or {ldir}")
         splits[s] = collect_split(idir, ldir)
 
-    label_to_idx = {name: i for i, name in enumerate(LOAD_LABELS)}
-    train_items = items_to_xy(splits["train"], label_to_idx)
-    val_items = items_to_xy(splits["val"], label_to_idx)
-    test_items = items_to_xy(splits["test"], label_to_idx)
+    task = cfg.task
+    class_names = BINARY_LABELS if task == "binary" else LOAD_LABELS
+    label_to_idx = {name: i for i, name in enumerate(class_names)}
+    train_items = items_to_xy(splits["train"], label_to_idx, task=task)
+    val_items = items_to_xy(splits["val"], label_to_idx, task=task)
+    test_items = items_to_xy(splits["test"], label_to_idx, task=task)
 
     norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     base_tf = transforms.Compose(
@@ -282,7 +359,7 @@ def main() -> None:
     val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, pin_memory=pin)
     test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, pin_memory=pin)
 
-    num_classes = len(LOAD_LABELS)
+    num_classes = len(class_names)
     model = make_model(num_classes, cfg.backbone).to(device)
 
     crit: nn.Module = (
@@ -296,30 +373,33 @@ def main() -> None:
     out_dir = args.out_dir
     if out_dir is None:
         stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_dir = here / "runs" / f"phlegm_afb_{stamp}"
+        prefix = "phlegm_afb_binary" if task == "binary" else "phlegm_afb"
+        out_dir = here / "runs" / f"{prefix}_{stamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     distribution = {
-        s: {name: 0 for name in LOAD_LABELS}
+        s: {name: 0 for name in class_names}
         for s in ("train", "val", "test")
     }
     for s, xs in (("train", train_items), ("val", val_items), ("test", test_items)):
         for _, _, y in xs:
-            distribution[s][LOAD_LABELS[y]] += 1
+            distribution[s][class_names[y]] += 1
 
     cfg_dump = {
         **dataclasses.asdict(cfg),
         "dataset": str(args.dataset),
-        "labels": LOAD_LABELS,
-        "load_bins": [{"name": n, "min": lo, "max": hi} for n, lo, hi in LOAD_BINS],
+        "labels": class_names,
         "distribution": distribution,
         "device": str(device),
     }
+    if task == "load4":
+        cfg_dump["load_bins"] = [{"name": n, "min": lo, "max": hi} for n, lo, hi in LOAD_BINS]
     (out_dir / "config.json").write_text(json.dumps(cfg_dump, indent=2), encoding="utf-8")
     (out_dir / "label_map.json").write_text(json.dumps(label_to_idx, indent=2), encoding="utf-8")
 
-    best_val = -1.0
+    best_val_f1 = -1.0
     best_path = out_dir / "model_best.pt"
+    positive_idx = label_to_idx.get("afb_positive", label_to_idx.get("high", num_classes - 1))
     for epoch in range(1, cfg.epochs + 1):
         model.train()
         losses: list[float] = []
@@ -334,50 +414,78 @@ def main() -> None:
             losses.append(float(loss.detach().cpu()))
         sched.step()
 
-        val_acc, _, _ = evaluate(model, val_loader, device)
-        if val_acc > best_val:
-            best_val = val_acc
+        val_acc, y_val, p_val = evaluate(model, val_loader, device)
+        val_f1 = float(f1_score(y_val, p_val, average="macro", zero_division=0))
+        if val_f1 > best_val_f1:
+            best_val_f1 = val_f1
+            if task == "binary":
+                y_val_probs, val_probs = collect_probs(model, val_loader, device)
+                decision_threshold, _ = tune_decision_threshold(y_val_probs, val_probs, positive_idx)
+            else:
+                decision_threshold = 0.5
             torch.save(
-                {
-                    "model_state": model.state_dict(),
-                    "label_map": label_to_idx,
-                    "backbone": cfg.backbone,
-                    "img_size": cfg.img_size,
-                    "load_bins": [{"name": n, "min": lo, "max": hi} for n, lo, hi in LOAD_BINS],
-                },
+                checkpoint_payload(
+                    model,
+                    label_to_idx=label_to_idx,
+                    cfg=cfg,
+                    task=task,
+                    decision_threshold=decision_threshold,
+                    class_names=class_names,
+                ),
                 best_path,
             )
         print(
             f"epoch {epoch:03d}/{cfg.epochs}  train_loss={float(np.mean(losses)):.4f}  "
-            f"val_acc={val_acc:.4f}  best_val_acc={best_val:.4f}"
+            f"val_acc={val_acc:.4f}  val_macro_f1={val_f1:.4f}  best_val_macro_f1={best_val_f1:.4f}",
+            flush=True,
         )
 
     ck = torch.load(best_path, map_location=device, weights_only=False)
     model.load_state_dict(ck["model_state"])
-    test_acc, y_t, p_t = evaluate(model, test_loader, device)
+    decision_threshold = float(ck.get("decision_threshold", 0.5))
+    y_val_probs, val_probs = collect_probs(model, val_loader, device)
+    if task == "binary":
+        y_t_probs, test_probs = collect_probs(model, test_loader, device)
+        p_t = predict_with_threshold(test_probs, positive_idx, decision_threshold)
+        y_t = y_t_probs
+    else:
+        test_acc_tmp, y_t, p_t = evaluate(model, test_loader, device)
+        _ = test_acc_tmp
+    test_acc = float((y_t == p_t).mean()) if len(y_t) else 0.0
     macro_f1 = float(f1_score(y_t, p_t, average="macro", zero_division=0))
-    metrics = {
-        "best_val_acc": best_val,
+    cm = confusion_matrix(y_t, p_t)
+    metrics: dict[str, Any] = {
+        "task": task,
+        "best_val_macro_f1": best_val_f1,
+        "decision_threshold": decision_threshold,
         "test_acc": test_acc,
         "test_macro_f1": macro_f1,
-        "confusion_matrix": confusion_matrix(y_t, p_t).tolist(),
+        "confusion_matrix": cm.tolist(),
         "classification_report": classification_report(
-            y_t, p_t, target_names=LOAD_LABELS, zero_division=0
+            y_t, p_t, target_names=class_names, zero_division=0
         ),
     }
+    if task == "binary" and cm.size == 4:
+        tn, fp, fn, tp = cm.ravel()
+        metrics["sensitivity"] = float(tp / (tp + fn)) if (tp + fn) else 0.0
+        metrics["specificity"] = float(tn / (tn + fp)) if (tn + fp) else 0.0
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     torch.save(
-        {
-            "model_state": model.state_dict(),
-            "label_map": label_to_idx,
-            "backbone": cfg.backbone,
-            "img_size": cfg.img_size,
-            "load_bins": [{"name": n, "min": lo, "max": hi} for n, lo, hi in LOAD_BINS],
-        },
+        checkpoint_payload(
+            model,
+            label_to_idx=label_to_idx,
+            cfg=cfg,
+            task=task,
+            decision_threshold=decision_threshold,
+            class_names=class_names,
+        ),
         out_dir / "model_last.pt",
     )
 
-    print(f"\nDone. best_val_acc={best_val:.4f}  test_acc={test_acc:.4f}  test_macro_f1={macro_f1:.4f}")
+    print(
+        f"\nDone. best_val_macro_f1={best_val_f1:.4f}  test_acc={test_acc:.4f}  "
+        f"test_macro_f1={macro_f1:.4f}  threshold={decision_threshold:.3f}"
+    )
     print(f"Artifacts: {out_dir}")
 
 

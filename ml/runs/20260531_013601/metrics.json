@@ -1,0 +1,17 @@
+{
+  "test_accuracy": 0.7386799693016116,
+  "best_f1_macro": 0.6833922803624775,
+  "blend_cnn_weight": 0.4,
+  "decision_threshold": 0.38000000000000006,
+  "confusion_matrix": [
+    [
+      1507,
+      342
+    ],
+    [
+      339,
+      418
+    ]
+  ],
+  "classification_report": "              precision    recall  f1-score   support\n\n           0     0.8164    0.8150    0.8157      1849\n           1     0.5500    0.5522    0.5511       757\n\n    accuracy                         0.7387      2606\n   macro avg     0.6832    0.6836    0.6834      2606\nweighted avg     0.7390    0.7387    0.7388      2606\n"
+}

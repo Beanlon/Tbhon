@@ -1,0 +1,40 @@
+[
+  {
+    "name": "A_legacy_64mels_4s",
+    "run_dir": "runs/20260530_224728",
+    "epochs": 20,
+    "early_stop_epoch": 6,
+    "test_f1_macro": 0.4825391635526921,
+    "test": {
+      "f1_no_tb": 0.499814333457111,
+      "f1_tb": 0.46526399364827314,
+      "threshold": 0.44
+    },
+    "decision_threshold": 0.44,
+    "note": "Best new run; did not beat baseline 0.629"
+  },
+  {
+    "name": "B_resblock_64mels_4s",
+    "run_dir": "runs/20260530_225928",
+    "epochs": 20,
+    "early_stop_epoch": 6,
+    "test_f1_macro": 0.4150392817059484,
+    "test": {
+      "f1_no_tb": 0.8300785634118968,
+      "f1_tb": 0.0,
+      "threshold": 0.49
+    },
+    "decision_threshold": 0.49
+  },
+  {
+    "name": "C_resblock_128mels_6s",
+    "run_dir": "runs/20260530_221336",
+    "epochs": 3,
+    "test_f1_macro": 0.4150392817059484,
+    "test": {
+      "threshold": 0.38
+    },
+    "decision_threshold": 0.38,
+    "note": "Quick 3-epoch run; full 20-epoch run in progress"
+  }
+]

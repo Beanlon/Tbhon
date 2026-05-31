@@ -300,6 +300,67 @@ export async function queueIotDeviceStopAudioCommand(args: {
   return queueIotDeviceCommand({ command: "audio upload", ...args });
 }
 
+/**
+ * Probe whether the bench device has an active audio capture for this session.
+ * Uses a stop attempt: 409 "No active audio" = not recording yet; 409 with seconds = recording.
+ */
+export async function probeIotDeviceAudioActive(args: {
+  userId: string;
+  sessionId: string;
+}): Promise<boolean> {
+  try {
+    await queueIotDeviceStopAudioCommand(args);
+    throw new Error("Device recording stopped during readiness check");
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      const msg = e.message;
+      if (msg.includes("No active audio")) return false;
+      if (msg.includes("seconds")) return true;
+    }
+    throw e;
+  }
+}
+
+export type WaitForIotDeviceAudioOptions = {
+  timeoutMs?: number;
+  intervalMs?: number;
+  signal?: AbortSignal;
+  onProgress?: (elapsedMs: number) => void;
+};
+
+/** Block until the device has actually started recording (not just queued). */
+export async function waitForIotDeviceAudioReady(
+  args: { userId: string; sessionId: string } & WaitForIotDeviceAudioOptions,
+): Promise<void> {
+  const timeoutMs = args.timeoutMs ?? 12_000;
+  const intervalMs = args.intervalMs ?? 400;
+  const started = Date.now();
+
+  while (Date.now() - started < timeoutMs) {
+    if (args.signal?.aborted) {
+      throw new Error("Upload wait cancelled");
+    }
+    args.onProgress?.(Date.now() - started);
+    if (await probeIotDeviceAudioActive(args)) return;
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(resolve, intervalMs);
+      if (args.signal) {
+        const onAbort = () => {
+          clearTimeout(t);
+          reject(new Error("Upload wait cancelled"));
+        };
+        if (args.signal.aborted) {
+          clearTimeout(t);
+          reject(new Error("Upload wait cancelled"));
+          return;
+        }
+        args.signal.addEventListener("abort", onAbort, { once: true });
+      }
+    });
+  }
+  throw new Error("Timed out waiting for device to start recording");
+}
+
 /** Queue ESP32 capture via JWT when deployed; otherwise use {@link queueIotDeviceImageCommand}. */
 export async function requestIotCapture(args: {
   command: IotCaptureCommand;

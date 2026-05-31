@@ -1,0 +1,14 @@
+{
+  "dataset_slug": "ruchikashirsath/tb-audio",
+  "fold": 0,
+  "seed": 1337,
+  "sample_rate": 16000,
+  "clip_seconds": 4.0,
+  "n_mels": 64,
+  "cnn_epochs": 8,
+  "cnn_batch_size": 32,
+  "cnn_lr": 0.0003,
+  "gbm_n_estimators": 300,
+  "val_fraction": 0.12,
+  "legacy_arch": true
+}

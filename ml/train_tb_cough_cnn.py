@@ -17,8 +17,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
+from sklearn.model_selection import train_test_split
 
 import kagglehub
+
+from audio_crop import fix_length as crop_fix_length
+from model_arch import build_model, load_model_from_state
 
 
 @dataclass(frozen=True)
@@ -49,6 +53,10 @@ class Config:
     spec_freq_masks: int = 2
     spec_time_mask_param: int = 30   # max consecutive time steps masked
     spec_freq_mask_param: int = 16   # max consecutive mel bins masked
+
+    val_fraction: float = 0.12
+    early_stop_patience: int = 5
+    legacy_arch: bool = False
 
 
 def set_seed(seed: int) -> None:
@@ -149,15 +157,7 @@ class TbCoughDataset(torch.utils.data.Dataset):
         return wav.squeeze(0)  # [T]
 
     def _fix_length(self, x: torch.Tensor) -> torch.Tensor:
-        if x.numel() == self.target_len:
-            return x
-        if x.numel() > self.target_len:
-            start = 0
-            if self.train:
-                start = int(torch.randint(0, x.numel() - self.target_len + 1, (1,)).item())
-            return x[start : start + self.target_len]
-        pad = self.target_len - x.numel()
-        return F.pad(x, (0, pad))
+        return crop_fix_length(x, self.target_len, train=self.train)
 
     def _augment_waveform(self, x: torch.Tensor) -> torch.Tensor:
         if not (self.train and self.cfg.augment):
@@ -216,80 +216,63 @@ class TbCoughDataset(torch.utils.data.Dataset):
         return x, torch.tensor(y, dtype=torch.long)
 
 
-class ResBlock(nn.Module):
-    """Mini residual block: 2x Conv3x3 with skip connection."""
-    def __init__(self, channels: int) -> None:
-        super().__init__()
-        self.block = nn.Sequential(
-            nn.Conv2d(channels, channels, 3, padding=1, bias=False),
-            nn.BatchNorm2d(channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(channels, channels, 3, padding=1, bias=False),
-            nn.BatchNorm2d(channels),
-        )
-        self.relu = nn.ReLU(inplace=True)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.relu(x + self.block(x))
-
-
-class SmallAudioCNN(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.features = nn.Sequential(
-            # Stem
-            nn.Conv2d(1, 32, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),           # /2
-            ResBlock(32),
-            # Stage 2
-            nn.Conv2d(32, 64, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),           # /4
-            ResBlock(64),
-            # Stage 3
-            nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),           # /8
-            ResBlock(128),
-            nn.AdaptiveAvgPool2d((4, 4)),
-        )
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(128 * 4 * 4, 256),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.4),
-            nn.Linear(256, 64),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.2),
-            nn.Linear(64, 2),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.features(x)
-        return self.classifier(x)
-
-
 @torch.no_grad()
-def evaluate(model: nn.Module, loader: torch.utils.data.DataLoader, device: torch.device) -> dict:
+def evaluate(
+    model: nn.Module,
+    loader: torch.utils.data.DataLoader,
+    device: torch.device,
+    *,
+    threshold: float = 0.5,
+) -> dict:
     model.eval()
     ys: list[int] = []
-    ps: list[int] = []
+    probs_tb: list[float] = []
     for xb, yb in loader:
         xb = xb.to(device)
         logits = model(xb)
-        pred = logits.argmax(dim=1).cpu().numpy().tolist()
+        prob = torch.softmax(logits, dim=1)[:, 1].cpu().numpy().tolist()
         ys.extend(yb.numpy().tolist())
-        ps.extend(pred)
+        probs_tb.extend(prob)
 
+    ps = [1 if p >= threshold else 0 for p in probs_tb]
     acc = float(accuracy_score(ys, ps))
-    f1 = float(f1_score(ys, ps, average="macro"))
+    f1 = float(f1_score(ys, ps, average="macro", zero_division=0))
+    f1_per_class = f1_score(ys, ps, average=None, labels=[0, 1], zero_division=0).tolist()
     cm = confusion_matrix(ys, ps).tolist()
-    report = classification_report(ys, ps, digits=4)
-    return {"accuracy": acc, "f1_macro": f1, "confusion_matrix": cm, "classification_report": report}
+    report = classification_report(ys, ps, digits=4, zero_division=0)
+    return {
+        "accuracy": acc,
+        "f1_macro": f1,
+        "f1_no_tb": float(f1_per_class[0]),
+        "f1_tb": float(f1_per_class[1]),
+        "threshold": threshold,
+        "confusion_matrix": cm,
+        "classification_report": report,
+    }
+
+
+@torch.no_grad()
+def sweep_threshold(model: nn.Module, loader: torch.utils.data.DataLoader, device: torch.device) -> tuple[float, float]:
+    """Pick TB probability threshold that maximizes macro-F1 on loader."""
+    model.eval()
+    ys: list[int] = []
+    probs_tb: list[float] = []
+    for xb, yb in loader:
+        xb = xb.to(device)
+        logits = model(xb)
+        prob = torch.softmax(logits, dim=1)[:, 1].cpu().numpy().tolist()
+        ys.extend(yb.numpy().tolist())
+        probs_tb.extend(prob)
+
+    best_t = 0.5
+    best_f1 = -1.0
+    for t in np.linspace(0.25, 0.75, 51):
+        ps = [1 if p >= t else 0 for p in probs_tb]
+        f1 = float(f1_score(ys, ps, average="macro", zero_division=0))
+        if f1 > best_f1:
+            best_f1 = f1
+            best_t = float(t)
+    return best_t, best_f1
 
 
 def save_confusion_matrix_png(cm: list[list[int]], out_path: Path, class_names: list[str]) -> None:
@@ -369,6 +352,16 @@ def train(cfg: Config) -> None:
     train_items = resolve(train_rows)
     test_items = resolve(test_rows)
 
+    labels = [y for _, y in train_items]
+    train_idx, val_idx = train_test_split(
+        np.arange(len(train_items)),
+        test_size=cfg.val_fraction,
+        random_state=cfg.seed,
+        stratify=labels,
+    )
+    train_items_split = [train_items[i] for i in train_idx]
+    val_items = [train_items[i] for i in val_idx]
+
     mel_transform = torchaudio.transforms.MelSpectrogram(
         sample_rate=cfg.sample_rate,
         n_fft=cfg.n_fft,
@@ -380,13 +373,21 @@ def train(cfg: Config) -> None:
     )
     amp_to_db = torchaudio.transforms.AmplitudeToDB(stype="power")
 
-    train_ds = TbCoughDataset(train_items, cfg, train=True, mel_transform=mel_transform, amp_to_db=amp_to_db)
+    train_ds = TbCoughDataset(train_items_split, cfg, train=True, mel_transform=mel_transform, amp_to_db=amp_to_db)
+    val_ds = TbCoughDataset(val_items, cfg, train=False, mel_transform=mel_transform, amp_to_db=amp_to_db)
     test_ds = TbCoughDataset(test_items, cfg, train=False, mel_transform=mel_transform, amp_to_db=amp_to_db)
 
     train_loader = torch.utils.data.DataLoader(
         train_ds,
         batch_size=cfg.batch_size,
         shuffle=True,
+        num_workers=cfg.num_workers,
+        pin_memory=torch.cuda.is_available(),
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_ds,
+        batch_size=cfg.batch_size,
+        shuffle=False,
         num_workers=cfg.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
@@ -398,9 +399,9 @@ def train(cfg: Config) -> None:
         pin_memory=torch.cuda.is_available(),
     )
 
-    model = SmallAudioCNN().to(device)
+    model = build_model(legacy=cfg.legacy_arch).to(device)
 
-    class_w = compute_class_weights([y for _, y in train_items]).to(device)
+    class_w = compute_class_weights([y for _, y in train_items_split]).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_w)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg.epochs, eta_min=1e-6)
@@ -408,11 +409,16 @@ def train(cfg: Config) -> None:
     run_dir = make_run_dir()
     (run_dir / "config.json").write_text(json.dumps(dataclasses.asdict(cfg), indent=2), encoding="utf-8")
     print(f"Run dir: {run_dir}")
-    print(f"Train samples: {len(train_items)}  |  Test samples: {len(test_items)}")
-    print(f"Using device: {device}")
+    print(
+        f"Train samples: {len(train_items_split)}  |  Val: {len(val_items)}  |  "
+        f"Test samples: {len(test_items)}"
+    )
+    print(f"Using device: {device}  |  legacy_arch={cfg.legacy_arch}")
 
     best_f1 = -1.0
     best_path = run_dir / "model.pt"
+    epochs_without_improvement = 0
+    epoch_log_path = run_dir / "epoch_log.jsonl"
 
     for epoch in range(1, cfg.epochs + 1):
         model.train()
@@ -428,43 +434,91 @@ def train(cfg: Config) -> None:
             losses.append(float(loss.detach().cpu().item()))
 
         scheduler.step()
-        metrics = evaluate(model, test_loader, device)
+        val_metrics = evaluate(model, val_loader, device)
         mean_loss = float(np.mean(losses)) if losses else 0.0
+        log_row = {
+            "epoch": epoch,
+            "train_loss": mean_loss,
+            "val_accuracy": val_metrics["accuracy"],
+            "val_f1_macro": val_metrics["f1_macro"],
+            "val_f1_no_tb": val_metrics["f1_no_tb"],
+            "val_f1_tb": val_metrics["f1_tb"],
+            "lr": scheduler.get_last_lr()[0],
+        }
+        with epoch_log_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(log_row) + "\n")
         print(
             f"epoch {epoch:02d}/{cfg.epochs} loss={mean_loss:.4f} "
-            f"val_acc={metrics['accuracy']:.4f} val_f1={metrics['f1_macro']:.4f}  "
+            f"val_acc={val_metrics['accuracy']:.4f} val_f1={val_metrics['f1_macro']:.4f}  "
             f"lr={scheduler.get_last_lr()[0]:.2e}",
             flush=True,
         )
 
-        if metrics["f1_macro"] > best_f1:
-            best_f1 = metrics["f1_macro"]
+        if val_metrics["f1_macro"] > best_f1:
+            best_f1 = val_metrics["f1_macro"]
+            epochs_without_improvement = 0
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
                     "config": dataclasses.asdict(cfg),
                     "best_f1_macro": best_f1,
+                    "best_val_f1_macro": best_f1,
                 },
                 best_path,
             )
-            print(f"  -> new best F1: {best_f1:.4f} (saved)", flush=True)
+            print(f"  -> new best val F1: {best_f1:.4f} (saved)", flush=True)
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= cfg.early_stop_patience:
+                print(
+                    f"  -> early stop at epoch {epoch} "
+                    f"(no val F1 improvement for {cfg.early_stop_patience} epochs)",
+                    flush=True,
+                )
+                break
 
-    final_metrics = evaluate(model, test_loader, device)
+    if not best_path.exists():
+        torch.save(
+            {
+                "model_state_dict": model.state_dict(),
+                "config": dataclasses.asdict(cfg),
+                "best_f1_macro": best_f1,
+                "best_val_f1_macro": best_f1,
+            },
+            best_path,
+        )
+
+    ckpt = torch.load(best_path, map_location=device)
+    best_model = build_model(legacy=cfg.legacy_arch).to(device)
+    best_model.load_state_dict(ckpt["model_state_dict"])
+    best_threshold, _ = sweep_threshold(best_model, val_loader, device)
+    test_metrics = evaluate(best_model, test_loader, device, threshold=best_threshold)
+    ckpt["decision_threshold"] = best_threshold
+    ckpt["best_f1_macro"] = test_metrics["f1_macro"]
+    ckpt["test_metrics"] = {
+        k: v for k, v in test_metrics.items() if k != "classification_report"
+    }
+    torch.save(ckpt, best_path)
+
     (run_dir / "metrics.json").write_text(
         json.dumps(
             {
-                "best_f1_macro": best_f1,
-                "final": {k: v for k, v in final_metrics.items() if k != "classification_report"},
-                "classification_report": final_metrics["classification_report"],
+                "best_val_f1_macro": best_f1,
+                "best_f1_macro": test_metrics["f1_macro"],
+                "decision_threshold": best_threshold,
+                "test": {k: v for k, v in test_metrics.items() if k != "classification_report"},
+                "classification_report": test_metrics["classification_report"],
             },
             indent=2,
         ),
         encoding="utf-8",
     )
-    save_confusion_matrix_png(final_metrics["confusion_matrix"], run_dir / "confusion_matrix.png", ["No-TB", "TB"])
+    save_confusion_matrix_png(test_metrics["confusion_matrix"], run_dir / "confusion_matrix.png", ["No-TB", "TB"])
 
     print(f"\nSaved run to: {run_dir}")
     print(f"Best checkpoint: {best_path}")
+    print(f"Test macro-F1 (best checkpoint): {test_metrics['f1_macro']:.4f}")
+    print(f"Decision threshold (val sweep): {best_threshold:.3f}")
 
 
 @torch.no_grad()
@@ -472,6 +526,7 @@ def predict_one(audio_path: Path, model_path: Path) -> None:
     ckpt = torch.load(model_path, map_location="cpu")
     cfg = Config(**ckpt.get("config", {}))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    threshold = float(ckpt.get("decision_threshold", 0.5))
 
     mel_transform = torchaudio.transforms.MelSpectrogram(
         sample_rate=cfg.sample_rate,
@@ -488,14 +543,12 @@ def predict_one(audio_path: Path, model_path: Path) -> None:
     x, _ = ds[0]
     x = x.unsqueeze(0).to(device)
 
-    model = SmallAudioCNN().to(device)
-    model.load_state_dict(ckpt["model_state_dict"])
-    model.eval()
+    model = load_model_from_state(ckpt["model_state_dict"], legacy=cfg.legacy_arch).to(device)
     logits = model(x)
     prob = torch.softmax(logits, dim=1).detach().cpu().numpy()[0]
-    pred = int(prob.argmax())
+    pred = 1 if prob[1] >= threshold else 0
     label = "TB" if pred == 1 else "No-TB"
-    print(f"Prediction: {label}")
+    print(f"Prediction: {label} (threshold={threshold:.3f})")
     print(f"Probabilities: No-TB={prob[0]:.4f}, TB={prob[1]:.4f}")
 
 
@@ -510,6 +563,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-workers", type=int, default=0)
     p.add_argument("--n-mels", type=int, default=128)
     p.add_argument("--clip-seconds", type=float, default=6.0)
+    p.add_argument("--legacy-arch", action="store_true", help="Use legacy 3-conv CNN (better on fold 0 baseline).")
+    p.add_argument("--val-fraction", type=float, default=0.12)
+    p.add_argument("--early-stop-patience", type=int, default=5)
 
     p.add_argument("--predict", type=str, default=None, help="Path to a .wav file to run inference on.")
     p.add_argument("--model", type=str, default=None, help="Path to a saved model.pt (required for --predict).")
@@ -528,6 +584,9 @@ def main() -> None:
         num_workers=int(args.num_workers),
         n_mels=int(args.n_mels),
         clip_seconds=float(args.clip_seconds),
+        legacy_arch=bool(args.legacy_arch),
+        val_fraction=float(args.val_fraction),
+        early_stop_patience=int(args.early_stop_patience),
     )
 
     if args.predict:

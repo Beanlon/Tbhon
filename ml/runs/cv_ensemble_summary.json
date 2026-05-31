@@ -1,0 +1,69 @@
+{
+  "folds": [
+    0,
+    1,
+    2
+  ],
+  "per_fold": [
+    {
+      "fold": 0,
+      "accuracy": 0.9643131235610131,
+      "best_accuracy": 0.9643131235610131,
+      "threshold": 0.4,
+      "f1_macro": 0.9566615065132557,
+      "confusion_matrix": [
+        [
+          1804,
+          45
+        ],
+        [
+          48,
+          709
+        ]
+      ],
+      "n_test": 2606
+    },
+    {
+      "fold": 1,
+      "accuracy": 0.9516500383729855,
+      "best_accuracy": 0.9516500383729855,
+      "threshold": 0.39,
+      "f1_macro": 0.9429433499591305,
+      "confusion_matrix": [
+        [
+          1749,
+          55
+        ],
+        [
+          71,
+          731
+        ]
+      ],
+      "n_test": 2606
+    },
+    {
+      "fold": 2,
+      "accuracy": 0.9500959692898272,
+      "best_accuracy": 0.9500959692898272,
+      "threshold": 0.385,
+      "f1_macro": 0.9406121412527901,
+      "confusion_matrix": [
+        [
+          1758,
+          58
+        ],
+        [
+          72,
+          717
+        ]
+      ],
+      "n_test": 2605
+    }
+  ],
+  "mean_best_accuracy": 0.9553530437412752,
+  "run_dirs": [
+    "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml\\runs\\20260531_013601",
+    "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml\\runs\\20260531_014419",
+    "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml\\runs\\20260531_015235"
+  ]
+}

@@ -26,6 +26,8 @@ const PHLEGM_TONE: Record<string, PhlegmTone> = {
   low: { color: "#059669", bg: "#ECFDF5", border: "#A7F3D0", label: "Low" },
   moderate: { color: "#D97706", bg: "#FFFBEB", border: "#FCD34D", label: "Moderate" },
   high: { color: "#DC2626", bg: "#FEF2F2", border: "#FCA5A5", label: "High" },
+  afb_negative: { color: "#16A34A", bg: "#F0FDF4", border: "#BBF7D0", label: "AFB not detected" },
+  afb_positive: { color: "#D97706", bg: "#FFFBEB", border: "#FCD34D", label: "AFB detected" },
 };
 
 function phlegmTone(load: string): PhlegmTone {
@@ -553,7 +555,7 @@ export default function ResultScreen() {
                         </Text>
                       </View>
                       <Text className="mt-1.5 text-[11px]" style={{ color: colors.textMuted }}>
-                        AFB load
+                        Sputum smear screening
                         {typeof phlegmConfidence === "number" && Number.isFinite(phlegmConfidence)
                           ? ` · ${(phlegmConfidence * 100).toFixed(0)}% conf.`
                           : ""}

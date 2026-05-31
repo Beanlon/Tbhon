@@ -16,7 +16,7 @@ import torch.nn as nn
 from PIL import Image
 from torchvision import transforms
 
-from train_phlegm_cnn import LOAD_BINS, LOAD_LABELS, afb_load_label, make_model
+from train_phlegm_cnn import BINARY_LABELS, LOAD_BINS, LOAD_LABELS, afb_load_label, make_model
 
 
 def load_cnn(path: Path, device: torch.device) -> tuple[nn.Module, dict[str, int], int]:
@@ -32,8 +32,13 @@ def load_cnn(path: Path, device: torch.device) -> tuple[nn.Module, dict[str, int
 
 def predict_cnn(image_path: Path, ckpt: Path) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ck = torch.load(ckpt, map_location=device, weights_only=False)
     model, label_map, img_size = load_cnn(ckpt, device)
     inv = [k for k, _ in sorted(label_map.items(), key=lambda kv: kv[1])]
+    task = str(ck.get("task", "load4"))
+    if "afb_negative" in label_map:
+        task = "binary"
+    threshold = float(ck.get("decision_threshold", 0.5))
 
     tfm = transforms.Compose(
         [
@@ -46,14 +51,30 @@ def predict_cnn(image_path: Path, ckpt: Path) -> dict:
     x = tfm(img).unsqueeze(0).to(device)
     with torch.no_grad():
         prob = torch.softmax(model(x), dim=1).squeeze(0).cpu().tolist()
-    idx = max(range(len(prob)), key=lambda i: prob[i])
-    return {
+
+    if task == "binary":
+        pos_idx = int(label_map.get("afb_positive", 1))
+        neg_idx = int(label_map.get("afb_negative", 0))
+        predicted_afb = float(prob[pos_idx]) >= threshold
+        idx = pos_idx if predicted_afb else neg_idx
+        predicted_load = inv[idx]
+    else:
+        idx = max(range(len(prob)), key=lambda i: prob[i])
+        predicted_load = inv[idx]
+        predicted_afb = predicted_load not in {"none", "afb_negative"}
+
+    out = {
         "mode": "cnn",
-        "predicted_load": inv[idx],
+        "task": task,
+        "predicted_load": predicted_load,
+        "predicted_afb": bool(predicted_afb),
         "confidence": prob[idx],
         "probabilities": {inv[i]: round(prob[i], 6) for i in range(len(inv))},
-        "load_bins": [{"name": n, "min": lo, "max": hi} for n, lo, hi in LOAD_BINS],
+        "decision_threshold": threshold,
     }
+    if task == "load4":
+        out["load_bins"] = [{"name": n, "min": lo, "max": hi} for n, lo, hi in LOAD_BINS]
+    return out
 
 
 def predict_yolo(image_path: Path, ckpt: Path, conf: float) -> dict:
