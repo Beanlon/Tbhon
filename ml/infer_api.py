@@ -18,6 +18,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from torchvision import transforms
 
+# systemd runs `uvicorn ml.infer_api:app` from repo root; sibling modules live in ml/
+_ML_DIR = Path(__file__).resolve().parent
+if str(_ML_DIR) not in sys.path:
+  sys.path.insert(0, str(_ML_DIR))
+
 from audio_crop import fix_length
 from cough_quality import cough_authenticity_metrics
 from model_arch import LegacySmallAudioCNN, SmallAudioCNN, load_model_from_state, looks_like_legacy_state
