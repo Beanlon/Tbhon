@@ -145,15 +145,17 @@ def cough_authenticity_metrics(
     steady_noise = burst_ratio < th["steady_burst_ratio"]
 
     # Speech-like: voiced + tonal + not a sharp transient cough.
-    # Catches both sustained vowels (high median periodicity) and conversational
-    # speech (many individually-voiced frames even if median is lower).
-    speech_like = (
-        crest < th["speech_max_crest"]
-        and flatness < th["speech_flatness"]
-        and (
-            periodicity > th["speech_periodicity"]
-            or voiced_frac >= th["voiced_frac_threshold"]
-        )
+    # Two branches:
+    # 1. Sustained speech (vowels): high median periodicity AND low crest (not bursty).
+    # 2. Conversational / paused speech: the TOP loudest frames are individually voiced.
+    #    Pauses between words raise the crest factor, but the loud frames are still
+    #    speech — so we do NOT gate branch 2 on crest. Real coughs are transient
+    #    (unvoiced burst) so their loud frames have voiced_frac < 0.25.
+    speech_like = flatness < th["speech_flatness"] and (
+        # Branch 1: sustained voiced sound (e.g. "ahhh", humming)
+        (periodicity > th["speech_periodicity"] and crest < th["speech_max_crest"])
+        # Branch 2: talking / speech-with-pauses — most loud frames are periodic
+        or voiced_frac >= th["voiced_frac_threshold"]
     )
 
     replay_like = tonal > th["replay_tonalness"] and (steady_noise or speech_like)
