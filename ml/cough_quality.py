@@ -12,10 +12,16 @@ QUALITY_THRESHOLDS = {
     "max_clip_frac": 0.06,
     "steady_burst_ratio": 1.15,
     "steady_noise_max_rms": 0.015,
-    "speech_periodicity": 0.58,
-    "speech_flatness": 0.28,
+    # speech_periodicity: median autocorrelation of the loudest frames.
+    # Lowered 0.58 → 0.42 to catch conversational speech, not just sustained vowels.
+    # Real coughs have periodicity < 0.20 (transient, not periodic), so this is safe.
+    "speech_periodicity": 0.42,
+    # speech_flatness: widened slightly (0.28 → 0.32) to catch speech mixed with noise.
+    "speech_flatness": 0.32,
     "speech_burst_ratio": 1.25,
-    "speech_max_crest": 2.55,
+    # speech_max_crest: raised 2.55 → 5.0. Coughs are sharp transients (crest >> 5).
+    # Normal speech (including energetic speech) stays below 5. Catches more voice.
+    "speech_max_crest": 5.0,
     "replay_tonalness": 70.0,
     "fast_pass_burst_ratio": 2.0,
     "fast_pass_min_rms": 0.02,
@@ -27,6 +33,11 @@ QUALITY_THRESHOLDS = {
     # Fans measured: dyn 1.1-1.6, quiet 0.0. Require transient structure to pass.
     "min_dynamic_range": 2.2,
     "min_quiet_frac": 0.05,
+    # voiced_frac: fraction of loudest frames with per-frame periodicity above this.
+    # Catches conversational speech even when the aggregate median periodicity is
+    # brought down by consonants / pauses.
+    "voiced_frame_period_min": 0.28,
+    "voiced_frac_threshold": 0.45,
 }
 
 
@@ -118,6 +129,14 @@ def cough_authenticity_metrics(
     tonal = float(np.median(tonals)) if tonals else 0.0
     flatness = float(np.median(flats)) if flats else 0.0
     periodicity = float(np.median(periods)) if periods else 0.0
+    # voiced_frac: fraction of loudest frames that show individual periodicity.
+    # Catches conversational speech (consonants lower the median but many frames
+    # are still voiced) even when aggregate periodicity falls below speech_periodicity.
+    voiced_frac = (
+        float(sum(1 for p in periods if p > th["voiced_frame_period_min"]) / len(periods))
+        if periods
+        else 0.0
+    )
 
     reasons: list[str] = []
 
@@ -125,11 +144,16 @@ def cough_authenticity_metrics(
     heavy_clipping = clipped > th["max_clip_frac"]
     steady_noise = burst_ratio < th["steady_burst_ratio"]
 
-    # Speech-like: sustained voicing (periodic + tonal), not a sharp cough transient.
+    # Speech-like: voiced + tonal + not a sharp transient cough.
+    # Catches both sustained vowels (high median periodicity) and conversational
+    # speech (many individually-voiced frames even if median is lower).
     speech_like = (
-        periodicity > th["speech_periodicity"]
+        crest < th["speech_max_crest"]
         and flatness < th["speech_flatness"]
-        and crest < th["speech_max_crest"]
+        and (
+            periodicity > th["speech_periodicity"]
+            or voiced_frac >= th["voiced_frac_threshold"]
+        )
     )
 
     replay_like = tonal > th["replay_tonalness"] and (steady_noise or speech_like)
@@ -214,5 +238,6 @@ def cough_authenticity_metrics(
         "tonalness": tonal,
         "flatness": flatness,
         "periodicity": periodicity,
+        "voiced_frac": voiced_frac,
         "fast_pass": fast_pass,
     }
