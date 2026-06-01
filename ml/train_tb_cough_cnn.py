@@ -19,8 +19,6 @@ import torchaudio
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 from sklearn.model_selection import train_test_split
 
-import kagglehub
-
 from audio_crop import fix_length as crop_fix_length
 from model_arch import build_model, load_model_from_state
 
@@ -67,6 +65,7 @@ def set_seed(seed: int) -> None:
 
 
 def download_dataset_root(cfg: Config) -> Path:
+    import kagglehub  # only needed during training
     p = Path(kagglehub.dataset_download(cfg.dataset_slug))
     # Observed structure: <cache>/<slug>/versions/1/Tuberculosis/...
     tb_root = p / "Tuberculosis"

@@ -12,7 +12,7 @@ import { downloadSessionSputumToCache } from "../../services/backendApi";
 import { palette } from "../../constants/palette";
 import { fuseTbRisk, fusionToNavParams } from "../../utils/tbRiskFusion";
 
-const ANALYSIS_UPLOAD_TIMEOUT_MS = 12000;
+const ANALYSIS_UPLOAD_TIMEOUT_MS = 90_000;
 
 /** URLs that only work on the same LAN as the PC (or USB tricks), not on carrier mobile data. */
 const LAN_OR_LOCALHOST = /https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|127\.0\.0\.1|localhost)(:|\/|$)/i;
