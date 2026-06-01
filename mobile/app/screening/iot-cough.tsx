@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Audio } from "expo-av";
+import type { AVPlaybackStatus } from "expo-av/build/AV.types";
 import { CoughQualityBadge } from "../../components/CoughQualityBadge";
 import { IOT_COUGH_COUNT, IOT_COUGH_STEPS } from "../../constants/iotScreening";
 import { palette } from "../../constants/palette";
@@ -412,7 +413,7 @@ export default function IotCoughScreen() {
   const baselineFingerprintsRef = useRef<Set<string>>(new Set());
   const waveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const micScale = useRef(new Animated.Value(1)).current;
-  const playingRef = useRef<Audio.Sound | null>(null);
+  const playingRef = useRef<InstanceType<typeof Audio.Sound> | null>(null);
   const uploadPollAbortRef = useRef<AbortController | null>(null);
   const autoStopTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopAudioCaptureRef = useRef<() => void>(() => {});
@@ -1184,7 +1185,7 @@ export default function IotCoughScreen() {
         setIsPlaying(initialStatus.isPlaying ?? true);
       }
 
-      sound.setOnPlaybackStatusUpdate((status) => {
+      sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
         if (!status.isLoaded) return;
         setIsPlaying(status.isPlaying ?? false);
         setPlayPositionMs(status.positionMillis ?? 0);

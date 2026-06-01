@@ -915,6 +915,8 @@ export type ScreeningSessionDetail = {
     source?: string | null;
     /** Which cough slot (1-based) this recording belongs to. Null for legacy rows. */
     coughAttempt?: number | null;
+    /** ISO timestamp of when this recording was last written (used to detect retakes). */
+    recordedAt?: string | null;
     qualityCheck: { ok: boolean; label: string | null; reasonsJson: unknown } | null;
     audioPrediction: { probTb: number; probNoTb: number } | null;
   }>;
