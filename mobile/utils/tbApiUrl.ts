@@ -6,6 +6,34 @@ function isRemoteTunnelHost(host: string): boolean {
   return lower.includes("trycloudflare.com") || lower.includes("exp.direct") || lower.includes("expo.dev");
 }
 
+/** WSL2 / Hyper-V / Docker — Expo LAN mode often picks these; phones cannot reach them. */
+function isPrivateVirtualLanHost(host: string): boolean {
+  return /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+}
+
+function parseTbApiHost(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/** Droplet or HTTPS tunnel — skip Metro proxy / virtual LAN fallbacks. */
+function isExplicitRemoteTbApi(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol === "https:") return true;
+    const h = u.hostname;
+    if (!h || h === "127.0.0.1" || h === "localhost" || h === "10.0.2.2") return false;
+    if (isPrivateVirtualLanHost(h)) return false;
+    if (/^192\.168\./.test(h) || /^10\./.test(h)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Metro / dev server host from Expo (e.g. "192.168.1.9:8081").
  * Same machine as your ML API when you run both on the PC - use for phone + Expo Go on LAN.
@@ -17,6 +45,7 @@ function devPackagerLanHost(): string | null {
   if (!host) return null;
   if (host === "localhost" || host === "127.0.0.1") return null;
   if (isRemoteTunnelHost(host)) return null;
+  if (isPrivateVirtualLanHost(host)) return null;
   return host;
 }
 
@@ -58,6 +87,7 @@ function devMetroHost(): string | null {
   const [host] = uri.split(":").map((s) => s.trim());
   if (!host) return null;
   if (isRemoteTunnelHost(host)) return null;
+  if (isPrivateVirtualLanHost(host)) return null;
   return host;
 }
 
@@ -107,8 +137,15 @@ export function resolveTbApiBaseUrls(): string[] {
   const lan = devPackagerLanHost();
   const envIsStaleCfTunnel =
     envTrimmed.length > 0 && envTrimmed.toLowerCase().includes("trycloudflare.com");
+  const envIsExplicitRemote = envTrimmed.length > 0 && isExplicitRemoteTbApi(envTrimmed);
 
-  // LAN Expo + local infer: try Metro proxy / :8000 before a possibly dead quick tunnel.
+  // Droplet / HTTPS tunnel in .env — use only that (no WSL 172.x or Metro proxy noise).
+  if (envIsExplicitRemote) {
+    add(envTrimmed);
+    return out;
+  }
+
+  // LAN Expo + dead quick tunnel: try Metro proxy / real LAN :8000 before stale CF URL.
   if (__DEV__ && lan && envIsStaleCfTunnel) {
     for (const proxy of devMetroTbProxyBases()) add(proxy);
     add(`http://${lan}:8000`);
@@ -116,9 +153,8 @@ export function resolveTbApiBaseUrls(): string[] {
   } else if (envTrimmed.length > 0) {
     add(envTrimmed);
   }
-  // Metro proxy only works for LAN/dev-server hosts. Remote Expo tunnels expose
-  // HTTPS :443, not the local Metro port, so those proxy URLs would hang phones.
-  if (!(__DEV__ && lan && envIsStaleCfTunnel)) {
+  // Metro proxy only when dev host is a real LAN IP (not WSL/Hyper-V 172.x).
+  if (!(__DEV__ && lan && envIsStaleCfTunnel) && lan) {
     for (const proxy of devMetroTbProxyBases()) add(proxy);
   }
   if (envTrimmed.length === 0) add(resolveTbApiBaseUrl());
