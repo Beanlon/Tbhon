@@ -5,8 +5,8 @@ import { getAuthToken } from "../utils/authStorage";
 
 const cacheDirectory = FileSystem.cacheDirectory ?? "";
 
-const API_REQUEST_TIMEOUT_MS = 15000;
-const RAW_UPLOAD_TIMEOUT_MS = 20000;
+const API_REQUEST_TIMEOUT_MS = 30000;
+const RAW_UPLOAD_TIMEOUT_MS = 45000;
 
 export type ApiUserPayload = {
   userId: string;

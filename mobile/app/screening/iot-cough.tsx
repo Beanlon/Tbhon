@@ -760,7 +760,12 @@ export default function IotCoughScreen() {
   }, [ensureSessionReady, refreshUploadBaseline]);
 
   const kickOffBackgroundPrep = useCallback(() => {
-    prepPromiseRef.current = prepareRecordingSession();
+    const p = prepareRecordingSession();
+    // Suppress the unhandled-rejection warning. runUploadPoll awaits this promise
+    // inside a try/catch, but if it rejects before that await is reached JS fires
+    // an unhandled rejection. The catch there handles the actual error path.
+    p.catch(() => {});
+    prepPromiseRef.current = p;
   }, [prepareRecordingSession]);
 
   const queueIotAudioStartWithRetry = useCallback(
