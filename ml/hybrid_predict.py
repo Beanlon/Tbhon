@@ -12,12 +12,29 @@ from train_tb_cough_cnn import Config
 from train_tb_cough_hybrid import HybridConfig, build_feature_matrix, cnn_probabilities, extract_gbm_features
 
 
+def resolve_hybrid_bundle_path(model_path: Path, bundle_path: str | Path) -> Path:
+    """Find hybrid_bundle.pkl even when the checkpoint stores a path from another machine."""
+    bp = Path(bundle_path)
+    if bp.is_file():
+        return bp
+    sibling = model_path.parent / "hybrid_bundle.pkl"
+    if sibling.is_file():
+        return sibling
+    by_name = model_path.parent / bp.name
+    if bp.name and by_name.is_file():
+        return by_name
+    raise FileNotFoundError(
+        f"hybrid bundle not found at {bp} or {sibling} (model {model_path})"
+    )
+
+
 def load_hybrid_bundle(model_path: Path) -> dict:
     ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
     bundle_path = ckpt.get("hybrid_bundle")
     if not bundle_path:
         raise ValueError("Not a hybrid checkpoint")
-    with Path(bundle_path).open("rb") as fh:
+    resolved = resolve_hybrid_bundle_path(model_path, bundle_path)
+    with resolved.open("rb") as fh:
         bundle = pickle.load(fh)
     bundle["checkpoint_path"] = str(model_path)
     bundle["decision_threshold"] = float(ckpt.get("decision_threshold", bundle.get("decision_threshold", 0.5)))

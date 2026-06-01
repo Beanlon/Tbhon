@@ -15,6 +15,7 @@ import torch.nn as nn
 import torchaudio
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from PIL import Image
 from torchvision import transforms
 
@@ -26,6 +27,7 @@ if str(_ML_DIR) not in sys.path:
 from audio_crop import fix_length
 from cough_quality import cough_authenticity_metrics
 from model_arch import LegacySmallAudioCNN, SmallAudioCNN, load_model_from_state, looks_like_legacy_state
+from tb_risk_fusion import fuse_tb_risk
 
 # Define the FastAPI app
 app = FastAPI(title="TB cough audio inference")
@@ -548,6 +550,7 @@ def root() -> dict[str, Any]:
       "POST /check-phlegm-quality": "Multipart form field `file` (sputum image QC only)",
       "POST /predict": "Multipart form field `file` (TB probability + quality gate)",
       "POST /predict-phlegm": "Multipart form field `file` (sputum image → AFB detected / load grade)",
+      "POST /fuse-risk": "JSON body — fuse checklist + cough + sputum probabilities into one risk score",
       "GET /docs": "Interactive API docs (Swagger)",
     },
   }
@@ -621,6 +624,10 @@ async def predict(file: UploadFile = File(...)) -> dict[str, Any]:
     try:
       bundle = load_hybrid_bundle(model_path)
       out = predict_hybrid_from_path(tmp_path, bundle)
+    except (FileNotFoundError, ValueError) as e:
+      raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:
+      raise HTTPException(status_code=500, detail=f"Hybrid predict failed: {e!s}") from e
     finally:
       try:
         tmp_path.unlink(missing_ok=True)
@@ -682,6 +689,31 @@ async def predict_phlegm(file: UploadFile = File(...)) -> dict[str, Any]:
     raise HTTPException(status_code=400, detail=str(e)) from e
   except Exception as e:
     raise HTTPException(status_code=400, detail=f"Could not run phlegm model: {e!s}") from e
+
+
+class FuseRiskRequest(BaseModel):
+  checklist: str | dict | None = None
+  cough_prob_tb: float | None = Field(default=None, ge=0.0, le=1.0)
+  cough_unavailable: bool = False
+  sputum_load: str = ""
+  sputum_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+  sputum_probs: dict[str, float] | str | None = None
+  sputum_analyzed: bool = False
+
+
+@app.post("/fuse-risk")
+def fuse_risk(body: FuseRiskRequest) -> dict[str, Any]:
+  """Fuse checklist, cough ML, and sputum ML into one screening risk score."""
+  result = fuse_tb_risk(
+    checklist=body.checklist,
+    cough_prob_tb=body.cough_prob_tb,
+    cough_unavailable=body.cough_unavailable,
+    sputum_load=body.sputum_load,
+    sputum_confidence=body.sputum_confidence,
+    sputum_probs=body.sputum_probs,
+    sputum_analyzed=body.sputum_analyzed,
+  )
+  return result.to_dict()
 
 
 if __name__ == "__main__":
