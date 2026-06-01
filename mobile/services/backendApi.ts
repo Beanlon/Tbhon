@@ -6,7 +6,26 @@ import { getAuthToken } from "../utils/authStorage";
 const cacheDirectory = FileSystem.cacheDirectory ?? "";
 
 const API_REQUEST_TIMEOUT_MS = 30000;
+/** IoT session polling over mobile data / Cloudflare tunnels needs more time. */
+const IOT_SESSION_FETCH_TIMEOUT_MS = 60_000;
+const IOT_COMMAND_TIMEOUT_MS = 45_000;
 const RAW_UPLOAD_TIMEOUT_MS = 45000;
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableNetworkError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  const msg = e.message.toLowerCase();
+  return (
+    e.name === "AbortError" ||
+    msg.includes("aborted") ||
+    msg.includes("timed out") ||
+    msg.includes("network request failed") ||
+    msg.includes("failed to fetch")
+  );
+}
 
 export type ApiUserPayload = {
   userId: string;
@@ -65,7 +84,7 @@ async function parseErrorMessage(response: Response): Promise<string> {
 
 export async function apiRequest<T>(
   path: string,
-  options: RequestInit & { json?: JsonBody } = {},
+  options: RequestInit & { json?: JsonBody; timeoutMs?: number } = {},
   token?: string | null,
 ): Promise<T> {
   // TODO(Backend+Mobile, production auth hardening):
@@ -86,9 +105,10 @@ export async function apiRequest<T>(
   if (authHeader) {
     (headers as Record<string, string>)["Authorization"] = `Bearer ${authHeader}`;
   }
-  const { json: bodyJson, ...rest } = options;
+  const { json: bodyJson, timeoutMs, ...rest } = options;
+  const requestTimeoutMs = timeoutMs ?? API_REQUEST_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   let response: Response;
   try {
     response = await fetch(url, {
@@ -97,6 +117,11 @@ export async function apiRequest<T>(
       signal: controller.signal,
       body: bodyJson !== undefined ? JSON.stringify(bodyJson) : rest.body,
     });
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error("Request timed out. Please check your connection.");
+    }
+    throw e;
   } finally {
     clearTimeout(timeout);
   }
@@ -240,39 +265,76 @@ export async function queueIotDeviceCommand(args: {
   const base = resolveApiBaseUrl();
   const url = `${base}/iot/device-command`;
   console.log(`[IoT] POST ${url} command=${args.command} session=${args.sessionId.slice(0, 8)}…`);
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "X-IoT-Key": key.trim(),
-    },
-    body: JSON.stringify({
-      command: args.command,
-      userId: args.userId.trim(),
-      sessionId: args.sessionId.trim(),
-      ...(args.coughAttempt != null
-        ? { coughAttempt: clampCoughAttempt(args.coughAttempt) }
-        : {}),
-    }),
-  });
 
-  if (!response.ok) {
-    throw new ApiError(response.status, await parseErrorMessage(response));
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), IOT_COMMAND_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "X-IoT-Key": key.trim(),
+        },
+        body: JSON.stringify({
+          command: args.command,
+          userId: args.userId.trim(),
+          sessionId: args.sessionId.trim(),
+          ...(args.coughAttempt != null
+            ? { coughAttempt: clampCoughAttempt(args.coughAttempt) }
+            : {}),
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const err = new ApiError(response.status, await parseErrorMessage(response));
+        const retryable =
+          (err.status === 409 || err.status === 503 || err.status === 429) && attempt < 2;
+        if (retryable) {
+          console.log(`[IoT] Device busy (${err.status}), retry ${attempt + 1}/2…`);
+          lastError = err;
+          await sleepMs(900 * (attempt + 1));
+          continue;
+        }
+        throw err;
+      }
+
+      const text = await response.text();
+      if (!text) {
+        return {
+          ok: true,
+          message: `Queued '${args.command}' command for device`,
+          command: args.command,
+          userId: args.userId,
+          sessionId: args.sessionId,
+          coughAttempt: args.coughAttempt ?? null,
+        };
+      }
+      return JSON.parse(text) as IotDeviceCommandResult;
+    } catch (e) {
+      lastError = e;
+      const retryable = isRetryableNetworkError(e) && attempt < 2;
+      if (retryable) {
+        console.log(
+          `[IoT] Command failed (${e instanceof Error ? e.message : String(e)}), retry ${attempt + 1}/2…`,
+        );
+        await sleepMs(900 * (attempt + 1));
+        continue;
+      }
+      if (e instanceof Error && e.name === "AbortError") {
+        throw new Error("Device command timed out. Check your connection and try again.");
+      }
+      throw e;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  const text = await response.text();
-  if (!text) {
-    return {
-      ok: true,
-      message: `Queued '${args.command}' command for device`,
-      command: args.command,
-      userId: args.userId,
-      sessionId: args.sessionId,
-      coughAttempt: args.coughAttempt ?? null,
-    };
-  }
-  return JSON.parse(text) as IotDeviceCommandResult;
+  if (lastError instanceof Error) throw lastError;
+  throw new Error("Device command failed. Please try again.");
 }
 
 /** Queue `image` on the device (sputum still photo). */
@@ -556,34 +618,58 @@ export function coughRecordingFingerprint(preview: SessionCoughRecordingPreview)
   return `${preview.recordingId}|${preview.byteSize}|${preview.recordedAt ?? ""}`;
 }
 
+export type FetchSessionCoughOptions = {
+  /** Per-attempt timeout (default 60s for slow mobile uploads). */
+  timeoutMs?: number;
+  /** Extra attempts after the first failure (default 2). */
+  retries?: number;
+};
+
 /** IoT cough rows with raw bytes for a draft session. */
 export async function fetchSessionCoughRecordings(
   sessionId: string,
+  options: FetchSessionCoughOptions = {},
 ): Promise<SessionCoughRecordingPreview[]> {
-  try {
-    const { session } = await getScreening(sessionId);
-    if (session.sessionId !== sessionId) return [];
-    return session.coughRecordings
-      .filter(
-        (r): r is typeof r & { recordingId: string } =>
-          Boolean(r.hasRawData) &&
-          typeof r.recordingId === "string" &&
-          r.recordingId.length > 0 &&
-          (r.byteSize ?? 0) > 0,
-      )
-      .map((r) => ({
-        sessionId,
-        recordingId: r.recordingId,
-        byteSize: r.byteSize ?? 0,
-        mimeType: r.mimeType ?? null,
-        source: r.source ?? null,
-        coughAttempt: (r.coughAttempt as number | null | undefined) ?? null,
-        recordedAt: (r.recordedAt as string | null | undefined) ?? null,
-      }));
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 404) return [];
-    throw e;
+  const timeoutMs = options.timeoutMs ?? IOT_SESSION_FETCH_TIMEOUT_MS;
+  const retries = options.retries ?? 2;
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const { session } = await getScreening(sessionId, timeoutMs);
+      if (session.sessionId !== sessionId) return [];
+      return session.coughRecordings
+        .filter(
+          (r): r is typeof r & { recordingId: string } =>
+            Boolean(r.hasRawData) &&
+            typeof r.recordingId === "string" &&
+            r.recordingId.length > 0 &&
+            (r.byteSize ?? 0) > 0,
+        )
+        .map((r) => ({
+          sessionId,
+          recordingId: r.recordingId,
+          byteSize: r.byteSize ?? 0,
+          mimeType: r.mimeType ?? null,
+          source: r.source ?? null,
+          coughAttempt: (r.coughAttempt as number | null | undefined) ?? null,
+          recordedAt: (r.recordedAt as string | null | undefined) ?? null,
+        }));
+    } catch (e) {
+      lastError = e;
+      if (e instanceof ApiError && e.status === 404) return [];
+      if (attempt < retries && isRetryableNetworkError(e)) {
+        console.log(
+          `[IoT] Session fetch failed (attempt ${attempt + 1}/${retries + 1}): ${e instanceof Error ? e.message : String(e)}`,
+        );
+        await sleepMs(800 * (attempt + 1));
+        continue;
+      }
+      throw e;
+    }
   }
+
+  throw lastError instanceof Error ? lastError : new Error("Failed to load session recordings");
 }
 
 export type PollCoughRecordingOptions = {
@@ -622,7 +708,10 @@ export async function pollForNewCoughRecording(
     pollAttempt += 1;
     options.onProgress?.(Date.now() - started, pollAttempt);
 
-    const rows = await fetchSessionCoughRecordings(sessionId);
+    const rows = await fetchSessionCoughRecordings(sessionId, {
+      timeoutMs: 25_000,
+      retries: 1,
+    });
 
     // Primary: prefer the row whose coughAttempt matches the slot we're waiting on.
     if (options.coughAttempt != null) {
@@ -945,11 +1034,12 @@ export async function listMyScreenings(limit = 50) {
   return apiRequest<{ screenings: ScreeningHistoryRow[] }>(`/screenings${q}`, { method: "GET" });
 }
 
-export async function getScreening(sessionId: string) {
+export async function getScreening(sessionId: string, timeoutMs?: number) {
   return apiRequest<{ session: ScreeningSessionDetail }>(
     `/screenings/${encodeURIComponent(sessionId)}`,
     {
       method: "GET",
+      ...(timeoutMs != null ? { timeoutMs } : {}),
     },
   );
 }

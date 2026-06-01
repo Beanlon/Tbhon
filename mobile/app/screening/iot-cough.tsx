@@ -410,7 +410,11 @@ export default function IotCoughScreen() {
       : "",
   );
   const coughIndexRef = useRef(1);
+  const slotsRef = useRef<(CoughSlot | null)[]>([null, null, null]);
   const baselineFingerprintsRef = useRef<Set<string>>(new Set());
+  /** Server fingerprints seen this session — survives retake slot clears and fetch timeouts. */
+  const knownServerFingerprintsRef = useRef<Set<string>>(new Set());
+  const prepInFlightRef = useRef<Promise<void> | null>(null);
   const waveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const micScale = useRef(new Animated.Value(1)).current;
   const playingRef = useRef<InstanceType<typeof Audio.Sound> | null>(null);
@@ -435,6 +439,10 @@ export default function IotCoughScreen() {
   useEffect(() => {
     coughIndexRef.current = coughIndex;
   }, [coughIndex]);
+
+  useEffect(() => {
+    slotsRef.current = slots;
+  }, [slots]);
 
   useEffect(() => {
     let cancelled = false;
@@ -568,11 +576,14 @@ export default function IotCoughScreen() {
 
   const collectBaselineFingerprints = useCallback(() => {
     const set = new Set<string>();
-    for (const slot of slots) {
+    for (const slot of slotsRef.current) {
       if (slot) set.add(slot.fingerprint);
     }
+    for (const fp of knownServerFingerprintsRef.current) {
+      set.add(fp);
+    }
     return set;
-  }, [slots]);
+  }, []);
 
   const rerunQualityCheck = useCallback(
     async (slotIndex: number, localUri: string, recordingId: string) => {
@@ -607,6 +618,7 @@ export default function IotCoughScreen() {
         preview.mimeType,
       );
       const fingerprint = coughRecordingFingerprint(preview);
+      knownServerFingerprintsRef.current.add(fingerprint);
       const slotIndex = coughIndexRef.current - 1;
       const recordingId = preview.recordingId;
       setSlots((prev) => {
@@ -640,6 +652,8 @@ export default function IotCoughScreen() {
     const sidShort = sid.length > 0 ? sid.slice(0, 8) : "";
     const isAbort =
       (e instanceof Error && (e.name === "AbortError" || msg.toLowerCase().includes("aborted"))) ||
+      msg.includes("Request timed out") ||
+      msg.includes("Device command timed out") ||
       msg.includes("Quality check upload timed out") ||
       msg.includes("Network request");
 
@@ -737,35 +751,59 @@ export default function IotCoughScreen() {
     const ensuredSessionId = sessionIdRef.current.trim();
     if (!ensuredSessionId) return;
 
-    const existing = await fetchSessionCoughRecordings(ensuredSessionId);
-    console.log(
-      `[IoT Cough] Server has ${existing.length} recordings:`,
-      existing
-        .map(
-          (r) =>
-            `slot${r.coughAttempt}:${r.recordingId?.slice(0, 8)}:${r.byteSize}:${r.recordedAt?.slice(11, 19) ?? "no-time"}`,
-        )
-        .join(", "),
-    );
-    for (const row of existing) {
-      // Add ALL server recordings to baseline including current slot's OLD recording
-      // This ensures we don't detect the OLD recording as "new" on retakes
-      baselineFingerprintsRef.current.add(coughRecordingFingerprint(row));
-      if (row.coughAttempt === currentAttempt) {
-        console.log(
-          `[IoT Cough] Added OLD slot ${row.coughAttempt} to baseline: ${coughRecordingFingerprint(row)}`,
-        );
+    try {
+      const existing = await fetchSessionCoughRecordings(ensuredSessionId, {
+        timeoutMs: 60_000,
+        retries: 2,
+      });
+      console.log(
+        `[IoT Cough] Server has ${existing.length} recordings:`,
+        existing
+          .map(
+            (r) =>
+              `slot${r.coughAttempt}:${r.recordingId?.slice(0, 8)}:${r.byteSize}:${r.recordedAt?.slice(11, 19) ?? "no-time"}`,
+          )
+          .join(", "),
+      );
+      for (const row of existing) {
+        const fp = coughRecordingFingerprint(row);
+        baselineFingerprintsRef.current.add(fp);
+        knownServerFingerprintsRef.current.add(fp);
+        if (row.coughAttempt === currentAttempt) {
+          console.log(`[IoT Cough] Added OLD slot ${row.coughAttempt} to baseline: ${fp}`);
+        }
+      }
+    } catch (e) {
+      console.warn(
+        `[IoT Cough] Server baseline fetch failed — using ${knownServerFingerprintsRef.current.size} cached fingerprint(s):`,
+        e instanceof Error ? e.message : String(e),
+      );
+      for (const fp of knownServerFingerprintsRef.current) {
+        baselineFingerprintsRef.current.add(fp);
       }
     }
     console.log(`[IoT Cough] Final baseline: ${baselineFingerprintsRef.current.size} fingerprints`);
   }, [collectBaselineFingerprints, ensureSessionReady]);
 
   const prepareRecordingSession = useCallback(async () => {
-    await ensureSessionReady();
-    if (coughIndexRef.current > 1 || retakeNeedsSettleRef.current) {
-      await sleep(IOT_QUEUE_DRAIN_MS);
+    if (prepInFlightRef.current) {
+      return prepInFlightRef.current;
     }
-    await refreshUploadBaseline();
+    const run = (async () => {
+      await ensureSessionReady();
+      if (coughIndexRef.current > 1 || retakeNeedsSettleRef.current) {
+        await sleep(IOT_QUEUE_DRAIN_MS);
+      }
+      await refreshUploadBaseline();
+    })();
+    prepInFlightRef.current = run;
+    try {
+      await run;
+    } finally {
+      if (prepInFlightRef.current === run) {
+        prepInFlightRef.current = null;
+      }
+    }
   }, [ensureSessionReady, refreshUploadBaseline]);
 
   const kickOffBackgroundPrep = useCallback(() => {
@@ -1154,7 +1192,20 @@ export default function IotCoughScreen() {
     prepPromiseRef.current = null;
     retakeNeedsSettleRef.current = true;
     console.log(`[IoT Cough] Retake state reset complete, ready for new recording`);
-  }, [coughIndex, stopCurrent]);
+    // Pre-warm session baseline while the ESP32 finishes uploading the old take.
+    void (async () => {
+      await sleep(IOT_QUEUE_DRAIN_MS);
+      try {
+        await prepareRecordingSession();
+        console.log("[IoT Cough] Retake prep complete — device link ready");
+      } catch (e) {
+        console.warn(
+          "[IoT Cough] Retake prep failed (will retry on Record):",
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    })();
+  }, [coughIndex, prepareRecordingSession, stopCurrent]);
 
   const playCurrent = useCallback(async () => {
     if (isPlaying) {

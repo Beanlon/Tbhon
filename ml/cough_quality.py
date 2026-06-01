@@ -173,6 +173,10 @@ def cough_authenticity_metrics(
         and periodicity < th["noise_periodicity"]
     )
 
+    # IoT / phone mics often compress envelope dynamic_range; a sharp peak (high crest)
+    # with moderate burst_ratio is still a real cough transient, not steady noise.
+    cough_transient = crest >= 3.5 and burst_ratio >= th["steady_burst_ratio"]
+
     # Steady / non-transient sound (fan, AC, hum, sustained drone): audible but
     # lacks the loud-burst-then-quiet structure of a real cough. This is the
     # positive cough-evidence requirement that catches fan noise.
@@ -180,7 +184,8 @@ def cough_authenticity_metrics(
     # cough bursts in background noise have dynamic_range ≈ 1 because only ~8% of
     # frames are burst, making p90 and p10 land in the noise floor, not the burst).
     no_cough_burst = (
-        not too_quiet
+        not cough_transient
+        and not too_quiet
         and burst_ratio < th["fast_pass_burst_ratio"]
         and dynamic_range < th["min_dynamic_range"]
         and quiet_frac < th["min_quiet_frac"]
