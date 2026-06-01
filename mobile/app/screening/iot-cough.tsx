@@ -638,6 +638,10 @@ export default function IotCoughScreen() {
     const msg = e instanceof Error ? e.message : "Failed to capture audio";
     const sid = sessionIdRef.current.trim();
     const sidShort = sid.length > 0 ? sid.slice(0, 8) : "";
+    const isAbort =
+      (e instanceof Error && (e.name === "AbortError" || msg.toLowerCase().includes("aborted"))) ||
+      msg.includes("Quality check upload timed out") ||
+      msg.includes("Network request");
 
     if (e instanceof ApiError && e.status === 401) {
       setErrorText(
@@ -664,6 +668,10 @@ export default function IotCoughScreen() {
     } else if (msg.includes("Timed out waiting for device audio")) {
       setErrorText(
         `The screening device didn't send the audio in time.\n\nPlease check:\n• Device is powered on\n• Device is connected to Wi-Fi\n• Device shows recording activity\n\nThen tap Record to try again.${sidShort ? `\n\n[Session: ${sidShort}…]` : ""}`,
+      );
+    } else if (isAbort) {
+      setErrorText(
+        `Network request timed out. Check your connection and tap Record to try again.${sidShort ? ` [${sidShort}…]` : ""}`,
       );
     } else if (phase === "stop") {
       setErrorText(`Something went wrong while stopping the recording. Please try again.${sidShort ? ` [${sidShort}…]` : ""}`);

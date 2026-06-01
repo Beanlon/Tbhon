@@ -104,12 +104,15 @@ export async function checkCoughRecordingQuality(
     }
 
     if (!data) {
+      console.log("[CoughQuality] No response data — marking unavailable");
       return { status: "unavailable", label: "" };
     }
-    return {
-      status: data?.ok === true ? "ok" : "bad",
-      label: (data?.label ?? "") as CoughQualityLabel,
-    };
+    const status: CoughQualityStatus = data?.ok === true ? "ok" : "bad";
+    const label = (data?.label ?? "") as CoughQualityLabel;
+    console.log(
+      `[CoughQuality] Result: ${status} (label=${label || "none"}) reasons=${JSON.stringify(data?.reasons ?? [])}`,
+    );
+    return { status, label };
   } catch {
     return { status: "unavailable", label: "" };
   }
