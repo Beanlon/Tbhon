@@ -28,6 +28,7 @@ import SputumSamplePhoto from "../components/SputumSamplePhoto";
 import { getAuthToken } from "../../utils/authStorage";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
 import { useTheme } from "../../contexts/ThemeContext";
+import { fuseTbRisk, type FusionModalityBreakdown } from "../../utils/tbRiskFusion";
 
 type RiskLevel = "low" | "moderate" | "high";
 
@@ -245,9 +246,40 @@ function buildChecklistRowsFromAnswerMap(map: Map<string, boolean>): ChecklistAn
   return ordered;
 }
 
+function checklistJsonFromRows(rows: ChecklistAnswerRow[]): string {
+  const items = rows
+    .filter((r) => r.answerYes !== null)
+    .map((r) => ({
+      id: r.questionId,
+      label: r.questionText,
+      value: r.answerYes === true,
+    }));
+  return JSON.stringify({ version: 2, items });
+}
+
+function meanCoughProbFromSession(s: ScreeningSessionDetail): number | null {
+  const probs = s.coughRecordings
+    .map((r) => r.audioPrediction?.probTb)
+    .filter((p): p is number => typeof p === "number" && Number.isFinite(p));
+  if (probs.length === 0) return null;
+  return probs.reduce((a, b) => a + b, 0) / probs.length;
+}
+
+function fusionFactorsFromModalities(modalities: FusionModalityBreakdown[]): string[] {
+  const lines = modalities
+    .filter((m) => m.available && typeof m.probTb === "number")
+    .map(
+      (m) =>
+        `${m.label}: ${((m.probTb as number) * 100).toFixed(1)}% TB signal (${m.riskLevel ?? "—"} risk)`,
+    );
+  return lines.length > 0 ? lines : ["Limited screening inputs available for this session."];
+}
+
 function mapSessionToViewModel(s: ScreeningSessionDetail): {
   risk: RiskLevel;
   probTb: number | null;
+  fusionModalities: FusionModalityBreakdown[];
+  fusionMethod: string;
   audioUris: string[];
   imageUri: string;
   imageAnalyzed: boolean;
@@ -265,19 +297,41 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
 } {
   const risk = coerceRisk(s.finalRiskLevel ?? s.result?.riskLevel);
 
+  const coughProb = meanCoughProbFromSession(s);
+  const invalidAudio = Boolean(s.result?.invalidAudio);
+
+  const fromResponses = symptomAnswerMapFromApi(s);
+  const fromPayload = checklistAnswerMapFromPayload(readSessionChecklistPayload(s));
+  const merged = mergeAnswerMaps(fromResponses, fromPayload);
+  const checklistRows = buildChecklistRowsFromAnswerMap(merged);
+
+  const img = s.sputumImage ?? null;
+  const pp = img?.phlegmPrediction ?? null;
+  const phlegmLoad = pp?.predictedLoad ?? "";
+  const phlegmConf =
+    pp && typeof pp.confidence === "number" && Number.isFinite(pp.confidence)
+      ? pp.confidence
+      : null;
+
+  let phlegmProbs: Record<string, number> | null = null;
+  if (pp?.probabilitiesJson && typeof pp.probabilitiesJson === "object") {
+    phlegmProbs = pp.probabilitiesJson as Record<string, number>;
+  }
+
+  const fusion = fuseTbRisk({
+    checklistJson: checklistJsonFromRows(checklistRows),
+    coughProbTb: coughProb,
+    coughUnavailable: invalidAudio || coughProb === null,
+    sputumLoad: phlegmLoad,
+    sputumConfidence: phlegmConf,
+    sputumProbsJson: phlegmProbs,
+    sputumAnalyzed: Boolean(pp),
+  });
+
   let probTb: number | null =
     typeof s.averageTbProbability === "number" && Number.isFinite(s.averageTbProbability)
       ? s.averageTbProbability
-      : null;
-  if (probTb === null) {
-    for (const r of s.coughRecordings) {
-      const p = r.audioPrediction?.probTb;
-      if (typeof p === "number" && Number.isFinite(p)) {
-        probTb = p;
-        break;
-      }
-    }
-  }
+      : fusion.probTb;
 
   // Only server-persisted media (hasRawData + fileUrl). Never use phone-local file:// paths.
   const audioUris = s.coughRecordings
@@ -287,15 +341,8 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
     })
     .filter((u) => u.length > 0);
 
-  const img = s.sputumImage ?? null;
   const imageUri = buildServerSputumImageUrl(s.sessionId, img) ?? "";
-  const pp = img?.phlegmPrediction ?? null;
   const imageAnalyzed = Boolean(pp);
-  const phlegmLoad = pp?.predictedLoad ?? "";
-  const phlegmConf =
-    pp && typeof pp.confidence === "number" && Number.isFinite(pp.confidence)
-      ? pp.confidence
-      : null;
   const imageProvided = Boolean(img?.hasRawData && imageUri.length > 0);
   const phlegmFailed = imageProvided && !imageAnalyzed;
 
@@ -303,11 +350,7 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
   const invalidReasons = Array.isArray(rawReasons)
     ? rawReasons.filter((x): x is string => typeof x === "string")
     : [];
-
-  const fromResponses = symptomAnswerMapFromApi(s);
-  const fromPayload = checklistAnswerMapFromPayload(readSessionChecklistPayload(s));
-  const merged = mergeAnswerMaps(fromResponses, fromPayload);
-  const checklistRows = buildChecklistRowsFromAnswerMap(merged);
+  const invalidLabel = s.result?.invalidAudioLabel ?? "";
 
   const completed = s.completedAt ? new Date(s.completedAt) : null;
   const headerSubtitle =
@@ -318,6 +361,8 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
   return {
     risk,
     probTb,
+    fusionModalities: fusion.modalities,
+    fusionMethod: fusion.method,
     audioUris,
     imageUri,
     imageAnalyzed,
@@ -326,8 +371,8 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
     phlegmFailed,
     phlegmDetail: "",
     phlegmProbsText: formatPhlegmProbsJson(pp?.probabilitiesJson),
-    invalidAudio: Boolean(s.result?.invalidAudio),
-    invalidLabel: s.result?.invalidAudioLabel ?? "",
+    invalidAudio,
+    invalidLabel,
     invalidReasons,
     checklistRows,
     savedRecommendation: s.result?.recommendation ?? null,
@@ -357,6 +402,7 @@ export default function ScreeningDetailsScreen() {
     phlegmProbs?: string;
     phlegmError?: string;
     phlegmErrorDetail?: string;
+    fusionBreakdown?: string;
   }>();
 
   const fromScreeningFlow = params.from === "result";
@@ -464,10 +510,12 @@ export default function ScreeningDetailsScreen() {
     const phlegmFailed = params.phlegmError === "1";
     const phlegmDetail = typeof params.phlegmErrorDetail === "string" ? params.phlegmErrorDetail : "";
 
+    let phlegmProbs: Record<string, number> | null = null;
     let phlegmProbsText = "";
     if (typeof params.phlegmProbs === "string" && params.phlegmProbs.length > 0) {
       try {
         const v = JSON.parse(params.phlegmProbs) as Record<string, number>;
+        phlegmProbs = v;
         phlegmProbsText = formatPhlegmProbsJson(v);
       } catch {
         phlegmProbsText = "";
@@ -510,9 +558,44 @@ export default function ScreeningDetailsScreen() {
       }
     }
 
+    let fusionModalities: FusionModalityBreakdown[] = [];
+    let fusionMethod = "";
+    if (typeof params.fusionBreakdown === "string" && params.fusionBreakdown.length > 0) {
+      try {
+        const fb = JSON.parse(params.fusionBreakdown) as {
+          modalities?: FusionModalityBreakdown[];
+          method?: string;
+        };
+        fusionModalities = Array.isArray(fb.modalities) ? fb.modalities : [];
+        fusionMethod = typeof fb.method === "string" ? fb.method : "";
+      } catch {
+        fusionModalities = [];
+      }
+    }
+    if (fusionModalities.length === 0) {
+      const checklistJson =
+        typeof params.checklist === "string" && params.checklist.length > 0
+          ? params.checklist
+          : checklistJsonFromRows(checklistRows);
+      const fusion = fuseTbRisk({
+        checklistJson,
+        coughProbTb: probTb,
+        coughUnavailable: invalidAudio || probTb === null,
+        sputumLoad: phlegmLoad,
+        sputumConfidence: phlegmConf,
+        sputumProbsJson: phlegmProbs,
+        sputumAnalyzed: imageAnalyzed,
+      });
+      fusionModalities = fusion.modalities;
+      fusionMethod = fusion.method;
+      if (probTb === null) probTb = fusion.probTb;
+    }
+
     return {
       risk,
       probTb,
+      fusionModalities,
+      fusionMethod,
       audioUris,
       imageUri,
       imageAnalyzed,
@@ -626,6 +709,12 @@ export default function ScreeningDetailsScreen() {
   }, [checklistOpen, checklistContentHeight]);
 
   const copy = RISK_COPY[risk];
+  const fusionModalities = vm?.fusionModalities ?? [];
+  const fusionMethod = vm?.fusionMethod ?? "";
+  const fusionFactors = useMemo(
+    () => fusionFactorsFromModalities(fusionModalities),
+    [fusionModalities],
+  );
 
   const Card = ({ title, children }: { title: string; children: ReactNode }) => (
     <View className="mb-3 rounded-3xl border p-5" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
@@ -827,7 +916,7 @@ export default function ScreeningDetailsScreen() {
                           Confidence: {(confidence * 100).toFixed(0)}%
                         </Text>
                         <Text className="text-sm" style={{ color: colors.textMuted }}>
-                          TB probability: {((probTb as number) * 100).toFixed(1)}%
+                          Fused TB probability: {((probTb as number) * 100).toFixed(1)}%
                         </Text>
                       </View>
                     ) : (
@@ -836,6 +925,11 @@ export default function ScreeningDetailsScreen() {
                   </View>
 
                   <Text className="text-base leading-6" style={{ color: colors.textSecondary }}>{copy.simple}</Text>
+                  {fusionMethod.length > 0 ? (
+                    <Text className="mt-3 text-sm italic leading-5" style={{ color: colors.textMuted }}>
+                      {fusionMethod}
+                    </Text>
+                  ) : null}
                 </Card>
 
                 <Card title="Input Summary">
@@ -1007,16 +1101,19 @@ export default function ScreeningDetailsScreen() {
                 </Card>
 
                 <Card title="Factor Insights">
-                  {copy.factors.map((t) => (
+                  {fusionFactors.map((t) => (
                     <Bullet key={t} text={t} />
                   ))}
+                  {fusionModalities.length === 0
+                    ? copy.factors.map((t) => <Bullet key={t} text={t} />)
+                    : null}
                   {imageAnalyzed && phlegmLoad.length > 0 && (
                     <Bullet
                       text={`Sputum smear model: ${formatPhlegmLoadLabel(phlegmLoad)}. This is a screening signal, not a certified diagnosis.`}
                     />
                   )}
                   {!imageAnalyzed && imageProvided && phlegmFailed && (
-                    <Bullet text="Phlegm model did not return a result; overall risk may rely on cough audio only." />
+                    <Bullet text="Phlegm model did not return a result; fusion used checklist and cough signals only." />
                   )}
                 </Card>
 

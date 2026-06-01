@@ -292,8 +292,8 @@ export default function ReviewInputsScreen() {
             <Pressable
               onPress={() =>
                 router.replace({
-                  pathname: iotMode ? "/screening/iot-cough" : "/screening/recording",
-                  params: { checklist, ...(iotMode ? { iotMode: "1" } : {}) },
+                  pathname: "/screening/iot-cough",
+                  params: { checklist, iotMode: "1", ...sessionNavParams },
                 } as any)
               }
               className="flex-1 items-center justify-center rounded-2xl border py-3.5 active:opacity-90 sm:py-4"

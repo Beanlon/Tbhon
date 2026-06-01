@@ -24,7 +24,7 @@ export function CoughQualityBadge({
         <View className="flex-1">
           <Text className="mb-0.5 text-sm font-bold text-amber-400">Quality check unavailable</Text>
           <Text className="text-sm text-amber-400/85">
-            Could not reach the ML API (check EXPO_PUBLIC_TB_API_URL). Retake after fixing the connection.
+            Could not reach the ML API. Check EXPO_PUBLIC_TB_API_URL in mobile/.env, restart Expo with -c, then tap Retry quality check.
           </Text>
         </View>
       </View>

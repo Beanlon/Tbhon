@@ -1,5 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
-import { resolveTbApiBaseUrls } from "./tbApiUrl";
+import { probeTbApiReachable, resolveTbApiBaseUrls } from "./tbApiUrl";
 
 export type PhlegmQualityStatus = "checking" | "ok" | "bad" | "skipped";
 export type PhlegmQualityLabel = "blank" | "dark" | "blurry" | "invalid" | "";
@@ -10,6 +10,9 @@ export const PHLEGM_QUALITY_LABEL_MSG: Record<string, string> = {
   blurry: "Image too blurry — refocus and recapture",
   invalid: "Could not validate sputum image",
 };
+
+const QUALITY_UPLOAD_TIMEOUT_MS = 45_000;
+const QUALITY_MAX_ATTEMPTS = 2;
 
 function normalizeFileUri(uri: string): string {
   const trimmed = String(uri || "").trim();
@@ -29,13 +32,17 @@ async function uploadImageForCheck(base: string, uri: string): Promise<any | nul
   const fileUri = normalizeFileUri(uri);
   const { name, mimeType } = pickMimeAndName(fileUri);
   const url = `${base.replace(/\/$/, "")}/check-phlegm-quality`;
-  const result = await FileSystem.uploadAsync(url, fileUri, {
+  const uploadTask = FileSystem.uploadAsync(url, fileUri, {
     httpMethod: "POST",
     uploadType: FileSystem.FileSystemUploadType.MULTIPART,
     fieldName: "file",
     mimeType,
     parameters: { filename: name },
   });
+  const timeoutTask = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("Phlegm quality check upload timed out")), QUALITY_UPLOAD_TIMEOUT_MS),
+  );
+  const result = await Promise.race([uploadTask, timeoutTask]);
   if (result.status < 200 || result.status >= 300) return null;
   try {
     return JSON.parse(result.body || "{}");
@@ -52,15 +59,28 @@ export async function checkPhlegmImageQuality(
   try {
     let data: any = null;
     for (const base of apiBases) {
-      try {
-        const result = await uploadImageForCheck(base, uri);
-        if (result) {
-          data = result;
-          break;
-        }
-      } catch (e) {
-        console.log(`[PhlegmQuality] check-phlegm-quality failed at ${base}:`, String((e as any)?.message ?? e));
+      if (!(await probeTbApiReachable(base))) {
+        console.log(`[PhlegmQuality] ML API unreachable at ${base}`);
+        continue;
       }
+      for (let attempt = 0; attempt < QUALITY_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          const result = await uploadImageForCheck(base, uri);
+          if (result) {
+            data = result;
+            break;
+          }
+        } catch (e) {
+          console.log(
+            `[PhlegmQuality] check-phlegm-quality failed at ${base} (attempt ${attempt + 1}):`,
+            String((e as any)?.message ?? e),
+          );
+        }
+        if (attempt + 1 < QUALITY_MAX_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, 600));
+        }
+      }
+      if (data) break;
     }
     if (!data) {
       return { status: "skipped", label: "" };

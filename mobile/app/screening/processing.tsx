@@ -10,6 +10,7 @@ import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
 import { checkPhlegmImageQuality, phlegmQualityMessage } from "../../utils/phlegmQualityCheck";
 import { downloadSessionSputumToCache } from "../../services/backendApi";
 import { palette } from "../../constants/palette";
+import { fuseTbRisk, fusionToNavParams } from "../../utils/tbRiskFusion";
 
 const ANALYSIS_UPLOAD_TIMEOUT_MS = 12000;
 
@@ -64,19 +65,26 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
   ]);
 }
 
-type RiskLevel = "low" | "moderate" | "high";
-
-function phlegmLoadToRisk(load: string): RiskLevel {
-  const x = load.toLowerCase();
-  if (x === "afb_positive" || x === "high") return "moderate";
-  if (x === "moderate") return "moderate";
-  if (x === "afb_negative" || x === "none" || x === "low") return "low";
-  return "low";
-}
-
-function mergeRisk(a: RiskLevel, b: RiskLevel): RiskLevel {
-  const rank: Record<RiskLevel, number> = { low: 0, moderate: 1, high: 2 };
-  return rank[a] >= rank[b] ? a : b;
+function buildFusionNavParams(
+  checklistStr: string,
+  coughProb: number | null,
+  coughUnavailable: boolean,
+  phlegm: PhlegmPred,
+) {
+  const conf =
+    phlegm.confidence.length > 0 && Number.isFinite(Number(phlegm.confidence))
+      ? Number(phlegm.confidence)
+      : null;
+  const fusion = fuseTbRisk({
+    checklistJson: checklistStr,
+    coughProbTb: coughProb,
+    coughUnavailable,
+    sputumLoad: phlegm.load,
+    sputumConfidence: conf,
+    sputumProbsJson: phlegm.probsJson,
+    sputumAnalyzed: phlegm.analyzed,
+  });
+  return fusionToNavParams(fusion);
 }
 
 function parsePredictResponseBody(status: number, text: string): any {
@@ -358,13 +366,6 @@ export default function ProcessingScreen() {
       }
     };
 
-    const tbProbToRisk = (p: number): "low" | "moderate" | "high" => {
-      if (!Number.isFinite(p)) return "low";
-      if (p >= 0.75) return "high";
-      if (p >= 0.5) return "moderate";
-      return "low";
-    };
-
     const run = async () => {
       const apiBases = resolveTbApiBaseUrls();
       if (__DEV__) {
@@ -410,10 +411,13 @@ export default function ProcessingScreen() {
       };
 
       if (uris.length === 0 && !imageUriStr.trim()) {
+        const fusionNav = buildFusionNavParams(checklistStr, null, true, emptyPhlegm);
         router.replace({
           pathname: "/screening/result",
           params: {
-            risk: "low",
+            risk: fusionNav.risk,
+            probTb: fusionNav.probTb,
+            fusionBreakdown: fusionNav.fusionBreakdown,
             audioUris: params.audioUris ?? "[]",
             imageUri: "",
             ...checklistNavParams,
@@ -437,10 +441,13 @@ export default function ProcessingScreen() {
         );
       }
       if (usesLanApi && !isWifiLike && !cancelled) {
+        const fusionNav = buildFusionNavParams(checklistStr, null, true, emptyPhlegm);
         router.replace({
           pathname: "/screening/result",
           params: {
-            risk: "low",
+            risk: fusionNav.risk,
+            probTb: fusionNav.probTb,
+            fusionBreakdown: fusionNav.fusionBreakdown,
             audioUris: params.audioUris ?? "[]",
             imageUri: imageUriStr,
             uploadError: "1",
@@ -459,12 +466,13 @@ export default function ProcessingScreen() {
       if (uris.length === 0 && imageUriStr.trim()) {
         const phlegm = await tryPredictPhlegm(apiBases, imageUriStr, phlegmOpts);
         if (cancelled) return;
-        const finalRisk = phlegm.analyzed ? phlegmLoadToRisk(phlegm.load) : "low";
+        const fusionNav = buildFusionNavParams(checklistStr, null, true, phlegm);
         router.replace({
           pathname: "/screening/result",
           params: {
-            risk: finalRisk,
-            probTb: "",
+            risk: fusionNav.risk,
+            probTb: fusionNav.probTb,
+            fusionBreakdown: fusionNav.fusionBreakdown,
             audioUris: params.audioUris ?? "[]",
             imageUri: imageUriStr,
             ...checklistNavParams,
@@ -517,11 +525,13 @@ export default function ProcessingScreen() {
 
         if (spoofed) {
           if (!cancelled) {
-            const phR = phlegm.analyzed ? phlegmLoadToRisk(phlegm.load) : ("low" as RiskLevel);
+            const fusionNav = buildFusionNavParams(checklistStr, null, true, phlegm);
             router.replace({
               pathname: "/screening/result",
               params: {
-                risk: mergeRisk("moderate", phR),
+                risk: fusionNav.risk,
+                probTb: fusionNav.probTb,
+                fusionBreakdown: fusionNav.fusionBreakdown,
                 audioUris: params.audioUris ?? "[]",
                 imageUri: imageUriStr,
                 invalidAudio: "1",
@@ -538,15 +548,15 @@ export default function ProcessingScreen() {
           return;
         }
 
-        const avg = probs.length ? probs.reduce((a, b) => a + b, 0) / probs.length : 0;
+        const avg = probs.length ? probs.reduce((a, b) => a + b, 0) / probs.length : null;
         if (!cancelled) {
-          const audioR = tbProbToRisk(avg);
-          const phR = phlegm.analyzed ? phlegmLoadToRisk(phlegm.load) : ("low" as RiskLevel);
+          const fusionNav = buildFusionNavParams(checklistStr, avg, false, phlegm);
           router.replace({
             pathname: "/screening/result",
             params: {
-              risk: mergeRisk(audioR, phR),
-              probTb: String(avg),
+              risk: fusionNav.risk,
+              probTb: fusionNav.probTb,
+              fusionBreakdown: fusionNav.fusionBreakdown,
               audioUris: params.audioUris ?? "[]",
               imageUri: imageUriStr,
               ...checklistNavParams,
@@ -561,12 +571,13 @@ export default function ProcessingScreen() {
         console.error(`[Processing] Upload/predict failed. Tried: ${apiBases.join(" | ")}`, err);
         if (!cancelled) {
           const phlegm = await tryPredictPhlegm(apiBases, imageUriStr, phlegmOpts);
-          const phR = phlegm.analyzed ? phlegmLoadToRisk(phlegm.load) : ("low" as RiskLevel);
+          const fusionNav = buildFusionNavParams(checklistStr, null, true, phlegm);
           router.replace({
             pathname: "/screening/result",
             params: {
-              risk: phR,
-              probTb: "",
+              risk: fusionNav.risk,
+              probTb: fusionNav.probTb,
+              fusionBreakdown: fusionNav.fusionBreakdown,
               audioUris: params.audioUris ?? "[]",
               imageUri: imageUriStr,
               ...checklistNavParams,

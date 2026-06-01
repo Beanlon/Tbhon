@@ -12,24 +12,15 @@ const IOT_INSTRUCTIONS = [
   "Sputum / phlegm capture is optional and is taken on the screening device",
 ];
 
-const LEGACY_INSTRUCTIONS = [
-  "Find a quiet environment",
-  "Answer a quick symptoms & exposure checklist",
-  "You will record 3 separate coughs, one at a time",
-  "Sputum / phlegm photo is optional — add one only if you can",
-];
-
 type Props = {
   onClose?: () => void;
-  /** When true, routes into IoT checklist flow (default for stack screening). */
-  iotMode?: boolean;
 };
 
-export default function InstructionsScreen({ onClose, iotMode = false }: Props) {
+export default function InstructionsScreen({ onClose }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const instructions = iotMode ? IOT_INSTRUCTIONS : LEGACY_INSTRUCTIONS;
+  const instructions = IOT_INSTRUCTIONS;
 
   const handleClose = () => {
     if (onClose) onClose();
@@ -40,7 +31,7 @@ export default function InstructionsScreen({ onClose, iotMode = false }: Props) 
     if (onClose) onClose();
     router.push({
       pathname: "/screening/checklist",
-      params: { from: iotMode ? "iot-instructions" : "instructions" },
+      params: { from: "iot-instructions" },
     } as any);
   };
 
@@ -59,14 +50,12 @@ export default function InstructionsScreen({ onClose, iotMode = false }: Props) 
             </TouchableOpacity>
           </View>
 
-          {iotMode ? (
-            <View className="mx-5 mb-4 rounded-2xl border px-4 py-3" style={{ borderColor: colors.border, backgroundColor: colors.primaryLight }}>
-              <Text className="text-sm leading-6" style={{ color: colors.textSecondary }}>
-                Your phone guides the steps. Sputum imaging (optional) happens on the connected
-                hardware.
-              </Text>
-            </View>
-          ) : null}
+          <View className="mx-5 mb-4 rounded-2xl border px-4 py-3" style={{ borderColor: colors.border, backgroundColor: colors.primaryLight }}>
+            <Text className="text-sm leading-6" style={{ color: colors.textSecondary }}>
+              Your phone guides the steps. Sputum imaging (optional) happens on the connected
+              hardware.
+            </Text>
+          </View>
 
           <View className="mt-2 px-5">
             {instructions.map((instruction, idx) => (

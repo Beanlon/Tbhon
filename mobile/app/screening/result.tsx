@@ -17,6 +17,7 @@ import SputumSamplePhoto from "../components/SputumSamplePhoto";
 import { clearScreeningCache } from "../../utils/screeningHistoryCache";
 import { getAuthToken } from "../../utils/authStorage";
 import { useTheme } from "../../contexts/ThemeContext";
+import type { FusionModalityBreakdown } from "../../utils/tbRiskFusion";
 
 type RiskLevel = "low" | "moderate" | "high";
 type PhlegmTone = { color: string; bg: string; border: string; label: string };
@@ -28,6 +29,34 @@ const PHLEGM_TONE: Record<string, PhlegmTone> = {
   high: { color: "#DC2626", bg: "#FEF2F2", border: "#FCA5A5", label: "High" },
   afb_negative: { color: "#16A34A", bg: "#F0FDF4", border: "#BBF7D0", label: "AFB not detected" },
   afb_positive: { color: "#D97706", bg: "#FFFBEB", border: "#FCD34D", label: "AFB detected" },
+};
+
+function parseFusionBreakdown(raw: string | undefined): {
+  probTb: number | null;
+  modalities: FusionModalityBreakdown[];
+  method: string;
+} | null {
+  if (typeof raw !== "string" || raw.trim().length === 0) return null;
+  try {
+    const v = JSON.parse(raw) as {
+      probTb?: number;
+      modalities?: FusionModalityBreakdown[];
+      method?: string;
+    };
+    return {
+      probTb: typeof v.probTb === "number" && Number.isFinite(v.probTb) ? v.probTb : null,
+      modalities: Array.isArray(v.modalities) ? v.modalities : [],
+      method: typeof v.method === "string" ? v.method : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+const MODALITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  checklist: "list-outline",
+  cough: "mic-outline",
+  sputum: "image-outline",
 };
 
 function phlegmTone(load: string): PhlegmTone {
@@ -118,6 +147,7 @@ export default function ResultScreen() {
     phlegmProbs?: string;
     phlegmError?: string;
     phlegmErrorDetail?: string;
+    fusionBreakdown?: string;
     sessionId?: string;
     deviceSputum?: string;
     sputumByteSize?: string;
@@ -129,6 +159,9 @@ export default function ResultScreen() {
 
   const cfg = RISK_CONFIG[risk];
   const probTb = typeof params.probTb === "string" ? Number(params.probTb) : null;
+  const fusionBreakdown = parseFusionBreakdown(
+    typeof params.fusionBreakdown === "string" ? params.fusionBreakdown : undefined,
+  );
   const invalidAudio = params.invalidAudio === "1";
   const invalidLabel = typeof params.invalidLabel === "string" ? params.invalidLabel : "";
   const uploadError = params.uploadError === "1";
@@ -495,50 +528,99 @@ export default function ResultScreen() {
           </View>
 
           {(() => {
-            const hasCough = typeof probTb === "number" && Number.isFinite(probTb);
+            const fusedProb =
+              fusionBreakdown?.probTb ??
+              (typeof probTb === "number" && Number.isFinite(probTb) ? probTb : null);
+            const modalities = fusionBreakdown?.modalities ?? [];
+            const hasFusion = fusedProb !== null || modalities.length > 0;
             const hasPhlegm = phlegmAnalyzed && phlegmLoad.length > 0;
-            if (!hasCough && !hasPhlegm && !phlegmFailed) return null;
+            if (!hasFusion && !hasPhlegm && !phlegmFailed) return null;
 
             const tone = hasPhlegm ? phlegmTone(phlegmLoad) : null;
-            const probPct = hasCough ? Math.round((probTb as number) * 1000) / 10 : null;
-            const probWidth = hasCough ? Math.max(2, Math.min(100, (probTb as number) * 100)) : 0;
+            const fusedPct = fusedProb !== null ? Math.round(fusedProb * 1000) / 10 : null;
+            const fusedWidth =
+              fusedProb !== null ? Math.max(2, Math.min(100, fusedProb * 100)) : 0;
 
             return (
               <View className="mb-6 rounded-2xl border p-4" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
                 <View className="mb-3 flex-row items-center gap-2">
                   <Ionicons name="pulse-outline" size={16} color={colors.textMuted} />
                   <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.textMuted }}>
-                    Signals analyzed
+                    Fusion model breakdown
                   </Text>
                 </View>
 
-                <View className="flex-row flex-wrap gap-3">
-                  {hasCough ? (
-                    <View
-                      className="flex-1 rounded-xl border p-3"
-                      style={{ minWidth: 150, borderColor: colors.borderLight, backgroundColor: colors.surface }}
-                    >
-                      <View className="mb-1.5 flex-row items-center gap-1.5">
-                        <Ionicons name="mic-outline" size={14} color={colors.textMuted} />
-                        <Text className="text-[11px] font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
-                          Cough audio
-                        </Text>
-                      </View>
-                      <View className="flex-row items-baseline gap-1">
-                        <Text className="text-2xl font-bold" style={{ color: colors.text }}>{probPct?.toFixed(1)}</Text>
-                        <Text className="text-sm font-bold" style={{ color: colors.textMuted }}>%</Text>
-                      </View>
-                      <Text className="text-[11px]" style={{ color: colors.textMuted }}>TB probability</Text>
-                      <View className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: colors.borderLight }}>
-                        <View
-                          className="h-1.5 rounded-full"
-                          style={{ width: `${probWidth}%`, backgroundColor: cfg.color }}
-                        />
-                      </View>
+                {fusedPct !== null ? (
+                  <View
+                    className="mb-3 rounded-xl border p-3"
+                    style={{ borderColor: cfg.ringColor, backgroundColor: colors.surface }}
+                  >
+                    <Text className="text-[11px] font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
+                      Combined TB screening probability
+                    </Text>
+                    <View className="mt-1 flex-row items-baseline gap-1">
+                      <Text className="text-3xl font-bold" style={{ color: cfg.color }}>
+                        {fusedPct.toFixed(1)}
+                      </Text>
+                      <Text className="text-sm font-bold" style={{ color: colors.textMuted }}>%</Text>
                     </View>
-                  ) : null}
+                    <View className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: colors.borderLight }}>
+                      <View
+                        className="h-1.5 rounded-full"
+                        style={{ width: `${fusedWidth}%`, backgroundColor: cfg.color }}
+                      />
+                    </View>
+                  </View>
+                ) : null}
 
-                  {hasPhlegm && tone ? (
+                <View className="flex-row flex-wrap gap-3">
+                  {modalities.length > 0
+                    ? modalities.map((m) => (
+                        <View
+                          key={m.key}
+                          className="flex-1 rounded-xl border p-3"
+                          style={{
+                            minWidth: 150,
+                            borderColor: colors.borderLight,
+                            backgroundColor: colors.surface,
+                            opacity: m.available ? 1 : 0.72,
+                          }}
+                        >
+                          <View className="mb-1.5 flex-row items-center gap-1.5">
+                            <Ionicons
+                              name={MODALITY_ICON[m.key] ?? "ellipse-outline"}
+                              size={14}
+                              color={colors.textMuted}
+                            />
+                            <Text className="text-[11px] font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
+                              {m.label}
+                            </Text>
+                          </View>
+                          {m.available && typeof m.probTb === "number" ? (
+                            <>
+                              <View className="flex-row items-baseline gap-1">
+                                <Text className="text-xl font-bold" style={{ color: colors.text }}>
+                                  {(m.probTb * 100).toFixed(1)}
+                                </Text>
+                                <Text className="text-xs font-bold" style={{ color: colors.textMuted }}>%</Text>
+                              </View>
+                              <Text className="text-[11px] capitalize" style={{ color: colors.textMuted }}>
+                                {m.riskLevel ?? "—"} risk · weight {m.weight.toFixed(2)}
+                              </Text>
+                            </>
+                          ) : (
+                            <Text className="text-sm font-semibold" style={{ color: colors.textMuted }}>
+                              Not used
+                            </Text>
+                          )}
+                          <Text className="mt-1 text-[11px] leading-4" style={{ color: colors.textMuted }}>
+                            {m.detail}
+                          </Text>
+                        </View>
+                      ))
+                    : null}
+
+                  {modalities.length === 0 && hasPhlegm && tone ? (
                     <View
                       className="flex-1 rounded-xl border p-3"
                       style={{ minWidth: 150, borderColor: colors.borderLight, backgroundColor: colors.surface }}
@@ -554,14 +636,10 @@ export default function ResultScreen() {
                           {tone.label}
                         </Text>
                       </View>
-                      <Text className="mt-1.5 text-[11px]" style={{ color: colors.textMuted }}>
-                        Sputum smear screening
-                        {typeof phlegmConfidence === "number" && Number.isFinite(phlegmConfidence)
-                          ? ` · ${(phlegmConfidence * 100).toFixed(0)}% conf.`
-                          : ""}
-                      </Text>
                     </View>
-                  ) : phlegmFailed ? (
+                  ) : null}
+
+                  {phlegmFailed ? (
                     <View
                       className="flex-1 rounded-xl border p-3"
                       style={{
@@ -585,7 +663,8 @@ export default function ResultScreen() {
                 </View>
 
                 <Text className="mt-3 text-[11px] italic leading-4" style={{ color: colors.textMuted }}>
-                  Combined risk uses the higher of the two signals. Not a diagnosis.
+                  {fusionBreakdown?.method ||
+                    "Weighted log-odds fusion of checklist, cough ML, and sputum ML. Screening triage only — not a diagnosis."}
                 </Text>
               </View>
             );
@@ -627,6 +706,7 @@ export default function ResultScreen() {
                   phlegmProbs: params.phlegmProbs ?? "{}",
                   phlegmError: params.phlegmError ?? "0",
                   phlegmErrorDetail: params.phlegmErrorDetail ?? "",
+                  fusionBreakdown: typeof params.fusionBreakdown === "string" ? params.fusionBreakdown : "",
                 },
               } as any)
             }

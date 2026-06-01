@@ -239,6 +239,7 @@ export async function queueIotDeviceCommand(args: {
 
   const base = resolveApiBaseUrl();
   const url = `${base}/iot/device-command`;
+  console.log(`[IoT] POST ${url} command=${args.command} session=${args.sessionId.slice(0, 8)}…`);
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -302,28 +303,6 @@ export async function queueIotDeviceStopAudioCommand(args: {
   return queueIotDeviceCommand({ command: "audio upload", ...args });
 }
 
-/**
- * Probe whether the bench device has an active audio capture for this session.
- * Uses a stop attempt: 409 "No active audio" = not recording yet; 409 with seconds = recording.
- */
-export async function probeIotDeviceAudioActive(args: {
-  userId: string;
-  sessionId: string;
-  coughAttempt?: number;
-}): Promise<boolean> {
-  try {
-    await queueIotDeviceStopAudioCommand(args);
-    throw new Error("Device recording stopped during readiness check");
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 409) {
-      const msg = e.message;
-      if (msg.includes("No active audio")) return false;
-      if (msg.includes("seconds")) return true;
-    }
-    throw e;
-  }
-}
-
 export type WaitForIotDeviceAudioOptions = {
   timeoutMs?: number;
   intervalMs?: number;
@@ -331,37 +310,58 @@ export type WaitForIotDeviceAudioOptions = {
   onProgress?: (elapsedMs: number) => void;
 };
 
-/** Block until the device has actually started recording (not just queued). */
+/**
+ * Give the ESP32 time to poll GET /iot/device-command and begin recording.
+ *
+ * IMPORTANT: Do NOT POST probe/stop commands here. Each POST queues `audio upload`
+ * on the device poll endpoint; cough 2+ then picks up those stale stops and dies.
+ * Firmware polls about every 2s, so 5s is enough for the `audio` command to land.
+ */
 export async function waitForIotDeviceAudioReady(
-  args: { userId: string; sessionId: string } & WaitForIotDeviceAudioOptions,
+  args: {
+    userId: string;
+    sessionId: string;
+    coughAttempt?: number;
+  } & WaitForIotDeviceAudioOptions,
 ): Promise<void> {
-  const timeoutMs = args.timeoutMs ?? 12_000;
-  const intervalMs = args.intervalMs ?? 400;
+  const settleMs = args.coughAttempt != null && args.coughAttempt > 1 ? 7000 : 5000;
   const started = Date.now();
 
-  while (Date.now() - started < timeoutMs) {
-    if (args.signal?.aborted) {
-      throw new Error("Upload wait cancelled");
-    }
-    args.onProgress?.(Date.now() - started);
-    if (await probeIotDeviceAudioActive(args)) return;
-    await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(resolve, intervalMs);
-      if (args.signal) {
-        const onAbort = () => {
-          clearTimeout(t);
-          reject(new Error("Upload wait cancelled"));
-        };
-        if (args.signal.aborted) {
-          clearTimeout(t);
-          reject(new Error("Upload wait cancelled"));
-          return;
-        }
-        args.signal.addEventListener("abort", onAbort, { once: true });
-      }
-    });
+  if (args.signal?.aborted) {
+    throw new Error("Upload wait cancelled");
   }
-  throw new Error("Timed out waiting for device to start recording");
+
+  await new Promise<void>((resolve, reject) => {
+    const tick = setInterval(() => {
+      if (args.signal?.aborted) {
+        clearInterval(tick);
+        clearTimeout(done);
+        reject(new Error("Upload wait cancelled"));
+        return;
+      }
+      args.onProgress?.(Date.now() - started);
+    }, 500);
+
+    const done = setTimeout(() => {
+      clearInterval(tick);
+      resolve();
+    }, settleMs);
+
+    if (args.signal) {
+      const onAbort = () => {
+        clearInterval(tick);
+        clearTimeout(done);
+        reject(new Error("Upload wait cancelled"));
+      };
+      if (args.signal.aborted) {
+        clearInterval(tick);
+        clearTimeout(done);
+        reject(new Error("Upload wait cancelled"));
+        return;
+      }
+      args.signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
 }
 
 /** Queue ESP32 capture via JWT when deployed; otherwise use {@link queueIotDeviceImageCommand}. */
@@ -624,9 +624,7 @@ export async function pollForNewCoughRecording(
 
     const rows = await fetchSessionCoughRecordings(sessionId);
 
-    const rowsHaveAttempts = rows.some((r) => r.coughAttempt != null);
-
-    // Primary: match by coughAttempt when the firmware sent one.
+    // Primary: prefer the row whose coughAttempt matches the slot we're waiting on.
     if (options.coughAttempt != null) {
       const bySlot = rows.find((r) => r.coughAttempt === options.coughAttempt);
       if (bySlot) {
@@ -635,13 +633,13 @@ export async function pollForNewCoughRecording(
       }
     }
 
-    // Legacy firmware (no coughAttempt tags): accept any new row.
-    // Tagged firmware: never grab another slot's upload while waiting for a specific slot.
-    if (options.coughAttempt == null || !rowsHaveAttempts) {
-      for (const row of rows) {
-        const fp = coughRecordingFingerprint(row);
-        if (!baselineFingerprints.has(fp)) return row;
-      }
+    // Fallback: accept any new fingerprint not in the baseline. The per-slot baseline
+    // (refreshUploadBaseline) already includes every existing server recording, so the
+    // only "new" row is the genuine upload for the current slot. This runs unconditionally
+    // so a firmware that tags a mismatched/missing coughAttempt can never hide an upload.
+    for (const row of rows) {
+      const fp = coughRecordingFingerprint(row);
+      if (!baselineFingerprints.has(fp)) return row;
     }
 
     await new Promise<void>((resolve, reject) => {

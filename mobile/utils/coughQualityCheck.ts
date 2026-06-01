@@ -1,5 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
-import { resolveTbApiBaseUrls } from "./tbApiUrl";
+import { probeTbApiReachable, resolveTbApiBaseUrls } from "./tbApiUrl";
 
 export type CoughQualityStatus = "checking" | "ok" | "bad" | "skipped" | "unavailable";
 export type CoughQualityLabel = "silence" | "speech" | "replay" | "noise" | "invalid" | "";
@@ -11,6 +11,9 @@ export const COUGH_QUALITY_LABEL_MSG: Record<string, string> = {
   noise: "Too much background noise",
   invalid: "Could not validate recording",
 };
+
+const QUALITY_UPLOAD_TIMEOUT_MS = 45_000;
+const QUALITY_MAX_ATTEMPTS = 2;
 
 export function normalizeAudioFileUri(uri: string): string {
   const trimmed = String(uri || "").trim();
@@ -35,17 +38,25 @@ function pickMimeAndName(uri: string): { name: string; mimeType: string } {
   return { name: "cough.wav", mimeType: "audio/wav" };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function uploadAudioForCheck(base: string, uri: string): Promise<any | null> {
   const fileUri = normalizeAudioFileUri(uri);
   const { name, mimeType } = pickMimeAndName(fileUri);
   const url = `${base.replace(/\/$/, "")}/check-quality`;
-  const result = await FileSystem.uploadAsync(url, fileUri, {
+  const uploadTask = FileSystem.uploadAsync(url, fileUri, {
     httpMethod: "POST",
     uploadType: FileSystem.FileSystemUploadType.MULTIPART,
     fieldName: "file",
     mimeType,
     parameters: { filename: name },
   });
+  const timeoutTask = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("Quality check upload timed out")), QUALITY_UPLOAD_TIMEOUT_MS),
+  );
+  const result = await Promise.race([uploadTask, timeoutTask]);
   if (result.status < 200 || result.status >= 300) return null;
   try {
     return JSON.parse(result.body || "{}");
@@ -59,19 +70,39 @@ export async function checkCoughRecordingQuality(
   uri: string,
 ): Promise<{ status: CoughQualityStatus; label: CoughQualityLabel }> {
   const apiBases = resolveTbApiBaseUrls();
+  if (apiBases.length === 0) {
+    return { status: "unavailable", label: "" };
+  }
+
   try {
     let data: any = null;
     for (const base of apiBases) {
-      try {
-        const result = await uploadAudioForCheck(base, uri);
-        if (result) {
-          data = result;
-          break;
-        }
-      } catch (e) {
-        console.log(`[CoughQuality] check-quality failed at ${base}:`, String((e as any)?.message ?? e));
+      const reachable = await probeTbApiReachable(base);
+      if (!reachable) {
+        console.log(`[CoughQuality] ML API unreachable at ${base}`);
+        continue;
       }
+
+      for (let attempt = 0; attempt < QUALITY_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          const result = await uploadAudioForCheck(base, uri);
+          if (result) {
+            data = result;
+            break;
+          }
+        } catch (e) {
+          console.log(
+            `[CoughQuality] check-quality failed at ${base} (attempt ${attempt + 1}):`,
+            String((e as any)?.message ?? e),
+          );
+        }
+        if (attempt + 1 < QUALITY_MAX_ATTEMPTS) {
+          await sleep(600);
+        }
+      }
+      if (data) break;
     }
+
     if (!data) {
       return { status: "unavailable", label: "" };
     }

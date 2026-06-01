@@ -10,6 +10,8 @@
     "mobile:start:remote": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel-expo.ps1",
     "tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1",
     "tunnel:api": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1 -ApiOnly",
-    "tunnel:ml": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1 -MlOnly"
+    "tunnel:ml": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel.ps1 -MlOnly",
+    "tunnel:droplets": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/cloudflare/tunnel-droplets.ps1",
+    "ml:infer": "python -m uvicorn ml.infer_api:app --host 0.0.0.0 --port 8000"
   }
 }

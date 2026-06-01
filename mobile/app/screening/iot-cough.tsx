@@ -25,7 +25,6 @@ import {
   pollForNewCoughRecording,
   queueIotDeviceAudioStartCommand,
   queueIotDeviceStopAudioCommand,
-  waitForIotDeviceAudioReady,
   type SessionCoughRecordingPreview,
 } from "../../services/backendApi";
 
@@ -39,14 +38,19 @@ const GRADIENT_COLORS = [palette.deepNavy, palette.navy, palette.signupBg] as co
 
 const IOT_POLL_MS = 1500;
 const IOT_UPLOAD_TIMEOUT_MS = 180_000;
+/** Cough 2+ uploads over ESP32 HTTPS often need extra time after the first capture. */
+const IOT_UPLOAD_TIMEOUT_LATER_MS = 300_000;
+const IOT_INTER_COUGH_SETTLE_MS = 10_000;
+/** Cough 2+ — let ESP32 drain stale stop commands from the queue before a new start. */
+const IOT_QUEUE_DRAIN_MS = 4_000;
+/** Match firmware poll interval (esp32s3-iot.ino pollDelayMs). */
+const IOT_FIRMWARE_POLL_MS = 500;
+/** After retake, wait for ESP32 upload + queue drain before next start. */
+const IOT_RETAKE_SETTLE_MS = 12_000;
 const MIN_RECORD_SECONDS = 3;
 const MAX_RECORD_SECONDS = 10;
 const RETAKE_COOLDOWN_SECONDS = 5;
 const COUNTDOWN_START = 3;
-/** Queue IoT start this many seconds before "Go" so the device can pick up the command. */
-const IOT_START_COUNTDOWN_AT = 2;
-const IOT_DEVICE_READY_TIMEOUT_MS = 20_000;
-const IOT_DEVICE_READY_POLL_MS = 500;
 
 type CoughSlot = {
   recordingId: string;
@@ -62,6 +66,10 @@ function sleep(ms: number) {
 
 function isUploadWaitTimeout(e: unknown): boolean {
   return e instanceof Error && e.message.includes("Timed out waiting for device audio");
+}
+
+function uploadTimeoutForCough(coughIndex: number): number {
+  return coughIndex >= 2 ? IOT_UPLOAD_TIMEOUT_LATER_MS : IOT_UPLOAD_TIMEOUT_MS;
 }
 
 function formatMs(ms: number): string {
@@ -414,7 +422,8 @@ export default function IotCoughScreen() {
   const prepPromiseRef = useRef<Promise<void> | null>(null);
   const startingDeviceRef = useRef(false);
   const iotStartQueuedRef = useRef(false);
-  const deviceReadyAbortRef = useRef<AbortController | null>(null);
+  const retakeNeedsSettleRef = useRef(false);
+  const recordingGenRef = useRef(0);
 
   const completedCoughs = slots.filter(Boolean).length;
   const allDone = completedCoughs >= IOT_COUGH_COUNT;
@@ -484,7 +493,6 @@ export default function IotCoughScreen() {
   useEffect(() => {
     return () => {
       uploadPollAbortRef.current?.abort();
-      deviceReadyAbortRef.current?.abort();
       if (autoStopTimerRef.current) {
         clearInterval(autoStopTimerRef.current);
         autoStopTimerRef.current = null;
@@ -565,6 +573,29 @@ export default function IotCoughScreen() {
     return set;
   }, [slots]);
 
+  const rerunQualityCheck = useCallback(
+    async (slotIndex: number, localUri: string, recordingId: string) => {
+      setSlots((prev) => {
+        const next = [...prev];
+        const cur = next[slotIndex];
+        if (cur?.recordingId === recordingId) {
+          next[slotIndex] = { ...cur, qualityStatus: "checking", qualityLabel: "" };
+        }
+        return next;
+      });
+      const { status, label } = await checkCoughRecordingQuality(localUri);
+      setSlots((prev) => {
+        const next = [...prev];
+        const cur = next[slotIndex];
+        if (cur?.recordingId === recordingId) {
+          next[slotIndex] = { ...cur, qualityStatus: status, qualityLabel: label };
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
   const applyCapturedPreview = useCallback(
     async (preview: SessionCoughRecordingPreview, sessionId: string) => {
       setStatusText("Downloading audio…");
@@ -597,17 +628,9 @@ export default function IotCoughScreen() {
       setStatusText("Audio received from device. Listen, then proceed or retake.");
       startRetakeCooldown();
 
-      const { status, label } = await checkCoughRecordingQuality(localUri);
-      setSlots((prev) => {
-        const next = [...prev];
-        const cur = next[slotIndex];
-        if (cur?.recordingId === recordingId) {
-          next[slotIndex] = { ...cur, qualityStatus: status, qualityLabel: label };
-        }
-        return next;
-      });
+      void rerunQualityCheck(slotIndex, localUri, recordingId);
     },
-    [startRetakeCooldown],
+    [rerunQualityCheck, startRetakeCooldown],
   );
 
   const handleIoTError = useCallback((e: unknown, phase: "start" | "stop" | "upload" = "upload") => {
@@ -730,6 +753,9 @@ export default function IotCoughScreen() {
 
   const prepareRecordingSession = useCallback(async () => {
     await ensureSessionReady();
+    if (coughIndexRef.current > 1 || retakeNeedsSettleRef.current) {
+      await sleep(IOT_QUEUE_DRAIN_MS);
+    }
     await refreshUploadBaseline();
   }, [ensureSessionReady, refreshUploadBaseline]);
 
@@ -766,101 +792,77 @@ export default function IotCoughScreen() {
     [],
   );
 
-  const queueIotStartEarly = useCallback(async () => {
-    if (iotStartQueuedRef.current || startingDeviceRef.current) return;
-    try {
-      let userId = userIdRef.current;
-      let sessionId = sessionIdRef.current.trim();
-      if (!userId || !sessionId) {
-        const ready = await ensureSessionReady();
-        userId = ready.userId;
-        sessionId = ready.sessionId;
-      }
-      console.log(`[IoT Cough] Pre-queuing audio start during countdown (cough ${coughIndexRef.current})...`);
-      await queueIotAudioStartWithRetry(userId, sessionId);
-      console.log(`[IoT Cough] Pre-queued audio start successfully`);
-    } catch (e) {
-      iotStartQueuedRef.current = false;
-      console.log(`[IoT Cough] Pre-queue failed, will retry on Go:`, String((e as Error)?.message ?? e));
-    }
-  }, [ensureSessionReady, queueIotAudioStartWithRetry]);
+  const enterRecordingUiAtGo = useCallback(() => {
+    recordingGenRef.current += 1;
+    const gen = recordingGenRef.current;
 
-  const beginRecordingAfterCountdown = useCallback(async () => {
+    setShowCountdown(false);
+    setErrorText(null);
+    setAudioHint(null);
+    setCaptured(false);
+    setUploadSlowPrompt(false);
+    uploadElapsedBaseRef.current = 0;
+    setRunning(false);
+    setCompletedThrough(stepIndex("started"));
+    setActiveIndex(stepIndex("recording"));
+    setStatusText(
+      `Recording on device — auto-stops in ${MAX_RECORD_SECONDS}s (min ${MIN_RECORD_SECONDS}s)`,
+    );
+    setIsRecording(true);
+    setCanStopRecording(false);
+    startDeviceRecordingTimers(Date.now());
+
+    void (async () => {
+      await sleep(MIN_RECORD_SECONDS * 1000);
+      if (recordingGenRef.current === gen) {
+        setCanStopRecording(true);
+      }
+    })();
+  }, [startDeviceRecordingTimers]);
+
+  const beginRecordingAfterCountdown = useCallback(() => {
     if (startingDeviceRef.current) return;
     startingDeviceRef.current = true;
 
     setShowCountdown(false);
     setErrorText(null);
-    setStatusText(null);
-    setAudioHint(null);
-    setCaptured(false);
-    setUploadSlowPrompt(false);
-    uploadElapsedBaseRef.current = 0;
-    setRunning(true);
-    setActiveIndex(stepIndex("started"));
-    setCompletedThrough(-1);
-    setCanStopRecording(false);
+    enterRecordingUiAtGo();
 
-    try {
-      let userId = userIdRef.current;
-      let sessionId = sessionIdRef.current.trim();
-      if (!userId || !sessionId) {
-        const ready = await ensureSessionReady();
-        userId = ready.userId;
-        sessionId = ready.sessionId;
-      }
-
-      setStatusText("Starting device recording…");
-      if (!iotStartQueuedRef.current) {
-        console.log(`[IoT Cough] Sending audio start command to device (cough ${coughIndexRef.current})...`);
-        await queueIotAudioStartWithRetry(userId, sessionId);
-        console.log(`[IoT Cough] Audio start command sent successfully`);
-      } else {
-        console.log(`[IoT Cough] Audio start already queued during countdown`);
-      }
-
-      setStatusText("Waiting for screening device to start…");
-      deviceReadyAbortRef.current?.abort();
-      deviceReadyAbortRef.current = new AbortController();
-      await waitForIotDeviceAudioReady({
-        userId,
-        sessionId,
-        timeoutMs: IOT_DEVICE_READY_TIMEOUT_MS,
-        intervalMs: IOT_DEVICE_READY_POLL_MS,
-        signal: deviceReadyAbortRef.current.signal,
-        onProgress: (elapsedMs) => {
-          const sec = Math.max(1, Math.ceil(elapsedMs / 1000));
-          setStatusText(`Waiting for screening device to start… ${sec}s`);
-        },
-      });
-      deviceReadyAbortRef.current = null;
-
-      setCompletedThrough(stepIndex("started"));
-
-      setActiveIndex(stepIndex("recording"));
-      setStatusText(
-        `Recording on device — auto-stops in ${MAX_RECORD_SECONDS}s (min ${MIN_RECORD_SECONDS}s)`,
-      );
-      setIsRecording(true);
-      setRunning(false);
-      startDeviceRecordingTimers(Date.now());
-      await sleep(MIN_RECORD_SECONDS * 1000);
-      setCanStopRecording(true);
-    } catch (e) {
-      deviceReadyAbortRef.current?.abort();
-      deviceReadyAbortRef.current = null;
-      handleIoTError(e, "start");
-      setRunning(false);
-      setShowCountdown(false);
-      iotStartQueuedRef.current = false;
-    } finally {
+    const userId = userIdRef.current;
+    const sessionId = sessionIdRef.current.trim();
+    if (!userId || !sessionId) {
       startingDeviceRef.current = false;
+      handleIoTError(new Error("Session not ready. Tap Record cough again."), "start");
+      return;
     }
-  }, [ensureSessionReady, handleIoTError, queueIotAudioStartWithRetry, startDeviceRecordingTimers]);
+
+    console.log(
+      `[IoT Cough] Sending audio start at Go (cough ${coughIndexRef.current})...`,
+    );
+    void queueIotAudioStartWithRetry(userId, sessionId)
+      .then(() => console.log(`[IoT Cough] Audio start command sent successfully`))
+      .catch((e) => {
+        recordingGenRef.current += 1;
+        handleIoTError(e, "start");
+        setIsRecording(false);
+        setRunning(false);
+        setActiveIndex(-1);
+        setCompletedThrough(-1);
+        if (autoStopTimerRef.current) {
+          clearInterval(autoStopTimerRef.current);
+          autoStopTimerRef.current = null;
+        }
+        iotStartQueuedRef.current = false;
+      })
+      .finally(() => {
+        startingDeviceRef.current = false;
+      });
+  }, [enterRecordingUiAtGo, handleIoTError, queueIotAudioStartWithRetry]);
 
   const startCountdownOverlay = useCallback(() => {
     setShowCountdown(true);
     setCountdownValue(COUNTDOWN_START);
+    setStatusText("Get ready…");
 
     let count = COUNTDOWN_START;
     if (countdownIntervalRef.current) {
@@ -868,9 +870,6 @@ export default function IotCoughScreen() {
     }
     countdownIntervalRef.current = setInterval(() => {
       count--;
-      if (count === IOT_START_COUNTDOWN_AT && !iotStartQueuedRef.current) {
-        void queueIotStartEarly();
-      }
       if (count === 0) {
         setCountdownValue("Go");
       } else if (count < 0) {
@@ -883,9 +882,9 @@ export default function IotCoughScreen() {
         setCountdownValue(count);
       }
     }, 900);
-  }, [beginRecordingAfterCountdown, queueIotStartEarly]);
+  }, [beginRecordingAfterCountdown]);
 
-  const startAudioCapture = useCallback(() => {
+  const startAudioCapture = useCallback(async () => {
     if (running || isRecording || showCountdown) return;
 
     if (countdownIntervalRef.current) {
@@ -894,9 +893,26 @@ export default function IotCoughScreen() {
     }
 
     iotStartQueuedRef.current = false;
-    kickOffBackgroundPrep();
+    setErrorText(null);
+    setRunning(true);
+    setStatusText("Preparing session and device link…");
+    try {
+      await prepareRecordingSession();
+      if (retakeNeedsSettleRef.current) {
+        setStatusText("Waiting for device to finish uploading…");
+        await sleep(IOT_RETAKE_SETTLE_MS);
+        retakeNeedsSettleRef.current = false;
+      }
+    } catch (e) {
+      handleIoTError(e, "start");
+      setRunning(false);
+      setStatusText(null);
+      return;
+    }
+    setRunning(false);
+    setStatusText(null);
     startCountdownOverlay();
-  }, [isRecording, kickOffBackgroundPrep, running, showCountdown, startCountdownOverlay]);
+  }, [handleIoTError, isRecording, prepareRecordingSession, running, showCountdown, startCountdownOverlay]);
 
   const runUploadPoll = useCallback(async (sessionId: string) => {
     uploadPollAbortRef.current?.abort();
@@ -909,10 +925,11 @@ export default function IotCoughScreen() {
     }
     await refreshUploadBaseline();
 
-    console.log(`[IoT Cough] Waiting for upload, polling for cough ${coughIndexRef.current}...`);
+    const uploadTimeoutMs = uploadTimeoutForCough(coughIndexRef.current);
+    console.log(`[IoT Cough] Waiting for upload, polling for cough ${coughIndexRef.current} (${uploadTimeoutMs / 1000}s timeout)...`);
     console.log(`[IoT Cough] Baseline has ${baselineFingerprintsRef.current.size} fingerprints to exclude`);
     const preview = await pollForNewCoughRecording(sessionId, baselineFingerprintsRef.current, {
-      timeoutMs: IOT_UPLOAD_TIMEOUT_MS,
+      timeoutMs: uploadTimeoutMs,
       intervalMs: IOT_POLL_MS,
       signal: uploadPollAbortRef.current.signal,
       coughAttempt: coughIndexRef.current,
@@ -941,6 +958,17 @@ export default function IotCoughScreen() {
       return;
     }
 
+    if (!iotStartQueuedRef.current) {
+      setErrorText(
+        "The screening device did not receive the start command. Wait a few seconds after the last upload, then try again.",
+      );
+      setIsRecording(false);
+      setRunning(false);
+      setActiveIndex(-1);
+      setCompletedThrough(-1);
+      return;
+    }
+
     setRunning(true);
     setIsRecording(false);
     setErrorText(null);
@@ -950,11 +978,9 @@ export default function IotCoughScreen() {
     try {
       setActiveIndex(stepIndex("ended"));
       setStatusText("Stopping recording…");
-      await queueIotDeviceStopAudioCommand({
-        userId,
-        sessionId,
-        coughAttempt: coughIndexRef.current,
-      });
+      // Do not pass coughAttempt on stop — firmware treats it inconsistently on cough 2+.
+      await queueIotDeviceStopAudioCommand({ userId, sessionId });
+      iotStartQueuedRef.current = false;
       setCompletedThrough(stepIndex("ended"));
 
       setActiveIndex(stepIndex("uploading"));
@@ -968,10 +994,12 @@ export default function IotCoughScreen() {
     } catch (e) {
       if (isUploadWaitTimeout(e)) {
         enteredSlowPrompt = true;
-        uploadElapsedBaseRef.current += IOT_UPLOAD_TIMEOUT_MS;
+        uploadElapsedBaseRef.current += uploadTimeoutForCough(coughIndexRef.current);
         setUploadSlowPrompt(true);
         setStatusText(
-          "Upload is taking longer than usual. Your device may still be sending over a slow connection.",
+          coughIndexRef.current >= 2
+            ? "Second cough uploads often take longer over Wi-Fi. Keep the device powered on and wait — or tap Keep waiting."
+            : "Upload is taking longer than usual. Your device may still be sending over a slow connection.",
         );
       } else {
         const phase =
@@ -1009,10 +1037,12 @@ export default function IotCoughScreen() {
     } catch (e) {
       if (isUploadWaitTimeout(e)) {
         enteredSlowPrompt = true;
-        uploadElapsedBaseRef.current += IOT_UPLOAD_TIMEOUT_MS;
+        uploadElapsedBaseRef.current += uploadTimeoutForCough(coughIndexRef.current);
         setUploadSlowPrompt(true);
         setStatusText(
-          "Upload is taking longer than usual. Your device may still be sending over a slow connection.",
+          coughIndexRef.current >= 2
+            ? "Second cough uploads often take longer over Wi-Fi. Keep the device powered on and wait — or tap Keep waiting."
+            : "Upload is taking longer than usual. Your device may still be sending over a slow connection.",
         );
       } else {
         handleIoTError(e, "upload");
@@ -1045,6 +1075,25 @@ export default function IotCoughScreen() {
       void stopAudioCapture();
     };
   }, [stopAudioCapture]);
+
+  const stopCurrent = useCallback(async () => {
+    const s = playingRef.current;
+    if (!s) return;
+    s.setOnPlaybackStatusUpdate(null);
+    playingRef.current = null;
+    setIsPlaying(false);
+    setPlayPositionMs(0);
+    setPlayDurationMs(0);
+    try { await s.stopAsync(); } catch { /* ignore */ }
+    try { await s.unloadAsync(); } catch { /* ignore */ }
+  }, []);
+
+  const retryQualityCheck = useCallback(async () => {
+    const slot = slots[coughIndex - 1];
+    if (!slot?.localUri) return;
+    setErrorText(null);
+    await rerunQualityCheck(coughIndex - 1, slot.localUri, slot.recordingId);
+  }, [coughIndex, rerunQualityCheck, slots]);
 
   const retakeCurrent = useCallback(async () => {
     console.log(`[IoT Cough] Retake requested for cough ${coughIndex}`);
@@ -1088,23 +1137,10 @@ export default function IotCoughScreen() {
     setSecondsRemaining(MAX_RECORD_SECONDS);
     startingDeviceRef.current = false;
     iotStartQueuedRef.current = false;
-    deviceReadyAbortRef.current?.abort();
-    deviceReadyAbortRef.current = null;
     prepPromiseRef.current = null;
+    retakeNeedsSettleRef.current = true;
     console.log(`[IoT Cough] Retake state reset complete, ready for new recording`);
   }, [coughIndex, stopCurrent]);
-
-  const stopCurrent = useCallback(async () => {
-    const s = playingRef.current;
-    if (!s) return;
-    s.setOnPlaybackStatusUpdate(null);
-    playingRef.current = null;
-    setIsPlaying(false);
-    setPlayPositionMs(0);
-    setPlayDurationMs(0);
-    try { await s.stopAsync(); } catch { /* ignore */ }
-    try { await s.unloadAsync(); } catch { /* ignore */ }
-  }, []);
 
   const playCurrent = useCallback(async () => {
     if (isPlaying) {
@@ -1181,7 +1217,16 @@ export default function IotCoughScreen() {
       setCoughIndex(nextIndex);
       startingDeviceRef.current = false;
       iotStartQueuedRef.current = false;
-      kickOffBackgroundPrep();
+      if (nextIndex > 1) {
+        setStatusText("Give the device a few seconds to finish the last upload…");
+        void (async () => {
+          await sleep(IOT_INTER_COUGH_SETTLE_MS);
+          setStatusText(null);
+          kickOffBackgroundPrep();
+        })();
+      } else {
+        kickOffBackgroundPrep();
+      }
       return;
     }
 
@@ -1233,15 +1278,15 @@ export default function IotCoughScreen() {
     }
     if (running) {
       return {
-        mainLabel: "Processing…",
-        subLabel: "Hang tight, almost done",
+        mainLabel: "Preparing device…",
+        subLabel: statusText ?? "Connecting to the screening device",
       };
     }
     return {
       mainLabel: "Ready to record",
       subLabel: `Tap Record to start cough ${coughIndex} on the screening device`,
     };
-  }, [allDone, canStopRecording, captured, coughIndex, isRecording, isUploading, running, secondsRemaining, uploadSlowPrompt]);
+  }, [allDone, canStopRecording, captured, coughIndex, isRecording, isUploading, running, secondsRemaining, statusText, uploadSlowPrompt]);
 
   const micBgColor = captured || allDone
     ? SUCCESS_GREEN
@@ -1835,24 +1880,26 @@ export default function IotCoughScreen() {
                   </Pressable>
                   {(() => {
                     const qs = currentSlot?.qualityStatus ?? "skipped";
-                    const proceedDisabled =
-                      qs === "checking" || qs === "bad" || qs === "unavailable";
+                    const proceedDisabled = qs === "checking" || qs === "bad";
                     const proceedLabel =
                       qs === "checking"
                         ? "Checking…"
                         : qs === "unavailable"
-                          ? "Fix ML API connection"
+                          ? "Retry quality check"
                           : qs === "ok"
                           ? completedCoughs >= IOT_COUGH_COUNT
                             ? "Proceed to sputum capture"
                             : `Proceed to cough ${coughIndex + 1}`
                           : "Retake to continue";
+                    const onProceed =
+                      qs === "unavailable" ? () => void retryQualityCheck() : continueNext;
+                    const actionDisabled = qs === "checking" || qs === "bad";
                     return (
-                      <Pressable onPress={continueNext} disabled={proceedDisabled}>
+                      <Pressable onPress={onProceed} disabled={actionDisabled}>
                         {({ pressed }) => (
                           <View
                             style={{
-                              backgroundColor: proceedDisabled
+                              backgroundColor: actionDisabled
                                 ? "rgba(56,217,169,0.35)"
                                 : pressed
                                   ? "#2bc295"
@@ -1862,16 +1909,16 @@ export default function IotCoughScreen() {
                               alignItems: "center",
                               shadowColor: SUCCESS_GREEN,
                               shadowOffset: { width: 0, height: 8 },
-                              shadowOpacity: proceedDisabled ? 0 : 0.3,
+                              shadowOpacity: actionDisabled ? 0 : 0.3,
                               shadowRadius: 24,
-                              elevation: proceedDisabled ? 0 : 6,
+                              elevation: actionDisabled ? 0 : 6,
                             }}
                           >
                             <Text
                               style={{
                                 fontSize: 15,
                                 fontWeight: "700",
-                                color: proceedDisabled ? "rgba(255,255,255,0.55)" : "#fff",
+                                color: actionDisabled ? "rgba(255,255,255,0.55)" : "#fff",
                                 letterSpacing: -0.2,
                               }}
                             >
@@ -1936,7 +1983,7 @@ export default function IotCoughScreen() {
                   {audioHint}
                 </Text>
               ) : null}
-              {!errorText && statusText && !showReviewActions && !running && !isRecording ? (
+              {!errorText && statusText && !showReviewActions && !isRecording ? (
                 <Text
                   style={{
                     textAlign: "center",

@@ -103,15 +103,44 @@ export function resolveTbApiBaseUrls(): string[] {
 
   const fromEnv =
     typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_TB_API_URL as string | undefined) : undefined;
-  if (fromEnv && String(fromEnv).trim().length > 0) {
-    add(String(fromEnv));
+  const envTrimmed = fromEnv ? String(fromEnv).trim() : "";
+  const lan = devPackagerLanHost();
+  const envIsStaleCfTunnel =
+    envTrimmed.length > 0 && envTrimmed.toLowerCase().includes("trycloudflare.com");
+
+  // LAN Expo + local infer: try Metro proxy / :8000 before a possibly dead quick tunnel.
+  if (__DEV__ && lan && envIsStaleCfTunnel) {
+    for (const proxy of devMetroTbProxyBases()) add(proxy);
+    add(`http://${lan}:8000`);
+    add(envTrimmed);
+  } else if (envTrimmed.length > 0) {
+    add(envTrimmed);
   }
   // Metro proxy only works for LAN/dev-server hosts. Remote Expo tunnels expose
   // HTTPS :443, not the local Metro port, so those proxy URLs would hang phones.
-  for (const proxy of devMetroTbProxyBases()) add(proxy);
-  if (!fromEnv || String(fromEnv).trim().length === 0) add(resolveTbApiBaseUrl());
+  if (!(__DEV__ && lan && envIsStaleCfTunnel)) {
+    for (const proxy of devMetroTbProxyBases()) add(proxy);
+  }
+  if (envTrimmed.length === 0) add(resolveTbApiBaseUrl());
   if (Platform.OS === "android" && Constants.isDevice === true) {
     add(LOOPBACK_API);
   }
   return out;
+}
+
+/** Quick GET /healthz probe — skips dead Cloudflare tunnel URLs before multipart upload. */
+export async function probeTbApiReachable(base: string, timeoutMs = 8_000): Promise<boolean> {
+  const url = `${base.replace(/\/$/, "")}/healthz`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { method: "GET", signal: controller.signal });
+    if (!response.ok) return false;
+    const data = (await response.json()) as { ok?: boolean };
+    return data?.ok === true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
 }

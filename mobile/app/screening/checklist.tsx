@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
@@ -70,8 +70,6 @@ const LEVEL_LABEL: Record<"low" | "moderate" | "high", string> = {
 
 export default function ScreeningChecklistScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ from?: string }>();
-  const isIotFlow = params.from === "iot-instructions";
   const { colors, isDark } = useTheme();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
@@ -332,10 +330,10 @@ export default function ScreeningChecklistScreen() {
             <Pressable
               onPress={() =>
                 router.push({
-                  pathname: isIotFlow ? "/screening/iot-cough" : "/screening/recording",
+                  pathname: "/screening/iot-cough",
                   params: {
                     checklist: payloadJson,
-                    ...(isIotFlow ? { iotMode: "1" } : {}),
+                    iotMode: "1",
                   },
                 } as any)
               }
@@ -343,9 +341,7 @@ export default function ScreeningChecklistScreen() {
               style={{ backgroundColor: colors.primary }}
               accessibilityRole="button"
             >
-              <Text className="text-base font-bold text-white">
-                {isIotFlow ? "Continue to device cough capture" : "Continue to cough recording"}
-              </Text>
+              <Text className="text-base font-bold text-white">Continue to device cough capture</Text>
             </Pressable>
           </View>
         ) : null}
