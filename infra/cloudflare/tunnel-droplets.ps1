@@ -102,7 +102,7 @@ Write-Host ""
 Write-Host "EXPO_PUBLIC_API_URL=$apiUrl" -ForegroundColor Cyan
 Write-Host "EXPO_PUBLIC_TB_API_URL=$tbUrl" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Update ESP32 firmware serverUrl to EXPO_PUBLIC_API_URL (same as mobile/.env)." -ForegroundColor Yellow
+Write-Host "If using an IoT device, point its API host to EXPO_PUBLIC_API_URL (same as mobile/.env)." -ForegroundColor Yellow
 Write-Host "Restart Expo: cd mobile && npx expo start -c" -ForegroundColor DarkGray
 
 if (-not $NoWriteEnv) { Update-EnvFile $apiUrl $tbUrl; Write-Host "Updated $mobileEnv" -ForegroundColor DarkGray }

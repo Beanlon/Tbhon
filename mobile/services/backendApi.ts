@@ -365,65 +365,167 @@ export async function queueIotDeviceStopAudioCommand(args: {
   return queueIotDeviceCommand({ command: "audio upload", ...args });
 }
 
-export type WaitForIotDeviceAudioOptions = {
+export type IotHardwareState = "offline" | "idle" | "recording" | "uploading";
+
+export type IotDeviceStatus = {
+  ok: boolean;
+  online: boolean;
+  ready: boolean;
+  state: IotHardwareState;
+  lastSeenAt: string | null;
+  pendingCommand: {
+    command: string;
+    queuedAt: string;
+    sessionId: string | null;
+    coughAttempt: number | null;
+  } | null;
+  activeAudioCapture: {
+    elapsedSeconds: number | null;
+    minSeconds: number;
+  } | null;
+};
+
+export type WaitForIotDeviceOptions = {
   timeoutMs?: number;
   intervalMs?: number;
   signal?: AbortSignal;
-  onProgress?: (elapsedMs: number) => void;
+  onProgress?: (elapsedMs: number, status: IotDeviceStatus) => void;
 };
 
-/**
- * Give the ESP32 time to poll GET /iot/device-command and begin recording.
- *
- * IMPORTANT: Do NOT POST probe/stop commands here. Each POST queues `audio upload`
- * on the device poll endpoint; cough 2+ then picks up those stale stops and dies.
- * Firmware polls about every 2s, so 5s is enough for the `audio` command to land.
- */
-export async function waitForIotDeviceAudioReady(
-  args: {
-    userId: string;
-    sessionId: string;
-    coughAttempt?: number;
-  } & WaitForIotDeviceAudioOptions,
-): Promise<void> {
-  const settleMs = args.coughAttempt != null && args.coughAttempt > 1 ? 7000 : 5000;
+const IOT_STATUS_POLL_MS = 350;
+const IOT_DEVICE_READY_TIMEOUT_MS = 20_000;
+const IOT_DEVICE_RECORDING_TIMEOUT_MS = 25_000;
+const IOT_DEVICE_UPLOADING_TIMEOUT_MS = 90_000;
+const IOT_DEVICE_IDLE_TIMEOUT_MS = 120_000;
+
+async function fetchIotDeviceStatusWithJwt(): Promise<IotDeviceStatus> {
+  return apiRequest<IotDeviceStatus>("/screenings/iot/device-status", { method: "GET" });
+}
+
+async function fetchIotDeviceStatusWithIotKey(): Promise<IotDeviceStatus> {
+  const key =
+    typeof process !== "undefined"
+      ? (process.env.EXPO_PUBLIC_IOT_API_KEY as string | undefined)
+      : undefined;
+  if (!key?.trim()) {
+    throw new Error(
+      "Missing EXPO_PUBLIC_IOT_API_KEY in mobile/.env (use the same value as IOT_API_KEY on the backend).",
+    );
+  }
+  const base = resolveApiBaseUrl();
+  const response = await fetch(`${base}/iot/device-status`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "X-IoT-Key": key.trim(),
+    },
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, await parseErrorMessage(response));
+  }
+  return (await response.json()) as IotDeviceStatus;
+}
+
+/** Poll backend mirror of ESP32 presence (JWT preferred, IoT key fallback). */
+export async function fetchIotDeviceStatus(): Promise<IotDeviceStatus> {
+  const token = await getAuthToken();
+  if (token) {
+    try {
+      return await fetchIotDeviceStatusWithJwt();
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 401) throw e;
+    }
+  }
+  return fetchIotDeviceStatusWithIotKey();
+}
+
+async function pollIotDeviceStatusUntil(
+  label: string,
+  predicate: (status: IotDeviceStatus) => boolean,
+  options: WaitForIotDeviceOptions = {},
+): Promise<IotDeviceStatus> {
+  const timeoutMs = options.timeoutMs ?? IOT_DEVICE_READY_TIMEOUT_MS;
+  const intervalMs = options.intervalMs ?? IOT_STATUS_POLL_MS;
   const started = Date.now();
 
-  if (args.signal?.aborted) {
-    throw new Error("Upload wait cancelled");
+  while (Date.now() - started < timeoutMs) {
+    if (options.signal?.aborted) {
+      throw new Error("Device wait cancelled");
+    }
+    const status = await fetchIotDeviceStatus();
+    options.onProgress?.(Date.now() - started, status);
+    if (predicate(status)) {
+      return status;
+    }
+    await sleepMs(intervalMs);
   }
 
-  await new Promise<void>((resolve, reject) => {
-    const tick = setInterval(() => {
-      if (args.signal?.aborted) {
-        clearInterval(tick);
-        clearTimeout(done);
-        reject(new Error("Upload wait cancelled"));
-        return;
-      }
-      args.onProgress?.(Date.now() - started);
-    }, 500);
+  throw new Error(
+    `Timed out waiting for device: ${label}. Check that the screening device is on Wi‑Fi and polling the server.`,
+  );
+}
 
-    const done = setTimeout(() => {
-      clearInterval(tick);
-      resolve();
-    }, settleMs);
+/** Device online, idle, no queued command — safe to queue a new `audio` start. */
+export async function waitForIotDeviceReady(
+  options: WaitForIotDeviceOptions = {},
+): Promise<IotDeviceStatus> {
+  return pollIotDeviceStatusUntil(
+    "ready",
+    (s) => s.online && s.ready && s.state === "idle",
+    { timeoutMs: options.timeoutMs ?? IOT_DEVICE_READY_TIMEOUT_MS, ...options },
+  );
+}
 
-    if (args.signal) {
-      const onAbort = () => {
-        clearInterval(tick);
-        clearTimeout(done);
-        reject(new Error("Upload wait cancelled"));
-      };
-      if (args.signal.aborted) {
-        clearInterval(tick);
-        clearTimeout(done);
-        reject(new Error("Upload wait cancelled"));
-        return;
-      }
-      args.signal.addEventListener("abort", onAbort, { once: true });
-    }
-  });
+/** After POST `audio`, wait until firmware reports `recording` (bench actually started). */
+export async function waitForIotDeviceRecording(
+  options: WaitForIotDeviceOptions = {},
+): Promise<IotDeviceStatus> {
+  return pollIotDeviceStatusUntil(
+    "recording",
+    (s) => s.state === "recording",
+    { timeoutMs: options.timeoutMs ?? IOT_DEVICE_RECORDING_TIMEOUT_MS, ...options },
+  );
+}
+
+/** After POST stop / `audio upload`, wait until bench is sending the WAV. */
+export async function waitForIotDeviceUploading(
+  options: WaitForIotDeviceOptions = {},
+): Promise<IotDeviceStatus> {
+  return pollIotDeviceStatusUntil(
+    "uploading",
+    (s) => s.state === "uploading",
+    { timeoutMs: options.timeoutMs ?? IOT_DEVICE_UPLOADING_TIMEOUT_MS, ...options },
+  );
+}
+
+/** Wait until the server sees at least `minSeconds` of device capture (for stop). */
+export async function waitForDeviceMinRecordSeconds(
+  minSeconds: number,
+  options: WaitForIotDeviceOptions = {},
+): Promise<IotDeviceStatus> {
+  return pollIotDeviceStatusUntil(
+    `at least ${minSeconds}s recorded on device`,
+    (s) => (s.activeAudioCapture?.elapsedSeconds ?? 0) >= minSeconds,
+    { timeoutMs: options.timeoutMs ?? 15_000, ...options },
+  );
+}
+
+/** After stop/upload — wait until device is idle again (upload finished on bench). */
+export async function waitForIotDeviceIdle(
+  options: WaitForIotDeviceOptions = {},
+): Promise<IotDeviceStatus> {
+  return pollIotDeviceStatusUntil(
+    "idle after upload",
+    (s) => s.online && s.state === "idle" && !s.pendingCommand,
+    { timeoutMs: options.timeoutMs ?? IOT_DEVICE_IDLE_TIMEOUT_MS, ...options },
+  );
+}
+
+/** @deprecated Use {@link waitForIotDeviceRecording} after queueing `audio`. */
+export async function waitForIotDeviceAudioReady(
+  args: WaitForIotDeviceOptions = {},
+): Promise<void> {
+  await waitForIotDeviceRecording(args);
 }
 
 /** Queue ESP32 capture via JWT when deployed; otherwise use {@link queueIotDeviceImageCommand}. */
