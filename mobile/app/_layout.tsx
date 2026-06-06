@@ -1,5 +1,5 @@
 import "../global.css";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import React, { useEffect } from 'react';
 import { Asset } from 'expo-asset';
 import * as SplashScreen from "expo-splash-screen";
@@ -7,6 +7,16 @@ import { StatusBar } from "expo-status-bar";
 import { LogBox } from "react-native";
 import { TBHON_ICON, TBHON_LOGO } from "../constants/branding";
 import { ThemeProvider, useTheme } from "../contexts/ThemeContext";
+import { getMe } from "../services/backendApi";
+import { getAuthToken } from "../utils/authStorage";
+import { setCachedProfile, peekProfile } from "../utils/profileCache";
+import { consumePendingAppRoute } from "../utils/pendingAppRoute";
+import {
+  configureNotificationPresentation,
+  handleNotificationResponse,
+  syncUnverifiedEngagementNotifications,
+} from "../services/unverifiedEngagementNotifications";
+import { subscribeToNotificationResponses } from "../utils/nativeNotifications";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -19,9 +29,44 @@ if (__DEV__) {
 
 function RootNavigator() {
   const { colors } = useTheme();
+  const router = useRouter();
 
   useEffect(() => {
     Asset.loadAsync([TBHON_LOGO, TBHON_ICON]).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    configureNotificationPresentation();
+
+    const sub = subscribeToNotificationResponses((response) => {
+      void (async () => {
+        await handleNotificationResponse(response);
+        const route = await consumePendingAppRoute();
+        if (route === "verifyEmail") {
+          router.push("/verifyEmail/verifyEmail" as never);
+        }
+      })();
+    });
+
+    return () => sub.remove();
+  }, [router]);
+
+  useEffect(() => {
+    void (async () => {
+      const token = await getAuthToken();
+      if (!token) return;
+      try {
+        const cached = peekProfile();
+        if (cached) {
+          await syncUnverifiedEngagementNotifications(cached);
+        }
+        const { user } = await getMe();
+        setCachedProfile(user);
+        await syncUnverifiedEngagementNotifications(user);
+      } catch {
+        // offline — skip sync
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -65,7 +110,10 @@ function RootNavigator() {
         <Stack.Screen name="landingpage/landingpage" />
         <Stack.Screen name="acountOptions/accountOptions" />
         <Stack.Screen name="login/login" />
+        <Stack.Screen name="forgotPassword/forgotPassword" />
         <Stack.Screen name="signUp/signUp" />
+        <Stack.Screen name="verifyEmail/verifyEmail" />
+        <Stack.Screen name="changePassword/changePassword" />
         <Stack.Screen
           name="screening"
           options={{

@@ -34,9 +34,10 @@ import CachedImage from "../components/CachedImage";
 import { TBHON_ICON } from "../../constants/branding";
 import { palette } from "../../constants/palette";
 import { useNavigation, useRouter } from "expo-router";
-import { resetToAuthenticatedHome } from "../../utils/authNavigation";
+import { resetAfterAuth } from "../../utils/authNavigation";
+import { onUnverifiedAccountSession } from "../../services/unverifiedEngagementNotifications";
 import { ApiError, postRegister } from "../../services/backendApi";
-import { saveAuthToken } from "../../utils/authStorage";
+import { saveAuthSession } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
 import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
 import {
@@ -744,7 +745,7 @@ export default function SignUp() {
         form.phone,
         selectedCountry.dialCode,
       );
-      const { token, user } = await postRegister({
+      const { accessToken, refreshToken, token, user } = await postRegister({
         email: form.email.trim(),
         password: form.password,
         phoneNumber: phoneNumber ?? null,
@@ -758,9 +759,10 @@ export default function SignUp() {
           city: form.city.trim() || null,
         },
       });
-      await saveAuthToken(token);
+      await saveAuthSession(accessToken ?? token, refreshToken);
       setCachedProfile(user);
-      setStep(3);
+      void onUnverifiedAccountSession(user);
+      resetAfterAuth(navigation);
     } catch (error) {
       const message =
         error instanceof ApiError
@@ -775,7 +777,7 @@ export default function SignUp() {
   };
 
   const handleGetStarted = () => {
-    resetToAuthenticatedHome(navigation);
+    resetAfterAuth(navigation);
   };
 
   useEffect(() => {

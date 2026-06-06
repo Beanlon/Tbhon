@@ -4,6 +4,7 @@ import {
   Text,
   Pressable,
   TextInput,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -25,9 +26,10 @@ import { authFormTk as tk } from "../../constants/authFormTheme";
 import { authFormButtonStyles } from "../../constants/authFormStyles";
 import { palette } from "../../constants/palette";
 import { useNavigation, useRouter } from "expo-router";
-import { ApiError, postLogin } from "../../services/backendApi";
-import { resetToAuthenticatedHome } from "../../utils/authNavigation";
-import { getAuthToken, saveAuthToken } from "../../utils/authStorage";
+import { ApiError, getMe, postLogin } from "../../services/backendApi";
+import { resetAfterAuth } from "../../utils/authNavigation";
+import { onUnverifiedAccountSession } from "../../services/unverifiedEngagementNotifications";
+import { getAuthToken, saveAuthSession } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
 import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
 
@@ -95,7 +97,13 @@ export default function Login() {
       void (async () => {
         const token = await getAuthToken();
         if (token && active) {
-          resetToAuthenticatedHome(navigation);
+          try {
+            const { user } = await getMe();
+            setCachedProfile(user);
+            resetAfterAuth(navigation);
+          } catch {
+            resetAfterAuth(navigation);
+          }
         }
       })();
       return () => {
@@ -112,10 +120,11 @@ export default function Login() {
     }
     setSubmitting(true);
     try {
-      const { token, user } = await postLogin(trimmedEmail, password);
-      await saveAuthToken(token);
+      const { accessToken, refreshToken, token, user } = await postLogin(trimmedEmail, password);
+      await saveAuthSession(accessToken ?? token, refreshToken);
       setCachedProfile(user);
-      resetToAuthenticatedHome(navigation);
+      void onUnverifiedAccountSession(user);
+      resetAfterAuth(navigation);
     } catch (error) {
       const message =
         error instanceof ApiError
@@ -135,24 +144,29 @@ export default function Login() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "right", "bottom", "left"]}>
-      <ScrollView
-        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
-        scrollEnabled={scrollEnabled}
-        bounces={scrollEnabled}
-        alwaysBounceVertical={false}
-        onLayout={onScrollViewLayout}
-        contentContainerStyle={scrollContentStyle}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={scrollEnabled}
-        {...(Platform.OS === "android"
-          ? {
-              overScrollMode: scrollEnabled
-                ? ("auto" as const)
-                : ("never" as const),
-            }
-          : {})}
+      <KeyboardAvoidingView
+        style={styles.root}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
       >
-        <View onLayout={onInnerLayout} collapsable={false} style={styles.screenContent}>
+        <ScrollView
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          scrollEnabled={scrollEnabled}
+          bounces={scrollEnabled}
+          alwaysBounceVertical={false}
+          onLayout={onScrollViewLayout}
+          contentContainerStyle={scrollContentStyle}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={scrollEnabled}
+          {...(Platform.OS === "android"
+            ? {
+                overScrollMode: scrollEnabled
+                  ? ("auto" as const)
+                  : ("never" as const),
+              }
+            : {})}
+        >
+          <View onLayout={onInnerLayout} collapsable={false} style={styles.screenContent}>
           <View
             style={[
               styles.heroBrand,
@@ -235,6 +249,16 @@ export default function Login() {
             />
 
             <Pressable
+              onPress={() => router.push("/forgotPassword/forgotPassword" as never)}
+              style={styles.forgotRow}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Forgot password"
+            >
+              <Text style={styles.forgotLink}>Forgot password?</Text>
+            </Pressable>
+
+            <Pressable
               style={authFormButtonStyles.primaryButton}
               onPress={handleLogIn}
               disabled={submitting}
@@ -254,8 +278,9 @@ export default function Login() {
               </Pressable>
             </View>
           </View>
-        </View>
-      </ScrollView>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -319,6 +344,16 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "center",
     marginTop: 18,
+  },
+  forgotRow: {
+    alignSelf: "flex-end",
+    marginTop: -8,
+    marginBottom: 4,
+  },
+  forgotLink: {
+    color: tk.violetLight,
+    fontSize: 13,
+    fontWeight: "600",
   },
   subtleText: {
     color: tk.textSub,

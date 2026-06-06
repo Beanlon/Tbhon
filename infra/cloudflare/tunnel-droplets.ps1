@@ -41,7 +41,7 @@ function Wait-TunnelUrl([string]$logPath, [int]$timeoutSec = 45) {
 
 function Update-EnvFile([string]$ApiUrl, [string]$TbUrl) {
     if (-not (Test-Path $mobileEnv)) {
-        Write-Warning "No $mobileEnv — create from mobile/.env.example"
+        Write-Warning "No $mobileEnv - create from mobile/.env.example"
         return
     }
     $lines = Get-Content $mobileEnv
@@ -103,7 +103,7 @@ Write-Host "EXPO_PUBLIC_API_URL=$apiUrl" -ForegroundColor Cyan
 Write-Host "EXPO_PUBLIC_TB_API_URL=$tbUrl" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "If using an IoT device, point its API host to EXPO_PUBLIC_API_URL (same as mobile/.env)." -ForegroundColor Yellow
-Write-Host "Restart Expo: cd mobile && npx expo start -c" -ForegroundColor DarkGray
+Write-Host "Restart Expo: cd mobile; npx expo start -c" -ForegroundColor DarkGray
 
 if (-not $NoWriteEnv) { Update-EnvFile $apiUrl $tbUrl; Write-Host "Updated $mobileEnv" -ForegroundColor DarkGray }
 

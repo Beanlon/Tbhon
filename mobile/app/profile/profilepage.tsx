@@ -16,13 +16,16 @@ import {
   Pressable,
   StyleSheet,
 } from 'react-native';
-import { useNavigation } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRouter } from 'expo-router';
+import { onUserBecameVerified, syncUnverifiedEngagementNotifications } from '../../services/unverifiedEngagementNotifications';
+import { notifyProfileUpdated } from '../../services/accountActivityNotifications';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resetToLanding } from '../../utils/authNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from "expo-status-bar";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { ApiError, getMe, patchMe, putMyProfile, type ApiUserPayload } from "../../services/backendApi";
+import { ApiError, getMe, patchMe, postLogout, putMyProfile, type ApiUserPayload } from "../../services/backendApi";
 import { clearAuthToken, getAuthToken } from "../../utils/authStorage";
 import {
   clearProfileCache,
@@ -346,6 +349,48 @@ function InfoGrid({ rows }: { rows: PersonalGridRows }) {
   );
 }
 
+function formatVerifiedAt(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function EmailVerifiedCard({ verifiedAt }: { verifiedAt?: string | null }) {
+  const { colors, isDark } = useTheme();
+  const verifiedLabel = formatVerifiedAt(verifiedAt) ?? "Verification complete";
+
+  return (
+    <View
+      className="rounded-2xl border px-4 py-3.5"
+      style={{
+        borderColor: isDark ? "rgba(74,222,128,0.35)" : "#BBF7D0",
+        backgroundColor: isDark ? "rgba(29,158,117,0.14)" : "#F0FDF4",
+      }}
+    >
+      <View className="flex-row items-start gap-3">
+        <View
+          className="size-10 items-center justify-center rounded-xl"
+          style={{ backgroundColor: isDark ? "rgba(74,222,128,0.2)" : "#DCFCE7" }}
+        >
+          <Ionicons name="checkmark-circle" size={22} color="#16A34A" />
+        </View>
+        <View className="flex-1">
+          <Text className="text-base font-bold" style={{ color: colors.text }}>
+            Email verified
+          </Text>
+          <Text className="mt-1 text-sm" style={{ color: colors.textMuted }}>
+            {verifiedLabel}
+          </Text>
+          <Text className="mt-2 text-sm leading-5" style={{ color: colors.textMuted }}>
+            Screening PDF export is unlocked.
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function SettingRow({
   icon,
   iconBg,
@@ -393,6 +438,7 @@ function initialUserFromCache(): ApiUserPayload | null {
 
 export function ProfilePage() {
   const navigation = useNavigation();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isDark, toggleDarkMode, colors } = useTheme();
   const seeded = initialUserFromCache();
@@ -475,6 +521,8 @@ export function ProfilePage() {
         const { user: next } = await getMe();
         setUser(next);
         setCachedProfile(next);
+        if (next.emailVerified) void onUserBecameVerified();
+        else void syncUnverifiedEngagementNotifications(next);
       } catch (error) {
         const message =
           error instanceof ApiError
@@ -499,6 +547,8 @@ export function ProfilePage() {
       const { user: next } = await getMe();
       setUser(next);
       setCachedProfile(next);
+      if (next.emailVerified) void onUserBecameVerified();
+      else void syncUnverifiedEngagementNotifications(next);
     } catch (error) {
       const message =
         error instanceof ApiError
@@ -522,6 +572,27 @@ export function ProfilePage() {
     void fetchProfile();
   }, [fetchProfile]);
 
+  useFocusEffect(
+    useCallback(() => {
+      const cached = peekProfile();
+      if (cached) {
+        setUser(cached);
+      }
+      void (async () => {
+        const token = await getAuthToken();
+        if (!token) return;
+        try {
+          const { user: next } = await getMe();
+          setUser(next);
+          setCachedProfile(next);
+          if (next.emailVerified) void onUserBecameVerified();
+        } catch {
+          // Keep cached profile when refresh fails.
+        }
+      })();
+    }, []),
+  );
+
   const handleSignOut = () => {
     Alert.alert("Sign out", "You'll need to sign in again to access your account.", [
       { text: "Cancel", style: "cancel" },
@@ -530,6 +601,7 @@ export function ProfilePage() {
         style: "destructive",
         onPress: () => {
           void (async () => {
+            await postLogout();
             clearProfileCache();
             clearScreeningCache();
             await clearAuthToken();
@@ -677,6 +749,7 @@ export function ProfilePage() {
       closeEditModal();
       setShowGenderPicker(false);
       setShowBirthdatePicker(false);
+      await notifyProfileUpdated();
       Alert.alert("Profile updated", "Your profile information has been saved.");
     } catch (error) {
       const message =
@@ -692,7 +765,7 @@ export function ProfilePage() {
   };
 
   const handleChangePassword = () => {
-    handleComingSoon("Change Password", "Password management will be available in an upcoming update.");
+    router.push("/changePassword/changePassword" as never);
   };
 
   const handleTwoFactor = () => {
@@ -703,7 +776,8 @@ export function ProfilePage() {
   };
 
   const handleEmailVerification = () => {
-    handleComingSoon("Email Verification", "Email verification controls will be available soon.");
+    if (user?.emailVerified) return;
+    router.push("/verifyEmail/verifyEmail" as never);
   };
 
   const handleContactSupport = () => {
@@ -718,7 +792,18 @@ export function ProfilePage() {
   const headerName = user ? displayFullName(user) : "…";
   const initials = user ? profileAvatarInitials(user) : "…";
   const subtitle = user ? profileSubtitleLine(user) : { age: "—", gender: "—", location: "—" };
-  const showVerifiedBadge = Boolean(user?.profile);
+  const verificationBadge =
+    !isLoading && user
+      ? user.emailVerified
+        ? {
+            text: "Verified",
+            style: { backgroundColor: "#E6F3FB", color: "#0C447C" },
+          }
+        : {
+            text: "Unverified",
+            style: { backgroundColor: "#FFF1F2", color: "#BE123C" },
+          }
+      : null;
 
   return (
     <View style={{ flex: 1, minHeight: 0, width: "100%", backgroundColor: colors.background }}>
@@ -814,12 +899,8 @@ export function ProfilePage() {
             iconColor="#1D6FA4"
             title="My Details"
             subtitle="Basic info & contact"
-            badge={!isLoading && showVerifiedBadge ? "Verified" : undefined}
-            badgeStyle={
-              !isLoading && showVerifiedBadge
-                ? { backgroundColor: "#E6F3FB", color: "#0C447C" }
-                : undefined
-            }
+            badge={verificationBadge?.text}
+            badgeStyle={verificationBadge?.style}
           >
             {isLoading && !user ? (
               <Animated.View style={{ opacity: skeletonPulse }}>
@@ -907,27 +988,26 @@ export function ProfilePage() {
                 iconColor="#1E8449"
                 title="Two-factor authentication"
                 subtitle="Extra login security"
-                right={
-                  <View className="flex-row items-center gap-2">
-                    <View className="rounded-full bg-[#E9F7EF] px-2.5 py-1">
-                      <Text className="text-sm font-bold text-[#1A6035]">On</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color="#8FA3B1" />
-                  </View>
-                }
-              />
-            </TouchableOpacity>
-            <TouchableOpacity activeOpacity={0.7} onPress={handleEmailVerification}>
-              <SettingRow
-                icon="mail-outline"
-                iconBg="#E6F3FB"
-                iconColor="#1E8449"
-                title="Email Verification"
-                subtitle="Verify your email address"
-                isLast
                 right={<Ionicons name="chevron-forward" size={16} color="#8FA3B1" />}
               />
             </TouchableOpacity>
+            {user?.emailVerified ? (
+              <View className="mt-5 pb-1">
+                <EmailVerifiedCard verifiedAt={user.emailVerifiedAt} />
+              </View>
+            ) : (
+              <TouchableOpacity activeOpacity={0.7} onPress={handleEmailVerification}>
+                <SettingRow
+                  icon="mail-outline"
+                  iconBg="#E6F3FB"
+                  iconColor="#1E8449"
+                  title="Email Verification"
+                  subtitle="Unlock screening PDF export"
+                  isLast
+                  right={<Ionicons name="chevron-forward" size={16} color="#8FA3B1" />}
+                />
+              </TouchableOpacity>
+            )}
           </ProfileCardHeaderOnly>
 
           <ProfileCardHeaderOnly

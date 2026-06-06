@@ -1,11 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ApiError,
+  getMe,
   fetchSessionSputumPreview,
   postCompleteScreening,
   sessionHasStoredSputumBytes,
@@ -18,6 +27,13 @@ import { clearScreeningCache } from "../../utils/screeningHistoryCache";
 import { getAuthToken } from "../../utils/authStorage";
 import { useTheme } from "../../contexts/ThemeContext";
 import type { FusionModalityBreakdown } from "../../utils/tbRiskFusion";
+import { peekProfile, setCachedProfile } from "../../utils/profileCache";
+import { onUnverifiedScreeningCompleted } from "../../services/unverifiedEngagementNotifications";
+import {
+  isEmailVerified,
+  promptEmailVerification,
+} from "../../utils/emailVerifiedGate";
+import { buildResultPdfExport, shareScreeningPdf } from "../../utils/screeningPdfExport";
 
 type RiskLevel = "low" | "moderate" | "high";
 type PhlegmTone = { color: string; bg: string; border: string; label: string };
@@ -182,6 +198,83 @@ export default function ResultScreen() {
       ? params.imageUri.trim()
       : "";
 
+  const audioCount = useMemo(() => {
+    if (typeof params.audioUris !== "string" || params.audioUris.length === 0) return 0;
+    try {
+      const parsed = JSON.parse(params.audioUris) as unknown;
+      if (!Array.isArray(parsed)) return 0;
+      return parsed.filter((x): x is string => typeof x === "string" && x.length > 0).length;
+    } catch {
+      return 0;
+    }
+  }, [params.audioUris]);
+
+  const imageProvided =
+    imageUriParam.length > 0 || params.deviceSputum === "1" || phlegmAnalyzed;
+
+  const handleDownloadPdf = useCallback(async () => {
+    let profile = peekProfile();
+    if (!isEmailVerified(profile)) {
+      try {
+        const { user } = await getMe();
+        setCachedProfile(user);
+        profile = user;
+      } catch {
+        // keep cached profile
+      }
+    }
+    if (!isEmailVerified(profile)) {
+      promptEmailVerification(router);
+      return;
+    }
+
+    try {
+      const pdfData = buildResultPdfExport({
+        risk,
+        riskTitle: cfg.label,
+        riskSummary: cfg.tagline,
+        recommendation: cfg.recommendation,
+        probTb: typeof probTb === "number" && Number.isFinite(probTb) ? probTb : null,
+        fusionModalities: fusionBreakdown?.modalities ?? [],
+        checklistJson: checklist,
+        invalidAudio,
+        invalidLabel,
+        audioCount,
+        phlegmAnalyzed,
+        phlegmLoad,
+        phlegmConfidence: phlegmConfidence,
+        phlegmFailed,
+        imageProvided,
+      });
+      await shareScreeningPdf(pdfData);
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "Could not create PDF.";
+      Alert.alert("Download PDF", message);
+    }
+  }, [
+    audioCount,
+    cfg.label,
+    cfg.recommendation,
+    cfg.tagline,
+    checklist,
+    fusionBreakdown?.modalities,
+    imageProvided,
+    invalidAudio,
+    invalidLabel,
+    phlegmAnalyzed,
+    phlegmConfidence,
+    phlegmFailed,
+    phlegmLoad,
+    probTb,
+    risk,
+    router,
+  ]);
+
   /** Prefer server-stored sputum bytes once screening is saved (not phone-local file). */
   const [displayImageUri, setDisplayImageUri] = useState("");
 
@@ -242,11 +335,6 @@ export default function ResultScreen() {
       const avgProb = typeof probTb === "number" && Number.isFinite(probTb) ? probTb : null;
 
       try {
-        const imageUriParam =
-          typeof params.imageUri === "string" && params.imageUri.trim().length > 0
-            ? params.imageUri.trim()
-            : "";
-
         const draftSessionId =
           typeof params.sessionId === "string" && params.sessionId.trim().length > 0
             ? params.sessionId.trim()
@@ -294,6 +382,14 @@ export default function ResultScreen() {
             : {}),
         });
         clearScreeningCache();
+
+        const profile = peekProfile();
+        if (profile && profile.emailVerified !== true) {
+          void onUnverifiedScreeningCompleted({
+            sessionId: response?.session?.sessionId,
+            riskLabel: cfg.label,
+          });
+        }
 
         // Upload the raw audio + image bytes so any device on this account
         // can replay/view the originals — not just this phone. Failures here
@@ -715,6 +811,16 @@ export default function ResultScreen() {
             accessibilityRole="button"
           >
             <Text className="text-base font-bold text-white">View Details</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => void handleDownloadPdf()}
+            className="mb-3 items-center justify-center rounded-2xl border py-4 active:opacity-90"
+            style={{ borderColor: colors.borderLight, backgroundColor: colors.surfaceAlt }}
+            accessibilityRole="button"
+            accessibilityLabel="Download screening PDF"
+          >
+            <Text className="text-base font-bold" style={{ color: colors.text }}>Download PDF</Text>
           </Pressable>
 
           <Pressable

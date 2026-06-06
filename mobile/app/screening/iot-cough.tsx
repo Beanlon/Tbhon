@@ -1776,7 +1776,7 @@ export default function IotCoughScreen() {
               >
                 {mainLabel}
               </Text>
-              {subLabel.length > 0 && (
+              {subLabel.length > 0 && !isUploading && (
                 <Text
                   style={{
                     fontSize: 14,
@@ -2282,7 +2282,7 @@ export default function IotCoughScreen() {
                   {audioHint}
                 </Text>
               ) : null}
-              {!errorText && statusText && !showReviewActions && !isRecording ? (
+              {!errorText && statusText && !showReviewActions && !isRecording && !isUploading ? (
                 <Text
                   style={{
                     textAlign: "center",

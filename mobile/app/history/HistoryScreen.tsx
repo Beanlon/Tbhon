@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   Modal,
@@ -28,6 +27,7 @@ import {
   setCachedScreenings,
 } from "../../utils/screeningHistoryCache";
 import { useTheme } from "../../contexts/ThemeContext";
+import { setCachedProfile } from "../../utils/profileCache";
 
 const SCREENING_LIST_LIMIT = 100;
 

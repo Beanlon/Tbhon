@@ -20,6 +20,14 @@
     },
     "android": {
       "permissions": [
+        "POST_NOTIFICATIONS",
+        "WAKE_LOCK",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS",
         "WAKE_LOCK",
         "BLUETOOTH",
         "BLUETOOTH_ADMIN",
@@ -34,7 +42,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.mobile"
     },
     "web": {
       "output": "static",
@@ -60,7 +69,14 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1A3478"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

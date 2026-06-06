@@ -1,4 +1,5 @@
 import {
+  Alert,
   View,
   Text,
   ScrollView,
@@ -30,6 +31,20 @@ import { resetToLanding } from "../../utils/authNavigation";
 import { getAuthToken } from "../../utils/authStorage";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
 import { profileFirstName } from "../../utils/profileDisplay";
+import {
+  clearNotificationInbox,
+  loadNotificationInbox,
+  markAllInboxRead,
+  markInboxNotificationRead,
+  unreadInboxCount,
+  type InboxNotification,
+} from "../../utils/notificationInbox";
+import { consumePendingHomeTab } from "../../utils/pendingHomeTab";
+import {
+  onUserBecameVerified,
+  syncUnverifiedEngagementNotifications,
+} from "../../services/unverifiedEngagementNotifications";
+import { setNativeAppBadgeCount } from "../../utils/nativeNotifications";
 import { palette } from "../../constants/palette";
 import { useTheme } from "../../contexts/ThemeContext";
 
@@ -78,6 +93,8 @@ export default function HomeScreen() {
   const { height: screenHeight } = useWindowDimensions();
   const { isDark, colors } = useTheme();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [inboxItems, setInboxItems] = useState<InboxNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState<BottomNavTab>("home");
   const [firstName, setFirstName] = useState<string | null>(() => profileFirstName(peekProfile()));
 
@@ -151,6 +168,8 @@ export default function HomeScreen() {
       const { user } = await getMe();
       setCachedProfile(user);
       setFirstName(profileFirstName(user));
+      if (user.emailVerified) void onUserBecameVerified();
+      else void syncUnverifiedEngagementNotifications(user);
     } catch {
       if (!cachedFirst) {
         setFirstName(null);
@@ -165,20 +184,62 @@ export default function HomeScreen() {
     }
   }, [activeTab, refreshProfileHeader, applyHomeSystemChrome]);
 
+  const refreshInbox = useCallback(async () => {
+    const items = await loadNotificationInbox();
+    setInboxItems(items);
+    const unread = await unreadInboxCount();
+    setUnreadCount(unread);
+    await setNativeAppBadgeCount(unread);
+  }, []);
+
+  const openNotifications = useCallback(() => {
+    setShowNotifications(true);
+    void refreshInbox();
+  }, [refreshInbox]);
+
+  const closeNotifications = useCallback(() => {
+    setShowNotifications(false);
+    void markAllInboxRead().then(() => refreshInbox());
+  }, [refreshInbox]);
+
+  const handleClearAllNotifications = useCallback(() => {
+    if (inboxItems.length === 0) return;
+    Alert.alert(
+      "Clear notifications",
+      "Remove all notifications from this device? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear all",
+          style: "destructive",
+          onPress: () => {
+            void clearNotificationInbox().then(() => refreshInbox());
+          },
+        },
+      ],
+    );
+  }, [inboxItems.length, refreshInbox]);
+
   useFocusEffect(
     useCallback(() => {
       applyHomeSystemChrome();
+      void refreshInbox();
       let active = true;
       void (async () => {
         const token = await getAuthToken();
         if (!token && active) {
           resetToLanding(navigation);
+          return;
+        }
+        const pendingTab = await consumePendingHomeTab();
+        if (pendingTab && active) {
+          setActiveTab(pendingTab);
         }
       })();
       return () => {
         active = false;
       };
-    }, [navigation, applyHomeSystemChrome]),
+    }, [navigation, applyHomeSystemChrome, refreshInbox]),
   );
 
   useEffect(() => {
@@ -225,6 +286,25 @@ export default function HomeScreen() {
     }
   };
 
+  const handleInboxPress = useCallback(
+    (item: InboxNotification) => {
+      void markInboxNotificationRead(item.id).then(() => refreshInbox());
+      setShowNotifications(false);
+      if (item.type === "learn_tb") {
+        setActiveTab("learn");
+        return;
+      }
+      if (item.type === "profile_updated") {
+        setActiveTab("profile");
+        return;
+      }
+      if (item.type === "verify_email") {
+        router.push("/verifyEmail/verifyEmail" as never);
+      }
+    },
+    [refreshInbox, router],
+  );
+
   const serviceTiles: ServiceTile[] = [
     {
       key: "cough",
@@ -267,11 +347,18 @@ export default function HomeScreen() {
               </View>
               <Pressable
                 style={[styles.notifyBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                onPress={() => setShowNotifications(true)}
+                onPress={openNotifications}
                 accessibilityRole="button"
                 accessibilityLabel="Notifications"
               >
                 <Ionicons name="notifications-outline" size={22} color={colors.text} />
+                {unreadCount > 0 ? (
+                  <View style={styles.notifyBadge}>
+                    <Text style={styles.notifyBadgeText}>
+                      {unreadCount > 9 ? "9+" : String(unreadCount)}
+                    </Text>
+                  </View>
+                ) : null}
               </Pressable>
             </View>
           </View>
@@ -405,10 +492,10 @@ export default function HomeScreen() {
         visible={showNotifications}
         animationType="fade"
         transparent
-        onRequestClose={() => setShowNotifications(false)}
+        onRequestClose={closeNotifications}
       >
         <View style={[styles.notificationBackdrop, { backgroundColor: colors.modalOverlay }]}>
-          <Pressable style={styles.notificationBackdropTap} onPress={() => setShowNotifications(false)} />
+          <Pressable style={styles.notificationBackdropTap} onPress={closeNotifications} />
           <View
             style={[
               styles.notificationSheet,
@@ -421,33 +508,93 @@ export default function HomeScreen() {
           >
             <View style={styles.notificationHeaderRow}>
               <Text style={[styles.notificationTitle, { color: colors.text }]}>Notifications</Text>
-              <Pressable
-                onPress={() => setShowNotifications(false)}
-                style={[styles.notificationCloseBtn, { backgroundColor: colors.surfaceAlt }]}
-                accessibilityRole="button"
-                accessibilityLabel="Close notifications"
-              >
-                <Ionicons name="close" size={20} color={colors.text} />
-              </Pressable>
+              <View style={styles.notificationHeaderActions}>
+                {inboxItems.length > 0 ? (
+                  <Pressable
+                    onPress={handleClearAllNotifications}
+                    style={[styles.notificationClearBtn, { backgroundColor: colors.surfaceAlt }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear all notifications"
+                  >
+                    <Text style={[styles.notificationClearText, { color: colors.textSecondary }]}>
+                      Clear all
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  onPress={closeNotifications}
+                  style={[styles.notificationCloseBtn, { backgroundColor: colors.surfaceAlt }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close notifications"
+                >
+                  <Ionicons name="close" size={20} color={colors.text} />
+                </Pressable>
+              </View>
             </View>
 
-            <View
-              style={[
-                styles.notificationEmptyState,
-                { backgroundColor: colors.surface, borderColor: colors.cardBorder },
-              ]}
+            <ScrollView
+              style={styles.notificationList}
+              contentContainerStyle={styles.notificationListContent}
+              showsVerticalScrollIndicator={false}
             >
-              <View style={[styles.notificationIconWrap, { backgroundColor: colors.primaryLight }]}>
-                <Ionicons name="notifications-off-outline" size={28} color={colors.textSecondary} />
-              </View>
-              <Text style={[styles.notificationEmptyTitle, { color: colors.text }]}>No notifications</Text>
-              <Text style={[styles.notificationEmptyBody, { color: colors.textSecondary }]}>
-                This interface is ready, but real-time notifications are not connected yet.
-              </Text>
-              <Text style={[styles.notificationHintText, { color: colors.textMuted }]}>
-                Future updates like screening reminders and result alerts will appear here.
-              </Text>
-            </View>
+              {inboxItems.length === 0 ? (
+                <View
+                  style={[
+                    styles.notificationEmptyState,
+                    { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+                  ]}
+                >
+                  <View style={[styles.notificationIconWrap, { backgroundColor: colors.primaryLight }]}>
+                    <Ionicons name="notifications-off-outline" size={28} color={colors.textSecondary} />
+                  </View>
+                  <Text style={[styles.notificationEmptyTitle, { color: colors.text }]}>No notifications</Text>
+                  <Text style={[styles.notificationEmptyBody, { color: colors.textSecondary }]}>
+                    Screening saves, email verification, and TB learning tips appear here when you are signed in.
+                  </Text>
+                </View>
+              ) : (
+                inboxItems.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => handleInboxPress(item)}
+                    style={[
+                      styles.notificationRow,
+                      {
+                        backgroundColor: item.read ? colors.surface : colors.primaryLight,
+                        borderColor: colors.cardBorder,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        item.type === "learn_tb"
+                          ? "book-outline"
+                          : item.type === "screening_complete"
+                            ? "clipboard-outline"
+                            : item.type === "email_verified"
+                              ? "checkmark-circle-outline"
+                              : item.type === "password_changed"
+                                ? "lock-closed-outline"
+                                : item.type === "profile_updated"
+                                  ? "person-outline"
+                                  : "mail-outline"
+                      }
+                      size={20}
+                      color={colors.primary}
+                    />
+                    <View style={styles.notificationRowText}>
+                      <Text style={[styles.notificationRowTitle, { color: colors.text }]}>{item.title}</Text>
+                      <Text style={[styles.notificationRowBody, { color: colors.textSecondary }]} numberOfLines={3}>
+                        {item.body}
+                      </Text>
+                      <Text style={[styles.notificationRowTime, { color: colors.textMuted }]}>
+                        {new Date(item.createdAt).toLocaleString()}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -556,6 +703,55 @@ const styles = StyleSheet.create({
     marginTop: 10,
     ...cardShadow,
   },
+  notifyBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#DC2626",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  notifyBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  notificationList: {
+    flex: 1,
+  },
+  notificationListContent: {
+    paddingBottom: 12,
+    gap: 10,
+  },
+  notificationRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+  },
+  notificationRowText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  notificationRowTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  notificationRowBody: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  notificationRowTime: {
+    fontSize: 12,
+    marginTop: 8,
+  },
   notificationBackdrop: {
     flex: 1,
     backgroundColor: "rgba(2, 6, 23, 0.24)",
@@ -583,6 +779,21 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: TEXT_NAVY,
     letterSpacing: -0.3,
+    flex: 1,
+  },
+  notificationHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  notificationClearBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  notificationClearText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   notificationCloseBtn: {
     width: 40,
