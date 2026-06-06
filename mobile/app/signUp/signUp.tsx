@@ -37,7 +37,7 @@ import { useNavigation, useRouter } from "expo-router";
 import { resetAfterAuth } from "../../utils/authNavigation";
 import { onUnverifiedAccountSession } from "../../services/unverifiedEngagementNotifications";
 import { ApiError, postRegister } from "../../services/backendApi";
-import { saveAuthToken } from "../../utils/authStorage";
+import { saveAuthSession } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
 import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
 import {
@@ -745,7 +745,7 @@ export default function SignUp() {
         form.phone,
         selectedCountry.dialCode,
       );
-      const { token, user } = await postRegister({
+      const { accessToken, refreshToken, token, user } = await postRegister({
         email: form.email.trim(),
         password: form.password,
         phoneNumber: phoneNumber ?? null,
@@ -759,7 +759,7 @@ export default function SignUp() {
           city: form.city.trim() || null,
         },
       });
-      await saveAuthToken(token);
+      await saveAuthSession(accessToken ?? token, refreshToken);
       setCachedProfile(user);
       void onUnverifiedAccountSession(user);
       resetAfterAuth(navigation);

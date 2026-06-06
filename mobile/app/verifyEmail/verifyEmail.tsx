@@ -1,39 +1,209 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
-  Pressable,
   TextInput,
-  ScrollView,
+  Pressable,
   StyleSheet,
-  Alert,
-  ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
+  ScrollView,
+  Animated,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Svg, { Path } from "react-native-svg";
+import { palette } from "../../constants/palette";
 import { authFormTk as tk } from "../../constants/authFormTheme";
 import { authFormButtonStyles } from "../../constants/authFormStyles";
 import { ApiError, getMe, postSendEmailVerification, postVerifyEmail } from "../../services/backendApi";
 import { resetToAuthenticatedHome, resetToLanding } from "../../utils/authNavigation";
-import { onUserBecameVerified } from "../../services/unverifiedEngagementNotifications";
+import { onEmailVerificationSucceeded } from "../../services/unverifiedEngagementNotifications";
 import { clearAuthToken, getAuthToken } from "../../utils/authStorage";
 import { clearProfileCache, setCachedProfile } from "../../utils/profileCache";
 
-const CODE_LENGTH = 6;
-const RESEND_COOLDOWN_SEC = 60;
+const COLORS = {
+  brand900: palette.deepNavy,
+  brand800: palette.navy,
+  brand700: palette.signupBg,
+  brand600: palette.violet,
+  brand500: palette.softViolet,
+  brand400: palette.softViolet,
+  brand300: "#B8B3E8",
+  brand200: palette.lavender,
+  brand100: "#F3F1FC",
+  brand50: "#F8F7FD",
+  slate900: "#0F172A",
+  slate700: "#334155",
+  slate600: "#475569",
+  slate500: "#64748B",
+  slate400: "#94A3B8",
+  slate300: "#CBD5E1",
+  slate200: "#E2E8F0",
+  slate100: "#F1F5F9",
+  slate50: "#F8FAFC",
+  white: "#FFFFFF",
+  success: "#1D9E75",
+  successBg: "#F0FDF4",
+  successBorder: "#BBF7D0",
+  error: "#EF4444",
+  errorBg: "#FEF2F2",
+} as const;
+
+const FONT = {
+  light: "300" as const,
+  regular: "400" as const,
+  medium: "500" as const,
+  semibold: "600" as const,
+};
+
+const OTP_LENGTH = 6;
+/** Matches backend MIN_RESEND_SECONDS in emailVerification.ts */
+const SEND_CODE_COOLDOWN = 60;
+
+const MailOutlineSvg = () => (
+  <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M3 7.75C3 6.7835 3.7835 6 4.75 6H19.25C20.2165 6 21 6.7835 21 7.75V16.25C21 17.2165 20.2165 18 19.25 18H4.75C3.7835 18 3 17.2165 3 16.25V7.75Z"
+      stroke={COLORS.white}
+      strokeWidth={1.8}
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M4.5 8L10.95 12.3C11.5833 12.7222 12.4167 12.7222 13.05 12.3L19.5 8"
+      stroke={COLORS.white}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+const BlinkingCursor: React.FC = () => {
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const blink = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+      ]),
+    );
+    blink.start();
+    return () => blink.stop();
+  }, [opacity]);
+
+  return <Animated.View style={[styles.cursor, { opacity }]} />;
+};
+
+interface OTPInputProps {
+  value: string;
+  onChange: (val: string) => void;
+  hasError: boolean;
+  isFocused: boolean;
+  onFocus: () => void;
+}
+
+const OTPInput: React.FC<OTPInputProps> = ({ value, onChange, hasError, isFocused, onFocus }) => {
+  const inputRef = useRef<TextInput>(null);
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!hasError) return;
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 8, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -8, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 5, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -5, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 55, useNativeDriver: true }),
+    ]).start();
+  }, [hasError, shakeAnim]);
+
+  const digits = Array.from({ length: OTP_LENGTH }, (_, i) => value[i] ?? "");
+  const cursorIndex = Math.min(value.length, OTP_LENGTH - 1);
+
+  return (
+    <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
+      <Pressable
+        onPress={() => {
+          inputRef.current?.focus();
+          onFocus();
+        }}
+        style={styles.otpRow}
+        accessibilityLabel="Enter 6-digit verification code"
+        accessibilityRole="none"
+      >
+        {digits.map((digit, i) => {
+          const isActive = isFocused && i === cursorIndex && value.length < OTP_LENGTH;
+          const isFilled = i < value.length;
+          return (
+            <View
+              key={i}
+              style={[
+                styles.otpBox,
+                isActive && styles.otpBoxFocused,
+                isFilled && !hasError && styles.otpBoxFilled,
+                hasError && styles.otpBoxError,
+              ]}
+            >
+              {isActive && !digit ? (
+                <BlinkingCursor />
+              ) : (
+                <Text
+                  style={[
+                    styles.otpDigit,
+                    isFilled && !hasError && styles.otpDigitFilled,
+                    hasError && styles.otpDigitError,
+                  ]}
+                >
+                  {digit || "·"}
+                </Text>
+              )}
+            </View>
+          );
+        })}
+      </Pressable>
+
+      <TextInput
+        ref={inputRef}
+        value={value}
+        onChangeText={(text) => onChange(text.replace(/\D/g, "").slice(0, OTP_LENGTH))}
+        onFocus={onFocus}
+        keyboardType="number-pad"
+        maxLength={OTP_LENGTH}
+        style={styles.hiddenInput}
+        autoFocus
+        caretHidden
+        textContentType="oneTimeCode"
+        autoComplete={Platform.OS === "android" ? "sms-otp" : "one-time-code"}
+        accessibilityLabel="Verification code input"
+      />
+    </Animated.View>
+  );
+};
 
 export default function VerifyEmailScreen() {
   const navigation = useNavigation();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+
   const [email, setEmail] = useState<string | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
   const [code, setCode] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [sending, setSending] = useState(false);
+  const [isVerifying, setVerifying] = useState(false);
+  const [isResending, setResending] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
   const [cooldown, setCooldown] = useState(0);
   const [codeSent, setCodeSent] = useState(false);
+  const [otpFocused, setOtpFocused] = useState(true);
+
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const verifyOnceRef = useRef(false);
+  const fadeIn = useRef(new Animated.Value(0)).current;
+  const slideUp = useRef(new Animated.Value(28)).current;
 
   const loadUser = useCallback(async () => {
     const token = await getAuthToken();
@@ -60,6 +230,8 @@ export default function VerifyEmailScreen() {
           },
         },
       ]);
+    } finally {
+      setLoadingUser(false);
     }
   }, [navigation]);
 
@@ -68,231 +240,429 @@ export default function VerifyEmailScreen() {
   }, [loadUser]);
 
   useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeIn, { toValue: 1, duration: 440, delay: 100, useNativeDriver: true }),
+      Animated.timing(slideUp, { toValue: 0, duration: 440, delay: 100, useNativeDriver: true }),
+    ]).start();
+  }, [fadeIn, slideUp]);
+
+  useEffect(() => {
     if (cooldown <= 0) return;
-    const t = setInterval(() => {
-      setCooldown((s) => (s > 0 ? s - 1 : 0));
+    timerRef.current = setInterval(() => {
+      setCooldown((c) => {
+        if (c <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 0;
+        }
+        return c - 1;
+      });
     }, 1000);
-    return () => clearInterval(t);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [cooldown]);
 
-  const handleResend = async () => {
-    if (cooldown > 0 || sending) return;
-    setSending(true);
-    try {
-      await postSendEmailVerification();
-      setCodeSent(true);
-      setCooldown(RESEND_COOLDOWN_SEC);
-      Alert.alert("Email sent", "A verification code was sent to your inbox.");
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Could not resend code.";
-      Alert.alert("Resend failed", msg);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleVerify = async () => {
+  const handleVerify = useCallback(async () => {
     const digits = code.replace(/\D/g, "");
-    if (digits.length !== CODE_LENGTH) {
-      Alert.alert("Verification", `Enter the ${CODE_LENGTH}-digit code from your email.`);
-      return;
-    }
-    setSubmitting(true);
+    if (digits.length < OTP_LENGTH || isVerifying || verifyOnceRef.current) return;
+
+    setHasError(false);
+    setErrorMsg("");
+    setVerifying(true);
     try {
       await postVerifyEmail(digits);
+      verifyOnceRef.current = true;
       const { user } = await getMe();
       setCachedProfile(user);
-      await onUserBecameVerified();
+      const firstCelebration = await onEmailVerificationSucceeded(user.userId);
+      if (firstCelebration) {
+        Alert.alert(
+          "Email verified",
+          "You can now export screening reports as PDF.",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  resetToAuthenticatedHome(navigation);
+                }
+              },
+            },
+          ],
+          { cancelable: false },
+        );
+        return;
+      }
       if (router.canGoBack()) {
         router.back();
       } else {
         resetToAuthenticatedHome(navigation);
       }
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Verification failed.";
-      Alert.alert("Invalid code", msg);
+      const msg = e instanceof ApiError ? e.message : "Invalid code — please try again.";
+      setHasError(true);
+      setErrorMsg(msg);
+      setCode("");
+      setTimeout(() => setHasError(false), 900);
     } finally {
-      setSubmitting(false);
+      setVerifying(false);
     }
-  };
+  }, [code, isVerifying, navigation, router]);
 
-  const handleSignOut = async () => {
-    await clearAuthToken();
-    clearProfileCache();
-    resetToLanding(navigation);
-  };
+  useEffect(() => {
+    if (code.length === OTP_LENGTH && !loadingUser) {
+      void handleVerify();
+    }
+  }, [code, handleVerify, loadingUser]);
+
+  const handleSendCode = useCallback(async () => {
+    if (isResending || cooldown > 0) return;
+    setResending(true);
+    setErrorMsg("");
+    try {
+      await postSendEmailVerification();
+      setCodeSent(true);
+      setCooldown(SEND_CODE_COOLDOWN);
+      if (codeSent) setCode("");
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Failed to send code. Try again.";
+      setErrorMsg(msg);
+    } finally {
+      setResending(false);
+    }
+  }, [codeSent, cooldown, isResending]);
+
+  const handleCancel = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    resetToAuthenticatedHome(navigation);
+  }, [navigation, router]);
+
+  const displayEmail =
+    email && email.length > 30
+      ? `${email.slice(0, 14)}…${email.slice(email.indexOf("@"))}`
+      : email ?? "your email";
+
+  const isComplete = code.length === OTP_LENGTH;
 
   return (
-    <SafeAreaView style={styles.root} edges={["top", "right", "bottom", "left"]}>
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={styles.safe} edges={["top", "right", "bottom", "left"]}>
+      <StatusBar style="light" />
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
       >
-        <View style={styles.card}>
-          <View style={styles.iconWrap}>
-            <Ionicons name="mail-outline" size={36} color={tk.violetLight} />
-          </View>
-          <Text style={styles.title}>Verify your email</Text>
-          <Text style={styles.subtitle}>
-            {email
-              ? `Optional but recommended. Verify ${email} to download screening history and share results.`
-              : "Optional but recommended. Verify your email to download screening history and share results."}
-          </Text>
-          <Text style={styles.hint}>
-            Tap &quot;Send code&quot; if you did not receive a code at signup.
-          </Text>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <Animated.View style={[styles.card, { opacity: fadeIn, transform: [{ translateY: slideUp }] }]}>
+            <View style={styles.iconWrap}>
+              <MailOutlineSvg />
+            </View>
 
-          <Text style={styles.label}>Verification code</Text>
-          <TextInput
-            style={styles.codeInput}
-            value={code}
-            onChangeText={(t) => setCode(t.replace(/\D/g, "").slice(0, CODE_LENGTH))}
-            keyboardType="number-pad"
-            textContentType="oneTimeCode"
-            autoComplete={Platform.OS === "android" ? "sms-otp" : "one-time-code"}
-            maxLength={CODE_LENGTH}
-            placeholder="000000"
-            placeholderTextColor={tk.textMuted}
-            selectionColor={tk.cursorColor}
-          />
+            <Text style={styles.heroTitle}>Verify your email</Text>
+            <Text style={styles.heroSubtitle}>
+              {loadingUser ? (
+                "Loading your account…"
+              ) : codeSent ? (
+                <>
+                  Code sent to <Text style={styles.heroEmail}>{displayEmail}</Text>. Unlocks screening
+                  PDF export.
+                </>
+              ) : (
+                <>
+                  We&apos;ll send a code to <Text style={styles.heroEmail}>{displayEmail}</Text>. Unlocks
+                  screening PDF export.
+                </>
+              )}
+            </Text>
 
-          <Pressable
-            style={[styles.primaryBtn, submitting && styles.btnDisabled]}
-            onPress={() => void handleVerify()}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color={tk.primaryBtnText} />
+            {loadingUser ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="large" color={tk.violetLight} />
+              </View>
             ) : (
-              <Text style={styles.primaryBtnText}>VERIFY EMAIL</Text>
-            )}
-          </Pressable>
+              <>
+                <View style={styles.optionalRow}>
+                  <View style={styles.optionalBadge}>
+                    <Text style={styles.optionalText}>Optional step</Text>
+                  </View>
+                </View>
 
-          <Pressable
-            style={[styles.secondaryBtn, (sending || cooldown > 0) && styles.btnDisabled]}
-            onPress={() => void handleResend()}
-            disabled={sending || cooldown > 0}
-          >
-            {sending ? (
-              <ActivityIndicator color={tk.textPrimary} />
-            ) : (
-              <Text style={styles.secondaryBtnText}>
-                {cooldown > 0
-                  ? `Resend code (${cooldown}s)`
-                  : codeSent
-                    ? "Resend code"
-                    : "Send code"}
-              </Text>
-            )}
-          </Pressable>
+                <Text style={styles.otpLabel}>6-digit code</Text>
+                <OTPInput
+                  value={code}
+                  onChange={setCode}
+                  hasError={hasError}
+                  isFocused={otpFocused}
+                  onFocus={() => setOtpFocused(true)}
+                />
 
-          <Pressable onPress={() => void handleSignOut()} style={styles.signOut}>
-            <Text style={styles.signOutText}>Sign out</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+                {!!errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
+
+                <View style={styles.resendRow}>
+                  <Pressable
+                    onPress={() => void handleSendCode()}
+                    disabled={isResending || cooldown > 0}
+                    style={[
+                      styles.resendBtn,
+                      (isResending || cooldown > 0) && styles.resendBtnDisabled,
+                    ]}
+                    accessibilityLabel={codeSent ? "Resend verification code" : "Send verification code"}
+                    accessibilityRole="button"
+                  >
+                    {isResending ? (
+                      <ActivityIndicator size="small" color={tk.textPrimary} />
+                    ) : cooldown > 0 ? (
+                      <Text style={styles.resendBtnTextDisabled}>
+                        {codeSent ? "Resend code" : "Send code"} ({cooldown}s)
+                      </Text>
+                    ) : (
+                      <Text style={styles.resendBtnText}>{codeSent ? "Resend code" : "Send code"}</Text>
+                    )}
+                  </Pressable>
+                </View>
+
+                <View style={styles.divider} />
+
+                <Pressable
+                  style={[
+                    authFormButtonStyles.primaryButton,
+                    styles.btnPrimary,
+                    (!isComplete || isVerifying) && styles.btnPrimaryDisabled,
+                  ]}
+                  onPress={() => void handleVerify()}
+                  disabled={!isComplete || isVerifying}
+                  accessibilityLabel="Verify email"
+                  accessibilityRole="button"
+                >
+                  {isVerifying ? (
+                    <ActivityIndicator color={tk.primaryBtnText} />
+                  ) : (
+                    <Text style={authFormButtonStyles.primaryButtonText}>VERIFY EMAIL</Text>
+                  )}
+                </Pressable>
+
+                <Pressable
+                  style={styles.btnCancel}
+                  onPress={handleCancel}
+                  accessibilityLabel="Cancel email verification"
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.btnCancelText}>Cancel verification</Text>
+                </Pressable>
+              </>
+            )}
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
+  safe: {
     flex: 1,
     backgroundColor: tk.screenBg,
   },
+  flex: { flex: 1 },
   scroll: {
     flexGrow: 1,
-    justifyContent: "center",
     paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingVertical: 24,
+    justifyContent: "center",
   },
   card: {
     backgroundColor: tk.cardBg,
     borderRadius: 24,
-    padding: 24,
+    paddingHorizontal: 20,
+    paddingTop: 30,
+    paddingBottom: 22,
   },
   iconWrap: {
-    alignSelf: "center",
-    marginBottom: 16,
     width: 64,
     height: 64,
-    borderRadius: 32,
+    borderRadius: 18,
     backgroundColor: tk.violetGlow,
+    borderWidth: 1,
+    borderColor: tk.border,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+    alignSelf: "center",
+  },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: FONT.semibold,
+    color: tk.textPrimary,
+    marginBottom: 6,
+    textAlign: "center",
+    letterSpacing: -0.3,
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    color: tk.textSub,
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 18,
+  },
+  heroEmail: {
+    color: tk.textPrimary,
+    fontWeight: FONT.semibold,
+  },
+
+  loadingWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+  },
+  optionalRow: {
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  optionalBadge: {
+    backgroundColor: tk.successBg,
+    borderWidth: 1,
+    borderColor: tk.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+  },
+  optionalText: {
+    fontSize: 11,
+    fontWeight: FONT.semibold,
+    color: tk.success,
+    letterSpacing: 0.3,
+  },
+  otpLabel: {
+    fontSize: 11,
+    fontWeight: FONT.semibold,
+    color: tk.textMuted,
+    letterSpacing: 0.9,
+    textTransform: "uppercase",
+    marginBottom: 12,
+  },
+
+  otpRow: {
+    flexDirection: "row",
+    gap: Platform.OS === "android" ? 7 : 8,
+    marginBottom: 8,
+  },
+  otpBox: {
+    flex: 1,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: tk.surface,
+    borderWidth: 1.5,
+    borderColor: tk.border,
     alignItems: "center",
     justifyContent: "center",
   },
-  title: {
-    color: tk.textPrimary,
-    fontSize: 22,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 8,
+  otpBoxFocused: {
+    borderColor: tk.violetLight,
+    backgroundColor: tk.fieldFocusedBg,
   },
-  subtitle: {
-    color: tk.textSub,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-    marginBottom: 12,
+  otpBoxFilled: {
+    borderColor: tk.violetLight,
+    backgroundColor: tk.fieldFocusedBg,
   },
-  hint: {
+  otpBoxError: {
+    borderColor: tk.errorBorder,
+    backgroundColor: tk.errorBg,
+  },
+  otpDigit: {
+    fontSize: 20,
+    fontWeight: FONT.semibold,
     color: tk.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: "center",
-    marginBottom: 24,
   },
-  label: {
-    color: tk.fieldLabel,
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  codeInput: {
-    backgroundColor: tk.surface,
-    borderWidth: 1,
-    borderColor: tk.border,
-    borderRadius: 12,
+  otpDigitFilled: {
     color: tk.textPrimary,
-    fontSize: 28,
-    letterSpacing: 8,
+  },
+  otpDigitError: {
+    color: tk.error,
+  },
+  cursor: {
+    width: 2,
+    height: 22,
+    backgroundColor: tk.violetLight,
+    borderRadius: 1,
+  },
+  hiddenInput: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    opacity: 0,
+  },
+  errorText: {
+    fontSize: 12,
+    color: tk.error,
+    marginTop: 6,
     textAlign: "center",
-    paddingVertical: 14,
-    marginBottom: 20,
-    fontVariant: ["tabular-nums"],
+    fontWeight: FONT.medium,
   },
-  primaryBtn: {
-    ...authFormButtonStyles.primaryButton,
-    marginBottom: 12,
+
+  resendRow: {
+    alignItems: "center",
+    marginTop: 16,
+    marginBottom: 22,
+    minHeight: 38,
+    justifyContent: "center",
   },
-  primaryBtnText: {
-    ...authFormButtonStyles.primaryButtonText,
-  },
-  secondaryBtn: {
-    alignSelf: "stretch",
+  resendBtn: {
+    paddingVertical: 9,
+    paddingHorizontal: 22,
+    borderRadius: 10,
     backgroundColor: tk.secondaryBtnBg,
     borderWidth: 1,
     borderColor: tk.secondaryBtnBorder,
-    borderRadius: 24,
-    minHeight: 48,
-    justifyContent: "center",
+    minWidth: 130,
     alignItems: "center",
-    marginBottom: 16,
   },
-  secondaryBtnText: {
+  resendBtnDisabled: {
+    opacity: 0.55,
+  },
+  resendBtnText: {
+    fontSize: 13,
+    fontWeight: FONT.semibold,
     color: tk.textPrimary,
-    fontWeight: "600",
+  },
+  resendBtnTextDisabled: {
+    fontSize: 13,
+    fontWeight: FONT.semibold,
+    color: tk.textMuted,
+  },
+
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    marginBottom: 22,
+  },
+  btnPrimary: {
+    marginTop: 0,
+    marginBottom: 10,
+  },
+  btnPrimaryDisabled: {
+    opacity: 0.55,
+  },
+  btnCancel: {
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  btnCancelText: {
     fontSize: 14,
+    fontWeight: FONT.medium,
+    color: tk.textMuted,
   },
   btnDisabled: {
-    opacity: 0.6,
-  },
-  signOut: {
-    alignItems: "center",
-    paddingVertical: 8,
-  },
-  signOutText: {
-    color: tk.textMuted,
-    fontSize: 14,
+    opacity: 0.7,
   },
 });

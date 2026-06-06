@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Platform,
   Pressable,
   ScrollView,
-  Share,
   Text,
   useWindowDimensions,
   View,
@@ -31,10 +30,10 @@ import type { FusionModalityBreakdown } from "../../utils/tbRiskFusion";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
 import { onUnverifiedScreeningCompleted } from "../../services/unverifiedEngagementNotifications";
 import {
-  formatScreeningShareMessage,
   isEmailVerified,
   promptEmailVerification,
 } from "../../utils/emailVerifiedGate";
+import { buildResultPdfExport, shareScreeningPdf } from "../../utils/screeningPdfExport";
 
 type RiskLevel = "low" | "moderate" | "high";
 type PhlegmTone = { color: string; bg: string; border: string; label: string };
@@ -199,6 +198,83 @@ export default function ResultScreen() {
       ? params.imageUri.trim()
       : "";
 
+  const audioCount = useMemo(() => {
+    if (typeof params.audioUris !== "string" || params.audioUris.length === 0) return 0;
+    try {
+      const parsed = JSON.parse(params.audioUris) as unknown;
+      if (!Array.isArray(parsed)) return 0;
+      return parsed.filter((x): x is string => typeof x === "string" && x.length > 0).length;
+    } catch {
+      return 0;
+    }
+  }, [params.audioUris]);
+
+  const imageProvided =
+    imageUriParam.length > 0 || params.deviceSputum === "1" || phlegmAnalyzed;
+
+  const handleDownloadPdf = useCallback(async () => {
+    let profile = peekProfile();
+    if (!isEmailVerified(profile)) {
+      try {
+        const { user } = await getMe();
+        setCachedProfile(user);
+        profile = user;
+      } catch {
+        // keep cached profile
+      }
+    }
+    if (!isEmailVerified(profile)) {
+      promptEmailVerification(router);
+      return;
+    }
+
+    try {
+      const pdfData = buildResultPdfExport({
+        risk,
+        riskTitle: cfg.label,
+        riskSummary: cfg.tagline,
+        recommendation: cfg.recommendation,
+        probTb: typeof probTb === "number" && Number.isFinite(probTb) ? probTb : null,
+        fusionModalities: fusionBreakdown?.modalities ?? [],
+        checklistJson: checklist,
+        invalidAudio,
+        invalidLabel,
+        audioCount,
+        phlegmAnalyzed,
+        phlegmLoad,
+        phlegmConfidence: phlegmConfidence,
+        phlegmFailed,
+        imageProvided,
+      });
+      await shareScreeningPdf(pdfData);
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "Could not create PDF.";
+      Alert.alert("Download PDF", message);
+    }
+  }, [
+    audioCount,
+    cfg.label,
+    cfg.recommendation,
+    cfg.tagline,
+    checklist,
+    fusionBreakdown?.modalities,
+    imageProvided,
+    invalidAudio,
+    invalidLabel,
+    phlegmAnalyzed,
+    phlegmConfidence,
+    phlegmFailed,
+    phlegmLoad,
+    probTb,
+    risk,
+    router,
+  ]);
+
   /** Prefer server-stored sputum bytes once screening is saved (not phone-local file). */
   const [displayImageUri, setDisplayImageUri] = useState("");
 
@@ -259,11 +335,6 @@ export default function ResultScreen() {
       const avgProb = typeof probTb === "number" && Number.isFinite(probTb) ? probTb : null;
 
       try {
-        const imageUriParam =
-          typeof params.imageUri === "string" && params.imageUri.trim().length > 0
-            ? params.imageUri.trim()
-            : "";
-
         const draftSessionId =
           typeof params.sessionId === "string" && params.sessionId.trim().length > 0
             ? params.sessionId.trim()
@@ -743,42 +814,13 @@ export default function ResultScreen() {
           </Pressable>
 
           <Pressable
-            onPress={() => {
-              void (async () => {
-                let profile = peekProfile();
-                if (!isEmailVerified(profile)) {
-                  try {
-                    const { user } = await getMe();
-                    setCachedProfile(user);
-                    profile = user;
-                  } catch {
-                    // keep cached profile
-                  }
-                }
-                if (!isEmailVerified(profile)) {
-                  promptEmailVerification(router);
-                  return;
-                }
-                const tbPct =
-                  typeof probTb === "number" && Number.isFinite(probTb)
-                    ? Math.round(probTb * 1000) / 10
-                    : null;
-                const message = formatScreeningShareMessage({
-                  riskLabel: cfg.label,
-                  tbProbabilityPercent: tbPct,
-                });
-                try {
-                  await Share.share({ message });
-                } catch {
-                  Alert.alert("Share", "Could not open the share sheet.");
-                }
-              })();
-            }}
+            onPress={() => void handleDownloadPdf()}
             className="mb-3 items-center justify-center rounded-2xl border py-4 active:opacity-90"
             style={{ borderColor: colors.borderLight, backgroundColor: colors.surfaceAlt }}
             accessibilityRole="button"
+            accessibilityLabel="Download screening PDF"
           >
-            <Text className="text-base font-bold" style={{ color: colors.text }}>Share Results</Text>
+            <Text className="text-base font-bold" style={{ color: colors.text }}>Download PDF</Text>
           </Pressable>
 
           <Pressable

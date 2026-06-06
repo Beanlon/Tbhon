@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -8,7 +8,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  Share,
   Text,
   View,
 } from "react-native";
@@ -34,10 +33,10 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { fuseTbRisk, type FusionModalityBreakdown } from "../../utils/tbRiskFusion";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
 import {
-  formatScreeningShareMessage,
   isEmailVerified,
   promptEmailVerification,
 } from "../../utils/emailVerifiedGate";
+import { buildDetailsPdfExport, shareScreeningPdf } from "../../utils/screeningPdfExport";
 
 type RiskLevel = "low" | "moderate" | "high";
 
@@ -391,6 +390,105 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
   };
 }
 
+function DetailsCard({
+  title,
+  children,
+  cardBorder,
+  cardBg,
+  textColor,
+}: {
+  title: string;
+  children: ReactNode;
+  cardBorder: string;
+  cardBg: string;
+  textColor: string;
+}) {
+  return (
+    <View className="mb-3 rounded-3xl border p-5" style={{ borderColor: cardBorder, backgroundColor: cardBg }}>
+      <Text className="mb-3 text-base font-bold" style={{ color: textColor }}>
+        {title}
+      </Text>
+      {children}
+    </View>
+  );
+}
+
+function DetailsBullet({
+  text,
+  accentColor,
+  textSecondary,
+}: {
+  text: string;
+  accentColor: string;
+  textSecondary: string;
+}) {
+  return (
+    <View className="mb-2 flex-row items-start gap-3">
+      <View className="mt-2 size-2 rounded-full" style={{ backgroundColor: accentColor }} />
+      <Text className="flex-1 text-base leading-6" style={{ color: textSecondary }}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+function DetailsCheckRow({
+  ok,
+  label,
+  sub,
+  successColor,
+  textMuted,
+  textColor,
+}: {
+  ok: boolean;
+  label: string;
+  sub?: string;
+  successColor: string;
+  textMuted: string;
+  textColor: string;
+}) {
+  return (
+    <View className="mb-3 flex-row items-start gap-3">
+      <Ionicons name={ok ? "checkmark-circle" : "information-circle"} size={22} color={ok ? successColor : textMuted} />
+      <View className="min-w-0 flex-1">
+        <Text className="text-base font-bold" style={{ color: textColor }}>
+          {label}
+        </Text>
+        {sub ? <Text className="mt-1 text-sm leading-5" style={{ color: textMuted }}>{sub}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+const SputumSampleCard = memo(function SputumSampleCard({
+  sessionId,
+  imageUri,
+  imageProvided,
+  onOpenViewer,
+  cardBorder,
+  cardBg,
+  textColor,
+}: {
+  sessionId?: string;
+  imageUri: string;
+  imageProvided: boolean;
+  onOpenViewer: () => void;
+  cardBorder: string;
+  cardBg: string;
+  textColor: string;
+}) {
+  return (
+    <DetailsCard title="Sputum sample" cardBorder={cardBorder} cardBg={cardBg} textColor={textColor}>
+      <SputumSamplePhoto
+        sessionId={sessionId}
+        uri={imageUri}
+        height={260}
+        onPress={imageProvided ? onOpenViewer : undefined}
+      />
+    </DetailsCard>
+  );
+});
+
 export default function ScreeningDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -431,6 +529,7 @@ export default function ScreeningDetailsScreen() {
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const playingIndexRef = useRef<number | null>(null);
   const [audioHint, setAudioHint] = useState<string | null>(null);
+  const [audioHeaders, setAudioHeaders] = useState<Record<string, string> | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const checklistHeightAnim = useRef(new Animated.Value(0)).current;
 
@@ -634,6 +733,29 @@ export default function ScreeningDetailsScreen() {
 
   const audioUris = vm?.audioUris ?? [];
   const audioAnalyzed = audioUris.length > 0;
+  const hasRemoteAudio = useMemo(
+    () => audioUris.some((uri) => /^https?:\/\//i.test(uri)),
+    [audioUris],
+  );
+
+  useEffect(() => {
+    if (!hasRemoteAudio) {
+      setAudioHeaders(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const headers = await getAuthMediaHeaders();
+        if (!cancelled) setAudioHeaders(headers);
+      } catch {
+        if (!cancelled) setAudioHeaders(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasRemoteAudio, sessionId]);
 
   const imageUri = vm?.imageUri ?? "";
   const imageProvided = imageUri.length > 0;
@@ -727,10 +849,9 @@ export default function ScreeningDetailsScreen() {
     () => fusionFactorsFromModalities(fusionModalities),
     [fusionModalities],
   );
-  const riskShareLabel =
-    risk === "high" ? "High Risk" : risk === "moderate" ? "Moderate Risk" : "Low Risk";
+  const handleDownloadPdf = useCallback(async () => {
+    if (!vm) return;
 
-  const handleShareResult = useCallback(async () => {
     let profile = peekProfile();
     if (!isEmailVerified(profile)) {
       try {
@@ -745,43 +866,64 @@ export default function ScreeningDetailsScreen() {
       promptEmailVerification(router);
       return;
     }
-    const tbPct =
-      hasProb && probTb !== null ? Math.round(probTb * 1000) / 10 : null;
-    const message = formatScreeningShareMessage({
-      riskLabel: riskShareLabel,
-      completedAt: vm?.completedAt ?? null,
-      tbProbabilityPercent: tbPct,
-    });
+
     try {
-      await Share.share({ message });
-    } catch {
-      Alert.alert("Share", "Could not open the share sheet.");
+      const pdfData = buildDetailsPdfExport({
+        risk,
+        riskTitle: copy.title,
+        riskSummary: copy.simple,
+        probTb: hasProb && probTb !== null ? probTb : null,
+        fusionModalities,
+        fusionFactors,
+        checklistRows,
+        recommendations: copy.recommendations,
+        savedRecommendation,
+        completedAt: vm.completedAt,
+        audioCount: audioUris.length,
+        invalidAudio,
+        invalidLabel,
+        imageProvided,
+        imageAnalyzed,
+        phlegmLoad,
+        phlegmConf: Number.isFinite(phlegmConf) ? phlegmConf : null,
+        phlegmFailed,
+      });
+      await shareScreeningPdf(pdfData);
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "Could not create PDF.";
+      Alert.alert("Download PDF", message);
     }
-  }, [hasProb, probTb, riskShareLabel, router, vm?.completedAt]);
+  }, [
+    audioUris.length,
+    checklistRows,
+    copy.recommendations,
+    copy.simple,
+    copy.title,
+    fusionFactors,
+    fusionModalities,
+    hasProb,
+    imageAnalyzed,
+    imageProvided,
+    invalidAudio,
+    invalidLabel,
+    phlegmConf,
+    phlegmFailed,
+    phlegmLoad,
+    probTb,
+    risk,
+    router,
+    savedRecommendation,
+    vm,
+  ]);
 
-  const Card = ({ title, children }: { title: string; children: ReactNode }) => (
-    <View className="mb-3 rounded-3xl border p-5" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
-      <Text className="mb-3 text-base font-bold" style={{ color: colors.text }}>{title}</Text>
-      {children}
-    </View>
-  );
-
-  const Bullet = ({ text }: { text: string }) => (
-    <View className="mb-2 flex-row items-start gap-3">
-      <View className="mt-2 size-2 rounded-full" style={{ backgroundColor: copy.color }} />
-      <Text className="flex-1 text-base leading-6" style={{ color: colors.textSecondary }}>{text}</Text>
-    </View>
-  );
-
-  const CheckRow = ({ ok, label, sub }: { ok: boolean; label: string; sub?: string }) => (
-    <View className="mb-3 flex-row items-start gap-3">
-      <Ionicons name={ok ? "checkmark-circle" : "information-circle"} size={22} color={ok ? colors.success : colors.textMuted} />
-      <View className="min-w-0 flex-1">
-        <Text className="text-base font-bold" style={{ color: colors.text }}>{label}</Text>
-        {sub ? <Text className="mt-1 text-sm leading-5" style={{ color: colors.textMuted }}>{sub}</Text> : null}
-      </View>
-    </View>
-  );
+  const handleOpenImageViewer = useCallback(() => {
+    setImageViewerVisible(true);
+  }, []);
 
   const showRemoteSpinner = Boolean(sessionId) && remoteLoading;
   const showRemoteError = Boolean(sessionId) && !remoteLoading && remoteError;
@@ -809,6 +951,11 @@ export default function ScreeningDetailsScreen() {
       setAudioHint("Playback is not available for this clip.");
       return;
     }
+    const needsAuthHeader = /^https?:\/\//i.test(uri);
+    if (needsAuthHeader && !audioHeaders) {
+      setAudioHint("Preparing secure playback… Please tap play again.");
+      return;
+    }
 
     setAudioHint(null);
     // Stop any currently playing clip first
@@ -824,7 +971,10 @@ export default function ScreeningDetailsScreen() {
       });
       const sound = new Audio.Sound();
       soundRef.current = sound;
-      await sound.loadAsync({ uri }, { shouldPlay: true });
+      await sound.loadAsync(
+        needsAuthHeader && audioHeaders ? { uri, headers: audioHeaders } : { uri },
+        { shouldPlay: true },
+      );
 
       // Cancelled while loading (user tapped stop during network fetch)
       if (soundRef.current !== sound) {
@@ -856,7 +1006,7 @@ export default function ScreeningDetailsScreen() {
       );
       setPlayingIndex(null);
     }
-  }, [audioUris, stopCurrentSound]);
+  }, [audioHeaders, audioUris, stopCurrentSound]);
 
   return (
     <>
@@ -892,13 +1042,13 @@ export default function ScreeningDetailsScreen() {
           </View>
 
           <Pressable
-            onPress={() => void handleShareResult()}
+            onPress={() => void handleDownloadPdf()}
             className="size-11 items-center justify-center rounded-full"
             style={{ backgroundColor: colors.surfaceAlt }}
             accessibilityRole="button"
-            accessibilityLabel="Share result"
+            accessibilityLabel="Download screening PDF"
           >
-            <Ionicons name="share-outline" size={22} color={colors.text} />
+            <Ionicons name="download-outline" size={22} color={colors.text} />
           </Pressable>
         </View>
 
@@ -951,7 +1101,12 @@ export default function ScreeningDetailsScreen() {
                   </View>
                 )}
 
-                <Card title="Risk Breakdown">
+                <DetailsCard
+                  title="Risk Breakdown"
+                  cardBorder={colors.cardBorder}
+                  cardBg={colors.card}
+                  textColor={colors.text}
+                >
                   <View className="mb-3 flex-row items-center justify-between gap-3">
                     <View
                       className="rounded-full border px-4 py-2.5"
@@ -981,15 +1136,23 @@ export default function ScreeningDetailsScreen() {
                       {fusionMethod}
                     </Text>
                   ) : null}
-                </Card>
+                </DetailsCard>
 
-                <Card title="Input Summary">
-                  <CheckRow
+                <DetailsCard
+                  title="Input Summary"
+                  cardBorder={colors.cardBorder}
+                  cardBg={colors.card}
+                  textColor={colors.text}
+                >
+                  <DetailsCheckRow
                     ok={audioAnalyzed}
                     label="Cough audio analyzed"
                     sub={audioAnalyzed ? `Clips: ${audioUris.length}` : "No recorded audio was provided."}
+                    successColor={colors.success}
+                    textMuted={colors.textMuted}
+                    textColor={colors.text}
                   />
-                  <CheckRow
+                  <DetailsCheckRow
                     ok={imageProvided}
                     label={
                       imageProvided ? "Sputum / phlegm image received" : "Sputum / phlegm skipped (optional)"
@@ -1009,8 +1172,11 @@ export default function ScreeningDetailsScreen() {
                             : "Image captured; analysis not run."
                         : "No sample photo — results use cough audio (and checklist) only."
                     }
+                    successColor={colors.success}
+                    textMuted={colors.textMuted}
+                    textColor={colors.text}
                   />
-                </Card>
+                </DetailsCard>
 
                 <View className="mb-3 rounded-3xl border p-5" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
                   <Pressable
@@ -1105,7 +1271,12 @@ export default function ScreeningDetailsScreen() {
                   ) : null}
                 </View>
 
-                <Card title="Cough audio replay">
+                <DetailsCard
+                  title="Cough audio replay"
+                  cardBorder={colors.cardBorder}
+                  cardBg={colors.card}
+                  textColor={colors.text}
+                >
                   {audioUris.length > 0 ? (
                     <View className="gap-2">
                       {audioUris.map((_, i) => (
@@ -1138,49 +1309,74 @@ export default function ScreeningDetailsScreen() {
                       {audioHint}
                     </Text>
                   ) : null}
-                </Card>
+                </DetailsCard>
 
-                <Card title="Sputum sample">
-                  <SputumSamplePhoto
-                    key={sessionId ?? "no-session"}
-                    sessionId={sessionId}
-                    uri={imageUri}
-                    height={260}
-                    label={imageProvided ? "Stored on your account (server)" : undefined}
-                    onPress={imageProvided ? () => setImageViewerVisible(true) : undefined}
-                  />
-                </Card>
+                <SputumSampleCard
+                  sessionId={sessionId}
+                  imageUri={imageUri}
+                  imageProvided={imageProvided}
+                  onOpenViewer={handleOpenImageViewer}
+                  cardBorder={colors.cardBorder}
+                  cardBg={colors.card}
+                  textColor={colors.text}
+                />
 
-                <Card title="Factor Insights">
+                <DetailsCard
+                  title="Factor Insights"
+                  cardBorder={colors.cardBorder}
+                  cardBg={colors.card}
+                  textColor={colors.text}
+                >
                   {fusionFactors.map((t) => (
-                    <Bullet key={t} text={t} />
+                    <DetailsBullet key={t} text={t} accentColor={copy.color} textSecondary={colors.textSecondary} />
                   ))}
                   {fusionModalities.length === 0
-                    ? copy.factors.map((t) => <Bullet key={t} text={t} />)
+                    ? copy.factors.map((t) => (
+                        <DetailsBullet key={t} text={t} accentColor={copy.color} textSecondary={colors.textSecondary} />
+                      ))
                     : null}
                   {imageAnalyzed && phlegmLoad.length > 0 && (
-                    <Bullet
+                    <DetailsBullet
                       text={`Sputum smear model: ${formatPhlegmLoadLabel(phlegmLoad)}. This is a screening signal, not a certified diagnosis.`}
+                      accentColor={copy.color}
+                      textSecondary={colors.textSecondary}
                     />
                   )}
                   {!imageAnalyzed && imageProvided && phlegmFailed && (
-                    <Bullet text="Phlegm model did not return a result; fusion used checklist and cough signals only." />
+                    <DetailsBullet
+                      text="Phlegm model did not return a result; fusion used checklist and cough signals only."
+                      accentColor={copy.color}
+                      textSecondary={colors.textSecondary}
+                    />
                   )}
-                </Card>
+                </DetailsCard>
 
-                <Card title="Recommendations">
+                <DetailsCard
+                  title="Recommendations"
+                  cardBorder={colors.cardBorder}
+                  cardBg={colors.card}
+                  textColor={colors.text}
+                >
                   {savedRecommendation ? (
                     <Text className="text-base leading-6" style={{ color: colors.textSecondary }}>{savedRecommendation}</Text>
                   ) : (
-                    copy.recommendations.map((t) => <Bullet key={t} text={t} />)
+                    copy.recommendations.map((t) => (
+                      <DetailsBullet key={t} text={t} accentColor={copy.color} textSecondary={colors.textSecondary} />
+                    ))
                   )}
-                </Card>
+                </DetailsCard>
 
-                <Card title="Disclaimer">
+                <DetailsCard
+                  title="Disclaimer"
+                  cardBorder={colors.cardBorder}
+                  cardBg={colors.card}
+                  textColor={colors.text}
+                >
                   <Text className="text-base italic leading-6" style={{ color: colors.textSecondary }}>
-                    This result is not a medical diagnosis.
+                    This result is not a medical diagnosis. Cough audio replay and sputum image feedback are
+                    available only in the app.
                   </Text>
-                </Card>
+                </DetailsCard>
               </>
             ) : null}
           </View>

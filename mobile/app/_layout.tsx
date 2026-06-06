@@ -3,7 +3,6 @@ import { Stack, useRouter } from "expo-router";
 import React, { useEffect } from 'react';
 import { Asset } from 'expo-asset';
 import * as SplashScreen from "expo-splash-screen";
-import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
 import { LogBox } from "react-native";
 import { TBHON_ICON, TBHON_LOGO } from "../constants/branding";
@@ -17,6 +16,7 @@ import {
   handleNotificationResponse,
   syncUnverifiedEngagementNotifications,
 } from "../services/unverifiedEngagementNotifications";
+import { subscribeToNotificationResponses } from "../utils/nativeNotifications";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -38,20 +38,14 @@ function RootNavigator() {
   useEffect(() => {
     configureNotificationPresentation();
 
-    const openFromNotification = async (response: Notifications.NotificationResponse) => {
-      await handleNotificationResponse(response);
-      const route = await consumePendingAppRoute();
-      if (route === "verifyEmail") {
-        router.push("/verifyEmail/verifyEmail" as never);
-      }
-    };
-
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      void openFromNotification(response);
-    });
-
-    void Notifications.getLastNotificationResponseAsync().then((last) => {
-      if (last) void openFromNotification(last);
+    const sub = subscribeToNotificationResponses((response) => {
+      void (async () => {
+        await handleNotificationResponse(response);
+        const route = await consumePendingAppRoute();
+        if (route === "verifyEmail") {
+          router.push("/verifyEmail/verifyEmail" as never);
+        }
+      })();
     });
 
     return () => sub.remove();
@@ -116,8 +110,10 @@ function RootNavigator() {
         <Stack.Screen name="landingpage/landingpage" />
         <Stack.Screen name="acountOptions/accountOptions" />
         <Stack.Screen name="login/login" />
+        <Stack.Screen name="forgotPassword/forgotPassword" />
         <Stack.Screen name="signUp/signUp" />
         <Stack.Screen name="verifyEmail/verifyEmail" />
+        <Stack.Screen name="changePassword/changePassword" />
         <Stack.Screen
           name="screening"
           options={{

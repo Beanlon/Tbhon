@@ -1,10 +1,19 @@
-import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Notifications from "expo-notifications";
 import type { ApiUserPayload } from "./backendApi";
-import { addInboxNotification, clearNotificationInbox } from "../utils/notificationInbox";
+import { celebrateFirstEmailVerification } from "./accountActivityNotifications";
+import { addInboxNotification } from "../utils/notificationInbox";
 import { setPendingHomeTab } from "../utils/pendingHomeTab";
 import { setPendingAppRoute } from "../utils/pendingAppRoute";
+import {
+  cancelNativeNotificationsWithPrefix,
+  configureNativeNotificationPresentation,
+  ensureNativeNotificationPermission,
+  incrementNativeAppBadge,
+  isNativeNotificationsAvailable,
+  scheduleNativeNotification,
+  setNativeAppBadgeCount,
+  type NotificationResponsePayload,
+} from "../utils/nativeNotifications";
 
 const ANDROID_CHANNEL_ID = "tbhon-unverified-engagement";
 const ACCOUNT_SEEN_KEY = "@tbhon/unverified-notif/account-seen";
@@ -26,55 +35,12 @@ export type UnverifiedNotificationData = {
   route?: "verifyEmail" | "learn";
 };
 
-let handlerConfigured = false;
-
 export function configureNotificationPresentation(): void {
-  if (handlerConfigured) return;
-  handlerConfigured = true;
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-    }),
-  });
-}
-
-async function ensureAndroidChannel(): Promise<void> {
-  if (Platform.OS !== "android") return;
-  await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
-    name: "Account & screening reminders",
-    importance: Notifications.AndroidImportance.DEFAULT,
-    vibrationPattern: [0, 250, 250, 250],
-  });
-}
-
-export async function ensureNotificationPermission(): Promise<boolean> {
-  configureNotificationPresentation();
-  await ensureAndroidChannel();
-  const current = await Notifications.getPermissionsAsync();
-  if (current.granted) return true;
-  const requested = await Notifications.requestPermissionsAsync();
-  return requested.granted;
+  void configureNativeNotificationPresentation();
 }
 
 function isUnverified(user: ApiUserPayload | null | undefined): boolean {
   return Boolean(user && user.emailVerified !== true);
-}
-
-async function cancelUnverifiedScheduled(): Promise<void> {
-  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  await Promise.all(
-    scheduled
-      .filter((n) => n.identifier.startsWith(PREFIX))
-      .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)),
-  );
-}
-
-async function hasScheduledId(id: string): Promise<boolean> {
-  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  return scheduled.some((n) => n.identifier === id);
 }
 
 async function scheduleOneShot(args: {
@@ -84,26 +50,15 @@ async function scheduleOneShot(args: {
   seconds: number;
   data: UnverifiedNotificationData;
 }): Promise<void> {
-  const granted = await ensureNotificationPermission();
-  if (!granted) return;
+  if (!(await ensureNativeNotificationPermission())) return;
 
-  if (await hasScheduledId(args.identifier)) {
-    await Notifications.cancelScheduledNotificationAsync(args.identifier);
-  }
-
-  await Notifications.scheduleNotificationAsync({
+  await scheduleNativeNotification({
     identifier: args.identifier,
-    content: {
-      title: args.title,
-      body: args.body,
-      data: args.data,
-      sound: true,
-      ...(Platform.OS === "android" ? { channelId: ANDROID_CHANNEL_ID } : {}),
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: Math.max(60, args.seconds),
-    },
+    title: args.title,
+    body: args.body,
+    data: args.data,
+    seconds: args.seconds,
+    channelId: ANDROID_CHANNEL_ID,
   });
 }
 
@@ -115,22 +70,27 @@ async function markAccountEngagementStarted(): Promise<boolean> {
 }
 
 export async function clearUnverifiedEngagementState(): Promise<void> {
-  await cancelUnverifiedScheduled();
+  await cancelNativeNotificationsWithPrefix(PREFIX);
   await AsyncStorage.removeItem(ACCOUNT_SEEN_KEY);
-  await Notifications.setBadgeCountAsync(0).catch(() => {});
+  await setNativeAppBadgeCount(0);
 }
 
-/** Cancel scheduled nudges when the user verifies email. */
+/** Cancel scheduled nudges when the user is verified. Does not show success UI. */
 export async function onUserBecameVerified(): Promise<void> {
   await clearUnverifiedEngagementState();
-  await clearNotificationInbox();
+}
+
+/** Call once right after POST verify-email succeeds — not on login or app open. */
+export async function onEmailVerificationSucceeded(userId: string): Promise<boolean> {
+  await onUserBecameVerified();
+  return celebrateFirstEmailVerification(userId);
 }
 
 async function scheduleOccasionalReminders(): Promise<void> {
   await scheduleOneShot({
     identifier: ID_VERIFY_REMINDER,
     title: "Verify your TBhon email",
-    body: "Verify your email to download screening history and share results.",
+    body: "Verify your email to export screening reports as PDF.",
     seconds: VERIFY_REPEAT_SECONDS,
     data: { type: "verify_email", route: "verifyEmail" },
   });
@@ -153,26 +113,33 @@ export async function onUnverifiedAccountSession(user: ApiUserPayload): Promise<
     return;
   }
 
-  const granted = await ensureNotificationPermission();
+  const granted = isNativeNotificationsAvailable()
+    ? await ensureNativeNotificationPermission()
+    : false;
   const isFirst = await markAccountEngagementStarted();
 
-  await addInboxNotification({
-    type: "verify_email",
-    title: "Verify your email",
-    body: "Verify your email to unlock history download and result sharing.",
-  });
+  if (isFirst) {
+    await addInboxNotification({
+      id: "verify-email-nudge",
+      type: "verify_email",
+      title: "Verify your email",
+      body: "Verify your email to unlock screening PDF export.",
+    });
+  }
 
   if (granted && isFirst) {
     await scheduleOneShot({
       identifier: ID_VERIFY_INITIAL,
       title: "Welcome to TBhon",
-      body: "Verify your email when you have a moment — it unlocks history download and sharing.",
+      body: "Verify your email when you have a moment — it unlocks PDF export for screening reports.",
       seconds: VERIFY_INITIAL_SECONDS,
       data: { type: "verify_email", route: "verifyEmail" },
     });
   }
 
-  await scheduleOccasionalReminders();
+  if (granted) {
+    await scheduleOccasionalReminders();
+  }
 }
 
 /**
@@ -186,8 +153,7 @@ export async function syncUnverifiedEngagementNotifications(
     await onUserBecameVerified();
     return;
   }
-  const granted = await ensureNotificationPermission();
-  if (!granted) return;
+  if (!(await ensureNativeNotificationPermission())) return;
   await scheduleOccasionalReminders();
 }
 
@@ -199,7 +165,7 @@ export async function onUnverifiedScreeningCompleted(args?: {
   const title = "Screening saved";
   const risk = args?.riskLabel ? ` (${args.riskLabel})` : "";
   const body =
-    "Your screening is saved. Verify your email to download history and share results. Not a medical diagnosis.";
+    "Your screening is saved. Verify your email to export a PDF report. Not a medical diagnosis.";
 
   await addInboxNotification({
     id: args?.sessionId ? `screening-${args.sessionId}` : undefined,
@@ -208,30 +174,23 @@ export async function onUnverifiedScreeningCompleted(args?: {
     body,
   });
 
-  const granted = await ensureNotificationPermission();
-  if (!granted) return;
-
-  await Notifications.scheduleNotificationAsync({
+  const scheduled = await scheduleNativeNotification({
     identifier: args?.sessionId
       ? `${PREFIX}screening-${args.sessionId}`
       : `${PREFIX}screening-${Date.now()}`,
-    content: {
-      title: `${title}${risk}`,
-      body,
-      data: { type: "screening_complete", route: "verifyEmail" } satisfies UnverifiedNotificationData,
-      sound: true,
-      ...(Platform.OS === "android" ? { channelId: ANDROID_CHANNEL_ID } : {}),
-    },
-    trigger: null,
+    title: `${title}${risk}`,
+    body,
+    data: { type: "screening_complete", route: "verifyEmail" },
+    seconds: null,
+    channelId: ANDROID_CHANNEL_ID,
   });
 
-  const count = await Notifications.getBadgeCountAsync();
-  await Notifications.setBadgeCountAsync(count + 1).catch(() => {});
+  if (scheduled) {
+    await incrementNativeAppBadge();
+  }
 }
 
-export async function handleNotificationResponse(
-  response: Notifications.NotificationResponse,
-): Promise<void> {
+export async function handleNotificationResponse(response: NotificationResponsePayload): Promise<void> {
   const data = response.notification.request.content.data as UnverifiedNotificationData | undefined;
   if (!data?.type) return;
 

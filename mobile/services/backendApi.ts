@@ -1,7 +1,12 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { IOT_COUGH_COUNT } from "../constants/iotScreening";
 import { resolveApiBaseUrl } from "../utils/apiBaseUrl";
-import { getAuthToken } from "../utils/authStorage";
+import {
+  clearAuthToken,
+  getAuthToken,
+  getRefreshToken,
+  saveAuthSession,
+} from "../utils/authStorage";
 
 const cacheDirectory = FileSystem.cacheDirectory ?? "";
 
@@ -62,6 +67,73 @@ export class ApiError extends Error {
 
 type JsonBody = Record<string, unknown>;
 
+type ApiRequestOptions = RequestInit & {
+  json?: JsonBody;
+  timeoutMs?: number;
+  /** Internal: prevent infinite refresh loops. */
+  _authRetried?: boolean;
+};
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+function isAuthPath(path: string): boolean {
+  return path.startsWith("/auth/");
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const refreshToken = await getRefreshToken();
+    if (!refreshToken) {
+      await clearAuthToken();
+      return false;
+    }
+
+    const base = resolveApiBaseUrl();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${base}/auth/refresh`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ refreshToken }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        await clearAuthToken();
+        return false;
+      }
+
+      const data = (await response.json()) as {
+        accessToken?: string;
+        refreshToken?: string;
+        token?: string;
+      };
+      const accessToken = data.accessToken ?? data.token;
+      if (!accessToken || !data.refreshToken) {
+        await clearAuthToken();
+        return false;
+      }
+
+      await saveAuthSession(accessToken, data.refreshToken);
+      return true;
+    } catch {
+      await clearAuthToken();
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return Promise.race([
     promise,
@@ -72,27 +144,35 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
-  try {
-    const data = (await response.json()) as unknown;
-    if (typeof data === "object" && data !== null && "message" in data) {
-      const msg = (data as { message?: unknown }).message;
-      if (typeof msg === "string") return msg;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    try {
+      const data = (await response.json()) as unknown;
+      if (typeof data === "object" && data !== null && "message" in data) {
+        const msg = (data as { message?: unknown }).message;
+        if (typeof msg === "string" && msg.trim()) return msg;
+      }
+    } catch {
+      // fall through
     }
-  } catch {
-    // ignore
   }
+
+  if (response.status === 502 || response.status === 503 || response.status === 504) {
+    return "Cannot reach the server. Check that the backend is running and EXPO_PUBLIC_API_URL is current.";
+  }
+
+  if (response.status >= 500) {
+    return "Server error. If this persists, the backend may need database migrations (prisma migrate deploy).";
+  }
+
   return response.statusText || "Something went wrong. Please try again.";
 }
 
 export async function apiRequest<T>(
   path: string,
-  options: RequestInit & { json?: JsonBody; timeoutMs?: number } = {},
+  options: ApiRequestOptions = {},
   token?: string | null,
 ): Promise<T> {
-  // TODO(Backend+Mobile, production auth hardening):
-  // Current app session behavior is token-based and client-persisted.
-  // For deployed environments, align on short-lived access tokens + refresh-token rotation,
-  // explicit session revocation, and 401 refresh/retry contract for this request layer.
   const base = resolveApiBaseUrl();
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
   const headers: HeadersInit = {
@@ -107,7 +187,7 @@ export async function apiRequest<T>(
   if (authHeader) {
     (headers as Record<string, string>)["Authorization"] = `Bearer ${authHeader}`;
   }
-  const { json: bodyJson, timeoutMs, ...rest } = options;
+  const { json: bodyJson, timeoutMs, _authRetried, ...rest } = options;
   const requestTimeoutMs = timeoutMs ?? API_REQUEST_TIMEOUT_MS;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
@@ -128,6 +208,17 @@ export async function apiRequest<T>(
     clearTimeout(timeout);
   }
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      !_authRetried &&
+      !isAuthPath(path) &&
+      token !== null
+    ) {
+      const refreshed = await refreshAccessToken();
+      if (refreshed) {
+        return apiRequest<T>(path, { ...options, _authRetried: true }, undefined);
+      }
+    }
     throw new ApiError(response.status, await parseErrorMessage(response));
   }
   if (response.status === 204) {
@@ -140,9 +231,16 @@ export async function apiRequest<T>(
   return JSON.parse(text) as T;
 }
 
-export type LoginRegisterResponse = {
+export type AuthSessionResponse = {
+  accessToken: string;
+  refreshToken: string;
+  /** Same as accessToken — backward compatible with older clients. */
   token: string;
+};
+
+export type LoginRegisterResponse = AuthSessionResponse & {
   user: ApiUserPayload;
+  emailVerificationSent?: boolean;
 };
 
 export async function postLogin(email: string, password: string) {
@@ -206,6 +304,80 @@ export async function postVerifyEmail(code: string) {
     emailVerified: boolean;
     emailVerifiedAt?: string;
   }>("/auth/email/verify", { method: "POST", json: { code: code.replace(/\D/g, "") } });
+}
+
+export async function postForgotPassword(email: string) {
+  return apiRequest<{ ok: boolean; message: string }>(
+    "/auth/forgot-password",
+    { method: "POST", json: { email: email.trim().toLowerCase() } },
+    null,
+  );
+}
+
+export async function postVerifyForgotPasswordCode(email: string, code: string) {
+  return apiRequest<{ ok: boolean; message: string }>(
+    "/auth/forgot-password/verify-code",
+    {
+      method: "POST",
+      json: {
+        email: email.trim().toLowerCase(),
+        code: code.replace(/\D/g, ""),
+      },
+    },
+    null,
+  );
+}
+
+export async function postResetPassword(email: string, code: string, newPassword: string) {
+  return apiRequest<{ ok: boolean; message: string }>(
+    "/auth/reset-password",
+    {
+      method: "POST",
+      json: {
+        email: email.trim().toLowerCase(),
+        code: code.replace(/\D/g, ""),
+        newPassword,
+      },
+    },
+    null,
+  );
+}
+
+export async function postSendChangePasswordCode() {
+  return apiRequest<{
+    ok: boolean;
+    message: string;
+    expiresAt?: string;
+    ttlMinutes?: number;
+  }>("/auth/change-password/send-code", { method: "POST" });
+}
+
+export async function postVerifyChangePasswordCode(code: string) {
+  return apiRequest<{ ok: boolean; message: string }>("/auth/change-password/verify-code", {
+    method: "POST",
+    json: { code: code.replace(/\D/g, "") },
+  });
+}
+
+export async function postConfirmChangePassword(code: string, newPassword: string) {
+  return apiRequest<{ ok: boolean; message: string }>("/auth/change-password/confirm", {
+    method: "POST",
+    json: { code: code.replace(/\D/g, ""), newPassword },
+  });
+}
+
+export async function postLogout() {
+  const refreshToken = await getRefreshToken();
+  if (!refreshToken) return;
+  try {
+    await apiRequest<{ ok: boolean; message: string }>(
+      "/auth/logout",
+      { method: "POST", json: { refreshToken } },
+      null,
+    );
+  } catch {
+    // Best-effort server revoke; always clear local session on sign-out.
+  }
 }
 
 export type IotCaptureCommand = "image" | "audio";

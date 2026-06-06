@@ -1,4 +1,5 @@
 import {
+  Alert,
   View,
   Text,
   ScrollView,
@@ -12,7 +13,6 @@ import {
   useWindowDimensions,
   type EmitterSubscription,
 } from "react-native";
-import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
@@ -32,6 +32,7 @@ import { getAuthToken } from "../../utils/authStorage";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
 import { profileFirstName } from "../../utils/profileDisplay";
 import {
+  clearNotificationInbox,
   loadNotificationInbox,
   markAllInboxRead,
   markInboxNotificationRead,
@@ -43,6 +44,7 @@ import {
   onUserBecameVerified,
   syncUnverifiedEngagementNotifications,
 } from "../../services/unverifiedEngagementNotifications";
+import { setNativeAppBadgeCount } from "../../utils/nativeNotifications";
 import { palette } from "../../constants/palette";
 import { useTheme } from "../../contexts/ThemeContext";
 
@@ -187,7 +189,7 @@ export default function HomeScreen() {
     setInboxItems(items);
     const unread = await unreadInboxCount();
     setUnreadCount(unread);
-    await Notifications.setBadgeCountAsync(unread).catch(() => {});
+    await setNativeAppBadgeCount(unread);
   }, []);
 
   const openNotifications = useCallback(() => {
@@ -199,6 +201,24 @@ export default function HomeScreen() {
     setShowNotifications(false);
     void markAllInboxRead().then(() => refreshInbox());
   }, [refreshInbox]);
+
+  const handleClearAllNotifications = useCallback(() => {
+    if (inboxItems.length === 0) return;
+    Alert.alert(
+      "Clear notifications",
+      "Remove all notifications from this device? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear all",
+          style: "destructive",
+          onPress: () => {
+            void clearNotificationInbox().then(() => refreshInbox());
+          },
+        },
+      ],
+    );
+  }, [inboxItems.length, refreshInbox]);
 
   useFocusEffect(
     useCallback(() => {
@@ -274,7 +294,13 @@ export default function HomeScreen() {
         setActiveTab("learn");
         return;
       }
-      router.push("/verifyEmail/verifyEmail" as never);
+      if (item.type === "profile_updated") {
+        setActiveTab("profile");
+        return;
+      }
+      if (item.type === "verify_email") {
+        router.push("/verifyEmail/verifyEmail" as never);
+      }
     },
     [refreshInbox, router],
   );
@@ -482,14 +508,28 @@ export default function HomeScreen() {
           >
             <View style={styles.notificationHeaderRow}>
               <Text style={[styles.notificationTitle, { color: colors.text }]}>Notifications</Text>
-              <Pressable
-                onPress={closeNotifications}
-                style={[styles.notificationCloseBtn, { backgroundColor: colors.surfaceAlt }]}
-                accessibilityRole="button"
-                accessibilityLabel="Close notifications"
-              >
-                <Ionicons name="close" size={20} color={colors.text} />
-              </Pressable>
+              <View style={styles.notificationHeaderActions}>
+                {inboxItems.length > 0 ? (
+                  <Pressable
+                    onPress={handleClearAllNotifications}
+                    style={[styles.notificationClearBtn, { backgroundColor: colors.surfaceAlt }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear all notifications"
+                  >
+                    <Text style={[styles.notificationClearText, { color: colors.textSecondary }]}>
+                      Clear all
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  onPress={closeNotifications}
+                  style={[styles.notificationCloseBtn, { backgroundColor: colors.surfaceAlt }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close notifications"
+                >
+                  <Ionicons name="close" size={20} color={colors.text} />
+                </Pressable>
+              </View>
             </View>
 
             <ScrollView
@@ -531,7 +571,13 @@ export default function HomeScreen() {
                           ? "book-outline"
                           : item.type === "screening_complete"
                             ? "clipboard-outline"
-                            : "mail-outline"
+                            : item.type === "email_verified"
+                              ? "checkmark-circle-outline"
+                              : item.type === "password_changed"
+                                ? "lock-closed-outline"
+                                : item.type === "profile_updated"
+                                  ? "person-outline"
+                                  : "mail-outline"
                       }
                       size={20}
                       color={colors.primary}
@@ -733,6 +779,21 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: TEXT_NAVY,
     letterSpacing: -0.3,
+    flex: 1,
+  },
+  notificationHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  notificationClearBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  notificationClearText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   notificationCloseBtn: {
     width: 40,

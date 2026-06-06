@@ -1,14 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
   Animated,
   Easing,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -19,8 +16,6 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ApiError,
-  fetchScreeningHistoryExportCsv,
-  getMe,
   listMyScreenings,
   type ScreeningHistoryRow,
 } from "../../services/backendApi";
@@ -32,8 +27,7 @@ import {
   setCachedScreenings,
 } from "../../utils/screeningHistoryCache";
 import { useTheme } from "../../contexts/ThemeContext";
-import { peekProfile, setCachedProfile } from "../../utils/profileCache";
-import { isEmailVerified, promptEmailVerification } from "../../utils/emailVerifiedGate";
+import { setCachedProfile } from "../../utils/profileCache";
 
 const SCREENING_LIST_LIMIT = 100;
 
@@ -141,7 +135,6 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(true);
-  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async (mode: "initial" | "refresh") => {
     setLoadError(null);
@@ -287,41 +280,6 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
     });
   };
 
-  const handleDownloadHistory = async () => {
-    let profile = peekProfile();
-    if (!isEmailVerified(profile)) {
-      try {
-        const { user } = await getMe();
-        setCachedProfile(user);
-        profile = user;
-      } catch {
-        // keep cached profile
-      }
-    }
-    if (!isEmailVerified(profile)) {
-      promptEmailVerification(router);
-      return;
-    }
-    setExporting(true);
-    try {
-      const csv = await fetchScreeningHistoryExportCsv();
-      await Share.share({
-        message: csv,
-        title: "TBhon screening history",
-      });
-    } catch (e) {
-      const message =
-        e instanceof ApiError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : "Could not export history.";
-      Alert.alert("Download history", message);
-    } finally {
-      setExporting(false);
-    }
-  };
-
   return (
     <View className="flex-1" style={{ flex: 1, minHeight: 0, backgroundColor: colors.background }}>
       <View
@@ -337,24 +295,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
             </Text>
           </View>
 
-          {signedIn ? (
-            <Pressable
-              onPress={() => void handleDownloadHistory()}
-              disabled={exporting}
-              className="h-10 w-10 items-center justify-center rounded-full"
-              style={{ backgroundColor: colors.surfaceAlt }}
-              accessibilityRole="button"
-              accessibilityLabel="Download screening history"
-            >
-              {exporting ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <Ionicons name="download-outline" size={22} color={colors.text} />
-              )}
-            </Pressable>
-          ) : (
-            <View className="h-10 w-10" />
-          )}
+          <View className="h-10 w-10" />
         </View>
 
         <View className="mt-3.5 flex-row items-center">

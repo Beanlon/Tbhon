@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,12 +24,30 @@ type Props = {
   onPress?: () => void;
 };
 
+let cachedAuthHeaders: Record<string, string> | null = null;
+let authHeadersPromise: Promise<Record<string, string>> | null = null;
+
+async function loadAuthHeaders(): Promise<Record<string, string>> {
+  if (cachedAuthHeaders) return cachedAuthHeaders;
+  if (!authHeadersPromise) {
+    authHeadersPromise = getAuthMediaHeaders()
+      .then((headers) => {
+        cachedAuthHeaders = headers;
+        return headers;
+      })
+      .finally(() => {
+        authHeadersPromise = null;
+      });
+  }
+  return authHeadersPromise;
+}
+
 /**
  * Displays sputum bytes stored on the backend (requires Bearer auth).
  * Refuses file:// and content:// so history always reflects database media.
  */
-export default function SputumSamplePhoto({ sessionId, uri, height = 220, label, onPress }: Props) {
-  const [headers, setHeaders] = useState<Record<string, string> | null>(null);
+function SputumSamplePhoto({ sessionId, uri, height = 220, label, onPress }: Props) {
+  const [headers, setHeaders] = useState<Record<string, string> | null>(cachedAuthHeaders);
   const [loadError, setLoadError] = useState(false);
 
   const trimmed = uri.trim();
@@ -39,21 +57,28 @@ export default function SputumSamplePhoto({ sessionId, uri, height = 220, label,
   const blocked = trimmed.length === 0 || isLocalUri(trimmed) || uriMismatch;
   const needsAuth = isHttpUri(trimmed) && !blocked;
 
+  const source = useMemo(
+    () => (needsAuth && headers ? { uri: trimmed, headers } : needsAuth ? null : { uri: trimmed }),
+    [headers, needsAuth, trimmed],
+  );
+
   useEffect(() => {
     setLoadError(false);
-    setHeaders(null);
     if (!needsAuth || blocked) {
       return;
     }
+    if (cachedAuthHeaders) {
+      setHeaders(cachedAuthHeaders);
+      return;
+    }
     let cancelled = false;
-    void (async () => {
-      try {
-        const h = await getAuthMediaHeaders();
+    void loadAuthHeaders()
+      .then((h) => {
         if (!cancelled) setHeaders(h);
-      } catch {
+      })
+      .catch(() => {
         if (!cancelled) setHeaders(null);
-      }
-    })();
+      });
     return () => {
       cancelled = true;
     };
@@ -70,9 +95,6 @@ export default function SputumSamplePhoto({ sessionId, uri, height = 220, label,
     );
   }
 
-  const source =
-    needsAuth && headers ? { uri: trimmed, headers } : needsAuth ? null : { uri: trimmed };
-
   const imageContent = (
     <>
       {needsAuth && !headers ? (
@@ -88,11 +110,12 @@ export default function SputumSamplePhoto({ sessionId, uri, height = 220, label,
       ) : (
         <>
           <Image
-            key={sid.length > 0 ? sid : trimmed}
             source={source}
             style={{ width: "100%", height: "100%" }}
             contentFit="cover"
-            cachePolicy="none"
+            transition={0}
+            recyclingKey={sid || trimmed}
+            cachePolicy="memory-disk"
             onError={() => setLoadError(true)}
           />
           {onPress ? (
@@ -136,3 +159,5 @@ export default function SputumSamplePhoto({ sessionId, uri, height = 220, label,
     </View>
   );
 }
+
+export default memo(SputumSamplePhoto);
