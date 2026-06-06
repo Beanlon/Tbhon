@@ -25,8 +25,9 @@ import { authFormTk as tk } from "../../constants/authFormTheme";
 import { authFormButtonStyles } from "../../constants/authFormStyles";
 import { palette } from "../../constants/palette";
 import { useNavigation, useRouter } from "expo-router";
-import { ApiError, postLogin } from "../../services/backendApi";
-import { resetToAuthenticatedHome } from "../../utils/authNavigation";
+import { ApiError, getMe, postLogin } from "../../services/backendApi";
+import { resetAfterAuth } from "../../utils/authNavigation";
+import { onUnverifiedAccountSession } from "../../services/unverifiedEngagementNotifications";
 import { getAuthToken, saveAuthToken } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
 import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
@@ -95,7 +96,13 @@ export default function Login() {
       void (async () => {
         const token = await getAuthToken();
         if (token && active) {
-          resetToAuthenticatedHome(navigation);
+          try {
+            const { user } = await getMe();
+            setCachedProfile(user);
+            resetAfterAuth(navigation);
+          } catch {
+            resetAfterAuth(navigation);
+          }
         }
       })();
       return () => {
@@ -115,7 +122,8 @@ export default function Login() {
       const { token, user } = await postLogin(trimmedEmail, password);
       await saveAuthToken(token);
       setCachedProfile(user);
-      resetToAuthenticatedHome(navigation);
+      void onUnverifiedAccountSession(user);
+      resetAfterAuth(navigation);
     } catch (error) {
       const message =
         error instanceof ApiError

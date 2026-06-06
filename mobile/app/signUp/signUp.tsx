@@ -34,7 +34,8 @@ import CachedImage from "../components/CachedImage";
 import { TBHON_ICON } from "../../constants/branding";
 import { palette } from "../../constants/palette";
 import { useNavigation, useRouter } from "expo-router";
-import { resetToAuthenticatedHome } from "../../utils/authNavigation";
+import { resetAfterAuth } from "../../utils/authNavigation";
+import { onUnverifiedAccountSession } from "../../services/unverifiedEngagementNotifications";
 import { ApiError, postRegister } from "../../services/backendApi";
 import { saveAuthToken } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
@@ -760,7 +761,8 @@ export default function SignUp() {
       });
       await saveAuthToken(token);
       setCachedProfile(user);
-      setStep(3);
+      void onUnverifiedAccountSession(user);
+      resetAfterAuth(navigation);
     } catch (error) {
       const message =
         error instanceof ApiError
@@ -775,7 +777,7 @@ export default function SignUp() {
   };
 
   const handleGetStarted = () => {
-    resetToAuthenticatedHome(navigation);
+    resetAfterAuth(navigation);
   };
 
   useEffect(() => {

@@ -20,6 +20,7 @@
     },
     "android": {
       "permissions": [
+        "POST_NOTIFICATIONS",
         "WAKE_LOCK",
         "BLUETOOTH",
         "BLUETOOTH_ADMIN",
@@ -60,7 +61,14 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1A3478"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

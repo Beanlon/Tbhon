@@ -1,12 +1,14 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   LayoutChangeEvent,
   Modal,
   Pressable,
   ScrollView,
+  Share,
   Text,
   View,
 } from "react-native";
@@ -20,6 +22,7 @@ import {
   ApiError,
   buildServerSputumImageUrl,
   getAuthMediaHeaders,
+  getMe,
   getScreening,
   resolveMediaUrl,
   type ScreeningSessionDetail,
@@ -29,6 +32,12 @@ import { getAuthToken } from "../../utils/authStorage";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
 import { useTheme } from "../../contexts/ThemeContext";
 import { fuseTbRisk, type FusionModalityBreakdown } from "../../utils/tbRiskFusion";
+import { peekProfile, setCachedProfile } from "../../utils/profileCache";
+import {
+  formatScreeningShareMessage,
+  isEmailVerified,
+  promptEmailVerification,
+} from "../../utils/emailVerifiedGate";
 
 type RiskLevel = "low" | "moderate" | "high";
 
@@ -294,6 +303,7 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
   checklistRows: ChecklistAnswerRow[];
   savedRecommendation: string | null;
   headerSubtitle: string;
+  completedAt: string | null;
 } {
   const risk = coerceRisk(s.finalRiskLevel ?? s.result?.riskLevel);
 
@@ -377,6 +387,7 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
     checklistRows,
     savedRecommendation: s.result?.recommendation ?? null,
     headerSubtitle,
+    completedAt: s.completedAt ?? null,
   };
 }
 
@@ -610,6 +621,7 @@ export default function ScreeningDetailsScreen() {
       checklistRows,
       savedRecommendation: null as string | null,
       headerSubtitle: "Inputs & insights",
+      completedAt: null,
     };
   }, [sessionId, params]);
 
@@ -715,6 +727,37 @@ export default function ScreeningDetailsScreen() {
     () => fusionFactorsFromModalities(fusionModalities),
     [fusionModalities],
   );
+  const riskShareLabel =
+    risk === "high" ? "High Risk" : risk === "moderate" ? "Moderate Risk" : "Low Risk";
+
+  const handleShareResult = useCallback(async () => {
+    let profile = peekProfile();
+    if (!isEmailVerified(profile)) {
+      try {
+        const { user } = await getMe();
+        setCachedProfile(user);
+        profile = user;
+      } catch {
+        // use cached profile if any
+      }
+    }
+    if (!isEmailVerified(profile)) {
+      promptEmailVerification(router);
+      return;
+    }
+    const tbPct =
+      hasProb && probTb !== null ? Math.round(probTb * 1000) / 10 : null;
+    const message = formatScreeningShareMessage({
+      riskLabel: riskShareLabel,
+      completedAt: vm?.completedAt ?? null,
+      tbProbabilityPercent: tbPct,
+    });
+    try {
+      await Share.share({ message });
+    } catch {
+      Alert.alert("Share", "Could not open the share sheet.");
+    }
+  }, [hasProb, probTb, riskShareLabel, router, vm?.completedAt]);
 
   const Card = ({ title, children }: { title: string; children: ReactNode }) => (
     <View className="mb-3 rounded-3xl border p-5" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
@@ -848,7 +891,15 @@ export default function ScreeningDetailsScreen() {
             </Text>
           </View>
 
-          <View className="size-11" />
+          <Pressable
+            onPress={() => void handleShareResult()}
+            className="size-11 items-center justify-center rounded-full"
+            style={{ backgroundColor: colors.surfaceAlt }}
+            accessibilityRole="button"
+            accessibilityLabel="Share result"
+          >
+            <Ionicons name="share-outline" size={22} color={colors.text} />
+          </Pressable>
         </View>
 
         <ScrollView

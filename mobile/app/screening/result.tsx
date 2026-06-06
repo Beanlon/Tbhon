@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import {
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ApiError,
+  getMe,
   fetchSessionSputumPreview,
   postCompleteScreening,
   sessionHasStoredSputumBytes,
@@ -18,6 +28,13 @@ import { clearScreeningCache } from "../../utils/screeningHistoryCache";
 import { getAuthToken } from "../../utils/authStorage";
 import { useTheme } from "../../contexts/ThemeContext";
 import type { FusionModalityBreakdown } from "../../utils/tbRiskFusion";
+import { peekProfile, setCachedProfile } from "../../utils/profileCache";
+import { onUnverifiedScreeningCompleted } from "../../services/unverifiedEngagementNotifications";
+import {
+  formatScreeningShareMessage,
+  isEmailVerified,
+  promptEmailVerification,
+} from "../../utils/emailVerifiedGate";
 
 type RiskLevel = "low" | "moderate" | "high";
 type PhlegmTone = { color: string; bg: string; border: string; label: string };
@@ -294,6 +311,14 @@ export default function ResultScreen() {
             : {}),
         });
         clearScreeningCache();
+
+        const profile = peekProfile();
+        if (profile && profile.emailVerified !== true) {
+          void onUnverifiedScreeningCompleted({
+            sessionId: response?.session?.sessionId,
+            riskLabel: cfg.label,
+          });
+        }
 
         // Upload the raw audio + image bytes so any device on this account
         // can replay/view the originals — not just this phone. Failures here
@@ -715,6 +740,45 @@ export default function ResultScreen() {
             accessibilityRole="button"
           >
             <Text className="text-base font-bold text-white">View Details</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              void (async () => {
+                let profile = peekProfile();
+                if (!isEmailVerified(profile)) {
+                  try {
+                    const { user } = await getMe();
+                    setCachedProfile(user);
+                    profile = user;
+                  } catch {
+                    // keep cached profile
+                  }
+                }
+                if (!isEmailVerified(profile)) {
+                  promptEmailVerification(router);
+                  return;
+                }
+                const tbPct =
+                  typeof probTb === "number" && Number.isFinite(probTb)
+                    ? Math.round(probTb * 1000) / 10
+                    : null;
+                const message = formatScreeningShareMessage({
+                  riskLabel: cfg.label,
+                  tbProbabilityPercent: tbPct,
+                });
+                try {
+                  await Share.share({ message });
+                } catch {
+                  Alert.alert("Share", "Could not open the share sheet.");
+                }
+              })();
+            }}
+            className="mb-3 items-center justify-center rounded-2xl border py-4 active:opacity-90"
+            style={{ borderColor: colors.borderLight, backgroundColor: colors.surfaceAlt }}
+            accessibilityRole="button"
+          >
+            <Text className="text-base font-bold" style={{ color: colors.text }}>Share Results</Text>
           </Pressable>
 
           <Pressable

@@ -16,7 +16,8 @@ import {
   Pressable,
   StyleSheet,
 } from 'react-native';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
+import { onUserBecameVerified, syncUnverifiedEngagementNotifications } from '../../services/unverifiedEngagementNotifications';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resetToLanding } from '../../utils/authNavigation';
 import { Ionicons } from '@expo/vector-icons';
@@ -393,6 +394,7 @@ function initialUserFromCache(): ApiUserPayload | null {
 
 export function ProfilePage() {
   const navigation = useNavigation();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isDark, toggleDarkMode, colors } = useTheme();
   const seeded = initialUserFromCache();
@@ -475,6 +477,8 @@ export function ProfilePage() {
         const { user: next } = await getMe();
         setUser(next);
         setCachedProfile(next);
+        if (next.emailVerified) void onUserBecameVerified();
+        else void syncUnverifiedEngagementNotifications(next);
       } catch (error) {
         const message =
           error instanceof ApiError
@@ -499,6 +503,8 @@ export function ProfilePage() {
       const { user: next } = await getMe();
       setUser(next);
       setCachedProfile(next);
+      if (next.emailVerified) void onUserBecameVerified();
+      else void syncUnverifiedEngagementNotifications(next);
     } catch (error) {
       const message =
         error instanceof ApiError
@@ -703,7 +709,7 @@ export function ProfilePage() {
   };
 
   const handleEmailVerification = () => {
-    handleComingSoon("Email Verification", "Email verification controls will be available soon.");
+    router.push("/verifyEmail/verifyEmail" as never);
   };
 
   const handleContactSupport = () => {
@@ -718,7 +724,7 @@ export function ProfilePage() {
   const headerName = user ? displayFullName(user) : "…";
   const initials = user ? profileAvatarInitials(user) : "…";
   const subtitle = user ? profileSubtitleLine(user) : { age: "—", gender: "—", location: "—" };
-  const showVerifiedBadge = Boolean(user?.profile);
+  const showVerifiedBadge = Boolean(user?.emailVerified);
 
   return (
     <View style={{ flex: 1, minHeight: 0, width: "100%", backgroundColor: colors.background }}>
@@ -907,14 +913,7 @@ export function ProfilePage() {
                 iconColor="#1E8449"
                 title="Two-factor authentication"
                 subtitle="Extra login security"
-                right={
-                  <View className="flex-row items-center gap-2">
-                    <View className="rounded-full bg-[#E9F7EF] px-2.5 py-1">
-                      <Text className="text-sm font-bold text-[#1A6035]">On</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color="#8FA3B1" />
-                  </View>
-                }
+                right={<Ionicons name="chevron-forward" size={16} color="#8FA3B1" />}
               />
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.7} onPress={handleEmailVerification}>
@@ -923,7 +922,11 @@ export function ProfilePage() {
                 iconBg="#E6F3FB"
                 iconColor="#1E8449"
                 title="Email Verification"
-                subtitle="Verify your email address"
+                subtitle={
+                  user?.emailVerified
+                    ? "Unlocked: history download & sharing"
+                    : "Unlock history download & result sharing"
+                }
                 isLast
                 right={<Ionicons name="chevron-forward" size={16} color="#8FA3B1" />}
               />

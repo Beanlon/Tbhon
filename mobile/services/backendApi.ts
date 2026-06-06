@@ -31,6 +31,8 @@ export type ApiUserPayload = {
   userId: string;
   email: string | null;
   phoneNumber: string | null;
+  emailVerified?: boolean;
+  emailVerifiedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   profile?: {
@@ -185,6 +187,25 @@ export async function postRegister(args: {
 
 export async function getMe() {
   return apiRequest<{ user: ApiUserPayload }>("/users/me", { method: "GET" });
+}
+
+export async function postSendEmailVerification() {
+  return apiRequest<{
+    ok: boolean;
+    message: string;
+    emailVerified: boolean;
+    expiresAt?: string;
+    ttlMinutes?: number;
+  }>("/auth/email/send-verification", { method: "POST" });
+}
+
+export async function postVerifyEmail(code: string) {
+  return apiRequest<{
+    ok: boolean;
+    message: string;
+    emailVerified: boolean;
+    emailVerifiedAt?: string;
+  }>("/auth/email/verify", { method: "POST", json: { code: code.replace(/\D/g, "") } });
 }
 
 export type IotCaptureCommand = "image" | "audio";
@@ -1134,6 +1155,34 @@ export type ScreeningSessionDetail = {
 export async function listMyScreenings(limit = 50) {
   const q = limit !== 50 ? `?limit=${encodeURIComponent(String(limit))}` : "";
   return apiRequest<{ screenings: ScreeningHistoryRow[] }>(`/screenings${q}`, { method: "GET" });
+}
+
+/** CSV export — requires verified email (see emailVerifiedGate). */
+export async function fetchScreeningHistoryExportCsv(): Promise<string> {
+  const base = resolveApiBaseUrl();
+  const token = await getAuthToken();
+  if (!token) throw new ApiError(401, "Not signed in");
+
+  const url = `${base}/screenings/export`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "text/csv",
+        Authorization: `Bearer ${token}`,
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, await parseErrorMessage(response));
+  }
+  return response.text();
 }
 
 export async function getScreening(sessionId: string, timeoutMs?: number) {
