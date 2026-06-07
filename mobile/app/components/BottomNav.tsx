@@ -5,21 +5,33 @@ import { useTheme } from '../../contexts/ThemeContext';
 
 export type BottomNavTab = 'home' | 'history' | 'screening' | 'learn' | 'profile';
 
+export type BottomNavMode = 'operator' | 'patient';
+
 type BottomNavProps = {
   activeTab: BottomNavTab;
   onTabPress: (tab: BottomNavTab) => void;
+  /** Patient portal — no booth screening tab. */
+  mode?: BottomNavMode;
 };
 
-const tabs: Array<{ tab: BottomNavTab; label: string; icon: string }> = [
+const operatorTabs: Array<{ tab: BottomNavTab; label: string; icon: string }> = [
   { tab: 'home', label: 'Home', icon: 'home' },
-  { tab: 'history', label: 'History', icon: 'time' },
+  { tab: 'history', label: 'Sessions', icon: 'time' },
   { tab: 'screening', label: 'Screening', icon: 'qrcode' },
   { tab: 'learn', label: 'Learn', icon: 'document' },
   { tab: 'profile', label: 'Profile', icon: 'person' },
 ];
 
-export default function BottomNav({ activeTab, onTabPress }: BottomNavProps) {
+const patientTabs: Array<{ tab: BottomNavTab; label: string; icon: string }> = [
+  { tab: 'home', label: 'Home', icon: 'home' },
+  { tab: 'history', label: 'Results', icon: 'time' },
+  { tab: 'learn', label: 'Learn', icon: 'document' },
+  { tab: 'profile', label: 'Profile', icon: 'person' },
+];
+
+export default function BottomNav({ activeTab, onTabPress, mode = 'operator' }: BottomNavProps) {
   const { isDark, colors } = useTheme();
+  const tabs = mode === 'patient' ? patientTabs : operatorTabs;
 
   return (
     <View
@@ -36,6 +48,7 @@ export default function BottomNav({ activeTab, onTabPress }: BottomNavProps) {
     >
       {tabs.map((item) => {
         const isActive = item.tab === activeTab;
+        const isScreeningFab = mode === 'operator' && item.tab === 'screening';
 
         return (
           <TouchableOpacity
@@ -44,7 +57,7 @@ export default function BottomNav({ activeTab, onTabPress }: BottomNavProps) {
             activeOpacity={0.75}
             style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
           >
-            {item.tab === 'screening' ? (
+            {isScreeningFab ? (
               <View
                 style={{
                   width: 60,

@@ -7,7 +7,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Audio } from "expo-av";
 import { useTheme } from "../../contexts/ThemeContext";
-import { IOT_COUGH_COUNT } from "../../constants/iotScreening";
+import { IOT_COUGH_COUNT, formatSputumMissingDetail, SPUTUM_NO_SAMPLE_PILL, SPUTUM_SMEAR_REVIEW_LABEL, SPUTUM_SMEAR_REVIEW_LABEL_IOT } from "../../constants/iotScreening";
+import { REVIEW_COUGH_FROM_DEVICE } from "../../constants/screeningBoothCopy";
 
 export default function ReviewInputsScreen() {
   const router = useRouter();
@@ -22,6 +23,7 @@ export default function ReviewInputsScreen() {
     deviceSputum?: string;
     sputumByteSize?: string;
     sputumCapturedAt?: string;
+    sputumSkipReason?: string;
     iotMode?: string;
   }>();
 
@@ -38,6 +40,11 @@ export default function ReviewInputsScreen() {
       : "";
   const sessionNavParams = sessionId.length > 0 ? ({ sessionId } as const) : {};
   const deviceSputumFlow = params.deviceSputum === "1";
+  const sputumSkipReason =
+    typeof params.sputumSkipReason === "string" && params.sputumSkipReason.trim().length > 0
+      ? params.sputumSkipReason.trim()
+      : "";
+  const sputumSkipNavParams = sputumSkipReason.length > 0 ? ({ sputumSkipReason } as const) : {};
   const deviceSputumNavParams =
     params.deviceSputum === "1"
       ? {
@@ -129,9 +136,9 @@ export default function ReviewInputsScreen() {
     }
   };
 
-  const StatusPill = ({ done, optional }: { done: boolean; optional?: boolean }) => {
-    if (optional && !done) {
-      return <Text className="text-xs font-bold sm:text-sm" style={{ color: colors.textMuted }}>Optional</Text>;
+  const StatusPill = ({ done, pendingLabel }: { done: boolean; pendingLabel?: string }) => {
+    if (!done && pendingLabel) {
+      return <Text className="text-xs font-bold sm:text-sm" style={{ color: colors.textMuted }}>{pendingLabel}</Text>;
     }
     if (done) {
       return <Ionicons name="checkmark-circle" size={20} color="#10B981" />;
@@ -142,14 +149,14 @@ export default function ReviewInputsScreen() {
   const AccordionRow = ({
     label,
     done,
-    optional,
+    pendingLabel,
     open,
     onToggle,
     children,
   }: {
     label: string;
     done: boolean;
-    optional?: boolean;
+    pendingLabel?: string;
     open: boolean;
     onToggle: () => void;
     children?: ReactNode;
@@ -164,7 +171,7 @@ export default function ReviewInputsScreen() {
           <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={18} color={colors.text} />
           <Text className="text-sm font-bold sm:text-base" style={{ color: colors.text }}>{label}</Text>
         </View>
-        <StatusPill done={done} optional={optional} />
+        <StatusPill done={done} pendingLabel={pendingLabel} />
       </Pressable>
 
       {open ? <View className="pb-3.5 pt-0 sm:pb-4">{children}</View> : null}
@@ -214,7 +221,7 @@ export default function ReviewInputsScreen() {
               <Text className="text-xs leading-5 sm:text-sm" style={{ color: colors.textSecondary }}>
                 {audioDone
                   ? iotMode
-                    ? "Cough recordings were received from your screening device."
+                    ? REVIEW_COUGH_FROM_DEVICE
                     : "Audio recorded (3 coughs). Playback will appear once we wire real audio file recording."
                   : "No cough recordings received yet."}
               </Text>
@@ -267,9 +274,9 @@ export default function ReviewInputsScreen() {
             </AccordionRow>
 
             <AccordionRow
-              label={iotMode ? "Sputum image (device, optional)" : "Sputum / phlegm photo (optional)"}
+              label={iotMode ? SPUTUM_SMEAR_REVIEW_LABEL_IOT : SPUTUM_SMEAR_REVIEW_LABEL}
               done={imageDone}
-              optional
+              pendingLabel={imageDone ? undefined : sputumSkipReason || SPUTUM_NO_SAMPLE_PILL}
               open={imageOpen}
               onToggle={() => setImageOpen((v) => !v)}
             >
@@ -282,7 +289,7 @@ export default function ReviewInputsScreen() {
                 </View>
               ) : (
                 <Text className="text-xs leading-5 sm:text-sm" style={{ color: colors.textSecondary }}>
-                  No sample provided. Analysis will use your cough recordings (and checklist) only.
+                  {formatSputumMissingDetail(sputumSkipReason)}
                 </Text>
               )}
             </AccordionRow>
@@ -324,7 +331,7 @@ export default function ReviewInputsScreen() {
               accessibilityRole="button"
             >
               <Text className="text-sm font-bold sm:text-base" style={{ color: colors.text }}>
-                {imageDone ? (deviceSputumFlow || iotMode ? "Re-capture" : "Change photo") : "Add sample"}
+                {imageDone ? (deviceSputumFlow || iotMode ? "Re-capture smear" : "Change smear photo") : "Capture smear"}
               </Text>
             </Pressable>
           </View>
@@ -345,6 +352,7 @@ export default function ReviewInputsScreen() {
                 ...(iotMode ? { iotMode: "1" } : {}),
                 ...sessionNavParams,
                 ...deviceSputumNavParams,
+                ...sputumSkipNavParams,
               },
             } as any);
           }}

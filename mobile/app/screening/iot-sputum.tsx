@@ -7,7 +7,20 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
-import { IOT_SPUTUM_STEPS } from "../../constants/iotScreening";
+import {
+  IOT_SPUTUM_STEPS,
+  SPUTUM_DEVICE_CAPTURE_SUBTITLE,
+  SPUTUM_DEVICE_CAPTURE_TITLE,
+  SPUTUM_DEVICE_EMPTY_HINT,
+  SPUTUM_DEVICE_RECEIVED,
+  SPUTUM_DEVICE_READY_PREVIEW,
+  SPUTUM_DEVICE_START_BUTTON,
+  SPUTUM_SKIP_BUTTON_LABEL,
+  SPUTUM_STAFF_SMEAR_BANNER,
+} from "../../constants/iotScreening";
+import type { SputumSkipReason } from "../../constants/iotScreening";
+import { SESSION_LINK_SIGN_IN_403 } from "../../constants/screeningBoothCopy";
+import { SputumSkipReasonModal } from "./SputumSkipReasonModal";
 import { palette } from "../../constants/palette";
 import {
   ApiError,
@@ -261,6 +274,7 @@ export default function IotSputumScreen() {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [retakeCooldown, setRetakeCooldown] = useState(0);
+  const [skipModalVisible, setSkipModalVisible] = useState(false);
 
   const retakeCooldownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -339,35 +353,61 @@ export default function IotSputumScreen() {
           onPress: () => {
             router.replace({
               pathname: "/screening/checklist",
-              params: { checklist },
+              params: {
+                checklist,
+                ...(screeningSessionId.trim().length > 0 ? { sessionId: screeningSessionId.trim() } : {}),
+              },
             } as any);
           },
         },
       ],
     );
-  }, [navigation]);
+  }, [checklist, router, screeningSessionId]);
 
-  const goToReview = useCallback(() => {
-    const hasImage = Boolean(previewImageUri && previewImageUri.length > 0);
-    const deviceSputumNavParams = {
-      deviceSputum: "1" as const,
-      ...(hasImage ? { sputumByteSize, sputumCapturedAt } : {}),
-    };
+  const goToReview = useCallback(
+    (skipReason?: SputumSkipReason) => {
+      const hasImage = Boolean(previewImageUri && previewImageUri.length > 0);
+      const deviceSputumNavParams = {
+        deviceSputum: "1" as const,
+        ...(hasImage ? { sputumByteSize, sputumCapturedAt } : {}),
+      };
 
-    router.replace({
-      pathname: "/screening/review",
-      params: {
-        audioDone,
-        audioUris,
-        iotRecordingIds,
-        checklist,
-        imageUri: hasImage ? previewImageUri : "",
-        ...(iotMode ? { iotMode: "1" } : {}),
-        ...(screeningSessionId ? { sessionId: screeningSessionId } : {}),
-        ...deviceSputumNavParams,
-      },
-    } as any);
-  }, [router, audioDone, audioUris, iotRecordingIds, checklist, previewImageUri, iotMode, screeningSessionId, sputumByteSize, sputumCapturedAt]);
+      router.replace({
+        pathname: "/screening/review",
+        params: {
+          audioDone,
+          audioUris,
+          iotRecordingIds,
+          checklist,
+          imageUri: hasImage ? previewImageUri : "",
+          ...(iotMode ? { iotMode: "1" } : {}),
+          ...(screeningSessionId ? { sessionId: screeningSessionId } : {}),
+          ...deviceSputumNavParams,
+          ...(skipReason ? { sputumSkipReason: skipReason } : {}),
+        },
+      } as any);
+    },
+    [
+      router,
+      audioDone,
+      audioUris,
+      iotRecordingIds,
+      checklist,
+      previewImageUri,
+      iotMode,
+      screeningSessionId,
+      sputumByteSize,
+      sputumCapturedAt,
+    ],
+  );
+
+  const handleSkipConfirm = useCallback(
+    (reason: SputumSkipReason) => {
+      setSkipModalVisible(false);
+      goToReview(reason);
+    },
+    [goToReview],
+  );
 
   const pollForSputumPreview = useCallback(
     async (sessionId: string, baselineFingerprint: string | null) => {
@@ -437,7 +477,7 @@ export default function IotSputumScreen() {
 
         setCompletedThrough(IOT_SPUTUM_STEPS.length - 1);
         setActiveIndex(-1);
-        setStatusText("Photo received from device. Proceed or retake.");
+        setStatusText("Image received from device. Proceed or retake.");
         startRetakeCooldown();
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Failed to capture image";
@@ -446,7 +486,7 @@ export default function IotSputumScreen() {
             "Sign in on the app, or check EXPO_PUBLIC_IOT_API_KEY in mobile/.env if you are already signed in.",
           );
         } else if (e instanceof ApiError && e.status === 403) {
-          setErrorText("Sign in to link the device capture to your screening.");
+          setErrorText(SESSION_LINK_SIGN_IN_403);
         } else {
           setErrorText(msg);
         }
@@ -513,12 +553,12 @@ export default function IotSputumScreen() {
             </Pressable>
             <View style={{ alignItems: "center", flex: 1, paddingHorizontal: 12 }}>
               <Text style={{ fontSize: 15, fontWeight: "700", color: "#fff", letterSpacing: -0.2 }}>
-                Device sputum sample
+                {SPUTUM_DEVICE_CAPTURE_TITLE}
               </Text>
               <Text
                 style={{ fontSize: 11, fontWeight: "500", color: "rgba(255,255,255,0.45)", marginTop: 2 }}
               >
-                Request a still photo from the bench device
+                {SPUTUM_DEVICE_CAPTURE_SUBTITLE}
               </Text>
               <Text
                 style={{
@@ -534,6 +574,31 @@ export default function IotSputumScreen() {
               </Text>
             </View>
             <View style={{ width: 40 }} />
+          </View>
+
+          <View
+            style={{
+              marginHorizontal: 20,
+              marginBottom: 10,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: "rgba(183,198,255,0.35)",
+              backgroundColor: "rgba(123,111,216,0.14)",
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+            }}
+          >
+            <Text
+              style={{
+                textAlign: "center",
+                fontSize: 13,
+                fontWeight: "600",
+                color: COOL_VIOLET_TEXT,
+                lineHeight: 18,
+              }}
+            >
+              {SPUTUM_STAFF_SMEAR_BANNER}
+            </Text>
           </View>
 
           {/* Preview area */}
@@ -608,9 +673,7 @@ export default function IotSputumScreen() {
                         lineHeight: 19,
                       }}
                     >
-                      {done
-                        ? "Photo ready. You can proceed or retake."
-                        : "No image yet. Captured sample preview will appear here."}
+                      {done ? SPUTUM_DEVICE_READY_PREVIEW : SPUTUM_DEVICE_EMPTY_HINT}
                     </Text>
                   )}
                 </View>
@@ -639,7 +702,7 @@ export default function IotSputumScreen() {
                   fontWeight: "600",
                 }}
               >
-                Photo received from device. Proceed or retake.
+                {SPUTUM_DEVICE_RECEIVED}
               </Text>
             )}
             {!done && statusText ? (
@@ -702,7 +765,7 @@ export default function IotSputumScreen() {
                     }}
                   >
                     <Text style={{ fontSize: 15, fontWeight: "600", color: "#fff", letterSpacing: -0.2 }}>
-                      Start capture
+                      {SPUTUM_DEVICE_START_BUTTON}
                     </Text>
                   </View>
                 )}
@@ -769,7 +832,7 @@ export default function IotSputumScreen() {
                     </View>
                   )}
                 </Pressable>
-                <Pressable onPress={goToReview} style={{ flex: 1 }}>
+                <Pressable onPress={() => goToReview()} style={{ flex: 1 }}>
                   {({ pressed }) => (
                     <View
                       style={{
@@ -785,26 +848,40 @@ export default function IotSputumScreen() {
                 </Pressable>
               </View>
             )}
-            {!running && (
+            {!running && !done && (
               <Pressable
-                onPress={goToReview}
+                onPress={() => setSkipModalVisible(true)}
                 style={{
                   backgroundColor: "rgba(255,255,255,0.06)",
                   borderWidth: 1,
                   borderColor: "rgba(255,255,255,0.1)",
                   borderRadius: 18,
                   paddingVertical: 14,
+                  paddingHorizontal: 16,
                   alignItems: "center",
                 }}
               >
-                <Text style={{ fontSize: 14, fontWeight: "500", color: "rgba(255,255,255,0.6)" }}>
-                  {done ? "Skip to review" : "Skip — no sample"}
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: "600",
+                    color: "rgba(255,255,255,0.72)",
+                    textAlign: "center",
+                    lineHeight: 18,
+                  }}
+                >
+                  {SPUTUM_SKIP_BUTTON_LABEL}
                 </Text>
               </Pressable>
             )}
           </View>
         </SafeAreaView>
       </LinearGradient>
+      <SputumSkipReasonModal
+        visible={skipModalVisible}
+        onCancel={() => setSkipModalVisible(false)}
+        onConfirm={handleSkipConfirm}
+      />
     </>
   );
 }

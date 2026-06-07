@@ -11,6 +11,15 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../contexts/ThemeContext";
+import {
+  PATIENT_LEARN_HERO_SUBTITLE,
+  STAFF_LEARN_COUNSELING_BANNER,
+  STAFF_LEARN_HERO_SUBTITLE,
+} from "../../constants/patientAccess";
+
+type LearnContentProps = {
+  mode?: "patient" | "operator";
+};
 
 type SectionId = "overviewSymptoms" | "causesRiskPrevention" | "actionSeekHelp";
 
@@ -266,7 +275,8 @@ function TrustedSourcesBlock() {
   );
 }
 
-export function LearnContent() {
+export function LearnContent({ mode = "patient" }: LearnContentProps) {
+  const isOperator = mode === "operator";
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const tbSearchUrl = "https://www.google.com/search?q=TB+testing+center+near+me";
@@ -493,9 +503,20 @@ export function LearnContent() {
           <Text className="text-sm" style={{ color: "#C9D5FF" }}>Learn</Text>
           <Text className="mt-1 text-2xl font-extrabold text-white">Tuberculosis (TB)</Text>
           <Text className="mt-2 text-sm leading-5" style={{ color: "#D8E1FF" }}>
-            A curable bacterial infection. This section is organized to make key facts easier to scan.
+            {isOperator ? STAFF_LEARN_HERO_SUBTITLE : PATIENT_LEARN_HERO_SUBTITLE}
           </Text>
         </View>
+
+        {isOperator ? (
+          <View
+            className="mb-4 rounded-2xl border px-4 py-3"
+            style={{ borderColor: colors.cardBorder, backgroundColor: colors.primaryLight }}
+          >
+            <Text className="text-sm leading-5" style={{ color: colors.textSecondary }}>
+              {STAFF_LEARN_COUNSELING_BANNER}
+            </Text>
+          </View>
+        ) : null}
 
         <View className="mb-4">
           <View className="mb-3 overflow-hidden rounded-2xl border px-4 py-4" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>

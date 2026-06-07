@@ -3,7 +3,7 @@ import * as FileSystem from "expo-file-system";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Platform } from "react-native";
-import { TBHON_LOGO } from "../constants/branding";
+import { APP_TAGLINE, TBHON_LOGO } from "../constants/branding";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../constants/screeningChecklist";
 import type { FusionModalityBreakdown } from "./tbRiskFusion";
 
@@ -23,13 +23,20 @@ export type ScreeningPdfExportData = {
   inputSummary: string[];
   checklistRows: ScreeningPdfChecklistRow[];
   recommendations: string[];
+  patientName?: string | null;
+  patientDetailRows?: Array<{ label: string; value: string }>;
+  patientClaimUrl?: string | null;
 };
 
-const PDF_DISCLAIMER =
-  "This report is a screening aid only and is not a medical diagnosis. Consult a healthcare professional for care decisions.";
-
-const PDF_MEDIA_DISCLAIMER =
-  "Cough audio replay and sputum image analysis feedback are available only inside the TBhon app and are not included in this PDF export.";
+import {
+  SCREENING_DISCLAIMER_LIMITS,
+  SCREENING_DISCLAIMER_SCOPE,
+  SCREENING_DISCLAIMER_TITLE,
+  SCREENING_FUSION_METHOD_NOTE,
+  SCREENING_PDF_FOOTER,
+  SCREENING_PDF_MEDIA_NOTE,
+} from "../constants/screeningDisclaimer";
+import { buildPatientClaimQrImageUrl, PATIENT_QR_INSTRUCTION, PATIENT_ACCESS_CODE_HINT, PATIENT_ACCESS_CODE_LABEL, patientAccessCodeFromClaimUrl } from "../constants/patientAccess";
 
 const RISK_COLORS: Record<string, string> = {
   low: "#16A34A",
@@ -146,6 +153,48 @@ export async function buildScreeningPdfHtml(data: ScreeningPdfExportData): Promi
     .map((line) => `<li>${escapeHtml(line)}</li>`)
     .join("");
 
+  const patientRows =
+    data.patientDetailRows && data.patientDetailRows.length > 0
+      ? data.patientDetailRows
+          .map(
+            (row) =>
+              `<tr><td>${escapeHtml(row.label)}</td><td colspan="2">${escapeHtml(row.value)}</td></tr>`,
+          )
+          .join("")
+      : "";
+  const patientSection =
+    data.patientName && data.patientName.trim().length > 0
+      ? `<h3>Patient details</h3>
+  <p class="meta"><strong>Name:</strong> ${escapeHtml(data.patientName.trim())}</p>
+  ${
+    patientRows
+      ? `<table>
+    <thead><tr><th>Field</th><th colspan="2">Value</th></tr></thead>
+    <tbody>${patientRows}</tbody>
+  </table>`
+      : ""
+  }`
+      : "";
+
+  const patientQrSection =
+    data.patientClaimUrl && data.patientClaimUrl.trim().length > 0
+      ? (() => {
+          const accessCode = patientAccessCodeFromClaimUrl(data.patientClaimUrl.trim());
+          const accessCodeBlock = accessCode
+            ? `<p class="access-code-label">${escapeHtml(PATIENT_ACCESS_CODE_LABEL)}</p>
+    <p class="access-code">${escapeHtml(accessCode)}</p>
+    <p class="qr-caption">${escapeHtml(PATIENT_ACCESS_CODE_HINT)}</p>`
+            : "";
+          return `<div class="qr-box">
+    <h3 style="margin:0 0 8pt;text-transform:uppercase;letter-spacing:0.6px;font-size:11pt;">Your result access QR</h3>
+    <img src="${escapeHtml(buildPatientClaimQrImageUrl(data.patientClaimUrl.trim(), 280))}" alt="Result access QR code" />
+    <p class="qr-caption">${escapeHtml(PATIENT_QR_INSTRUCTION)}</p>
+    ${accessCodeBlock}
+    <p class="qr-caption">Open TBhon → View my screening result → scan this code or enter the access code above. Valid 90 days.</p>
+  </div>`;
+        })()
+      : "";
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -173,6 +222,11 @@ export async function buildScreeningPdfHtml(data: ScreeningPdfExportData): Promi
     .disclaimer { margin-top: 20pt; padding: 12pt; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6pt; font-size: 9.5pt; color: #475569; }
     .disclaimer strong { color: #334155; }
     .footer { margin-top: 14pt; font-size: 9pt; color: #94A3B8; text-align: center; }
+    .qr-box { margin-top: 18pt; padding: 14pt; border: 1px solid #E2E8F0; border-radius: 8pt; text-align: center; background: #FAFBFF; }
+    .qr-box img { width: 140pt; height: 140pt; }
+    .qr-caption { margin-top: 8pt; font-size: 9pt; color: #64748B; line-height: 1.4; }
+    .access-code-label { margin-top: 10pt; font-size: 9pt; color: #64748B; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+    .access-code { margin: 4pt 0 0; font-family: ui-monospace, "Courier New", monospace; font-size: 10pt; color: #0F172A; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -180,11 +234,14 @@ export async function buildScreeningPdfHtml(data: ScreeningPdfExportData): Promi
     ${logo ? `<img class="logo" src="${logo}" alt="TBhon" />` : ""}
     <div class="brand">
       <h1>TBhon Screening Report</h1>
-      <p>Personal TB pre-screening summary</p>
+      <p>${escapeHtml(APP_TAGLINE)}</p>
     </div>
   </div>
 
   <p class="meta"><strong>Date:</strong> ${escapeHtml(dateStr)}</p>
+
+  ${patientSection}
+  ${patientQrSection}
 
   <div class="risk-banner">
     <h2>${escapeHtml(data.riskTitle)}</h2>
@@ -208,11 +265,13 @@ export async function buildScreeningPdfHtml(data: ScreeningPdfExportData): Promi
   <ul>${recommendationItems}</ul>
 
   <div class="disclaimer">
-    <p><strong>Disclaimer:</strong> ${escapeHtml(PDF_DISCLAIMER)}</p>
-    <p style="margin-top:8pt;">${escapeHtml(PDF_MEDIA_DISCLAIMER)}</p>
+    <p><strong>${escapeHtml(SCREENING_DISCLAIMER_TITLE)}</strong></p>
+    <p style="margin-top:8pt;">${escapeHtml(SCREENING_DISCLAIMER_SCOPE)}</p>
+    <p style="margin-top:8pt;">${escapeHtml(SCREENING_DISCLAIMER_LIMITS)}</p>
+    <p style="margin-top:8pt;">${escapeHtml(SCREENING_PDF_MEDIA_NOTE)}</p>
   </div>
 
-  <p class="footer">Generated by TBhon · Screening aid only</p>
+  <p class="footer">${escapeHtml(SCREENING_PDF_FOOTER)}</p>
 </body>
 </html>`;
 }
@@ -257,6 +316,9 @@ type DetailsPdfSource = {
   phlegmLoad: string;
   phlegmConf: number | null;
   phlegmFailed: boolean;
+  patientName?: string | null;
+  patientDetailRows?: Array<{ label: string; value: string }>;
+  patientClaimUrl?: string | null;
 };
 
 export function buildDetailsPdfExport(source: DetailsPdfSource): ScreeningPdfExportData {
@@ -323,6 +385,9 @@ export function buildDetailsPdfExport(source: DetailsPdfSource): ScreeningPdfExp
     inputSummary,
     checklistRows,
     recommendations,
+    patientName: source.patientName ?? null,
+    patientDetailRows: source.patientDetailRows ?? [],
+    patientClaimUrl: source.patientClaimUrl ?? null,
   };
 }
 
@@ -342,6 +407,7 @@ type ResultPdfSource = {
   phlegmConfidence: number | null;
   phlegmFailed: boolean;
   imageProvided: boolean;
+  patientClaimUrl?: string | null;
 };
 
 export function buildResultPdfExport(source: ResultPdfSource): ScreeningPdfExportData {
@@ -382,5 +448,6 @@ export function buildResultPdfExport(source: ResultPdfSource): ScreeningPdfExpor
     inputSummary,
     checklistRows,
     recommendations: [source.recommendation],
+    patientClaimUrl: source.patientClaimUrl ?? null,
   };
 }

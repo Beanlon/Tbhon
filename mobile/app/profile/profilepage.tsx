@@ -38,11 +38,22 @@ import { signupEmailValidationError } from "../../utils/signupHelpers";
 import {
   buildPersonalInfoRows,
   displayFullName,
+  isProfileIdentityComplete,
   profileAvatarInitials,
   profileSubtitleLine,
   type PersonalGridRows,
 } from "../../utils/profileDisplay";
 import { useTheme } from "../../contexts/ThemeContext";
+import { FACILITY_ACCOUNT_LABEL, FACILITY_DETAILS_CARD_TITLE, FACILITY_PROFILE_SECTION, FACILITY_PROFILE_SUBTITLE, ADMIN_ACCOUNT_LABEL, ADMIN_DETAILS_CARD_TITLE, ADMIN_PROFILE_SECTION, ADMIN_PROFILE_SUBTITLE, ADMIN_PROFILE_TAGLINE, PATIENT_ACCOUNT_LABEL, PATIENT_DETAILS_CARD_TITLE, PATIENT_PROFILE_SECTION, PATIENT_PROFILE_SUBTITLE, PATIENT_PROFILE_TAGLINE, STAFF_PROFILE_TAGLINE } from "../../constants/accountModel";
+import {
+  PATIENT_EMAIL_VERIFIED_DETAIL,
+  PATIENT_PROFILE_VERIFY_SUBTITLE,
+  STAFF_EMAIL_VERIFIED_DETAIL,
+  STAFF_PROFILE_VERIFY_SUBTITLE,
+} from "../../constants/patientAccess";
+import { APP_TAGLINE } from "../../constants/branding";
+import { isProgramAdmin, isPatientRole, parseUserRole } from "../../constants/userRole";
+import { refreshPatientProfileIfNeeded } from "../../utils/syncPatientProfileFromScreening";
 
 const EMPTY_PERSONAL_ROWS: PersonalGridRows = [
   [
@@ -356,9 +367,16 @@ function formatVerifiedAt(iso: string | null | undefined): string | null {
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-function EmailVerifiedCard({ verifiedAt }: { verifiedAt?: string | null }) {
+function EmailVerifiedCard({
+  verifiedAt,
+  isPatient,
+}: {
+  verifiedAt?: string | null;
+  isPatient?: boolean;
+}) {
   const { colors, isDark } = useTheme();
   const verifiedLabel = formatVerifiedAt(verifiedAt) ?? "Verification complete";
+  const detail = isPatient ? PATIENT_EMAIL_VERIFIED_DETAIL : STAFF_EMAIL_VERIFIED_DETAIL;
 
   return (
     <View
@@ -383,7 +401,7 @@ function EmailVerifiedCard({ verifiedAt }: { verifiedAt?: string | null }) {
             {verifiedLabel}
           </Text>
           <Text className="mt-2 text-sm leading-5" style={{ color: colors.textMuted }}>
-            Screening PDF export is unlocked.
+            {detail}
           </Text>
         </View>
       </View>
@@ -510,6 +528,15 @@ export function ProfilePage() {
     if (cachedFresh) {
       setUser(cachedFresh);
       setIsLoading(false);
+      if (parseUserRole(cachedFresh.role) === "PATIENT" && !isProfileIdentityComplete(cachedFresh)) {
+        void (async () => {
+          const next = await refreshPatientProfileIfNeeded(cachedFresh);
+          if (next !== cachedFresh) {
+            setUser(next);
+            setCachedProfile(next);
+          }
+        })();
+      }
       return;
     }
 
@@ -518,7 +545,8 @@ export function ProfilePage() {
       setUser(stale);
       setIsLoading(false);
       try {
-        const { user: next } = await getMe();
+        let next = (await getMe()).user;
+        next = await refreshPatientProfileIfNeeded(next);
         setUser(next);
         setCachedProfile(next);
         if (next.emailVerified) void onUserBecameVerified();
@@ -544,7 +572,8 @@ export function ProfilePage() {
 
     setIsLoading(true);
     try {
-      const { user: next } = await getMe();
+      let next = (await getMe()).user;
+      next = await refreshPatientProfileIfNeeded(next);
       setUser(next);
       setCachedProfile(next);
       if (next.emailVerified) void onUserBecameVerified();
@@ -582,7 +611,8 @@ export function ProfilePage() {
         const token = await getAuthToken();
         if (!token) return;
         try {
-          const { user: next } = await getMe();
+          let next = (await getMe()).user;
+          next = await refreshPatientProfileIfNeeded(next);
           setUser(next);
           setCachedProfile(next);
           if (next.emailVerified) void onUserBecameVerified();
@@ -789,9 +819,48 @@ export function ProfilePage() {
   };
 
   const personalRows = user ? buildPersonalInfoRows(user) : null;
+  const userRole = user ? parseUserRole(user.role) : null;
+  const isPatient = userRole === "PATIENT";
+  const isAdmin = userRole === "ADMIN";
+  const profileSectionLabel = userRole
+    ? isPatient
+      ? PATIENT_PROFILE_SECTION
+      : isAdmin
+        ? ADMIN_PROFILE_SECTION
+        : FACILITY_PROFILE_SECTION
+    : null;
+  const accountSectionLabel = userRole
+    ? isPatient
+      ? PATIENT_ACCOUNT_LABEL
+      : isAdmin
+        ? ADMIN_ACCOUNT_LABEL
+        : FACILITY_ACCOUNT_LABEL
+    : "Account";
+  const detailsCardTitle = userRole
+    ? isPatient
+      ? PATIENT_DETAILS_CARD_TITLE
+      : isAdmin
+        ? ADMIN_DETAILS_CARD_TITLE
+        : FACILITY_DETAILS_CARD_TITLE
+    : "Account details";
+  const detailsCardSubtitle = userRole
+    ? isPatient
+      ? PATIENT_PROFILE_SUBTITLE
+      : isAdmin
+        ? ADMIN_PROFILE_SUBTITLE
+        : FACILITY_PROFILE_SUBTITLE
+    : "";
   const headerName = user ? displayFullName(user) : "…";
+  const profileIncomplete = Boolean(user && isPatient && !isProfileIdentityComplete(user));
   const initials = user ? profileAvatarInitials(user) : "…";
   const subtitle = user ? profileSubtitleLine(user) : { age: "—", gender: "—", location: "—" };
+  const profileTagline = userRole
+    ? isPatient
+      ? PATIENT_PROFILE_TAGLINE
+      : isAdmin
+        ? ADMIN_PROFILE_TAGLINE
+        : STAFF_PROFILE_TAGLINE
+    : APP_TAGLINE;
   const verificationBadge =
     !isLoading && user
       ? user.emailVerified
@@ -813,11 +882,26 @@ export function ProfilePage() {
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 28 }}
       >
         <View className="px-5 pb-3" style={{ paddingTop: insets.top + 22 }}>
-          <View className="mb-4 flex-row items-center justify-between">
-            <View>
-              <Text style={{ color: colors.textSecondary }} className="mb-1 text-base">Account</Text>
-              <Text style={{ color: colors.text }} className="text-3xl font-extrabold">Profile</Text>
-            </View>
+          <View className="mb-4 items-center px-1">
+            {profileSectionLabel ? (
+              <View
+                className="mb-2 rounded-full px-3 py-1"
+                style={{ backgroundColor: colors.primaryLight }}
+              >
+                <Text
+                  style={{ color: colors.primary }}
+                  className="text-center text-xs font-bold uppercase tracking-wide"
+                >
+                  {profileSectionLabel}
+                </Text>
+              </View>
+            ) : null}
+            <Text style={{ color: colors.text }} className="text-center text-3xl font-extrabold">
+              Profile
+            </Text>
+            <Text style={{ color: colors.textMuted }} className="mt-1 text-center text-sm">
+              {profileTagline}
+            </Text>
           </View>
 
           {loadError ? (
@@ -855,13 +939,24 @@ export function ProfilePage() {
                 <View className="w-full max-w-full px-1">
                   <Text
                     className="text-center text-xl font-extrabold"
-                    style={{ color: colors.text }}
+                    style={{ color: profileIncomplete ? colors.textMuted : colors.text }}
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
                     {headerName}
                   </Text>
                 </View>
+                {profileIncomplete ? (
+                  <Pressable
+                    className="mt-3 w-full rounded-xl border px-4 py-3"
+                    style={{ borderColor: colors.primary, backgroundColor: colors.primaryLight }}
+                    onPress={handleEditProfile}
+                  >
+                    <Text className="text-center text-sm font-bold" style={{ color: colors.primary }}>
+                      Complete your profile from your screening visit
+                    </Text>
+                  </Pressable>
+                ) : null}
                 <View className="mt-2.5 flex-row flex-wrap items-center justify-center gap-2 px-2">
                   <View className="flex-row items-center gap-1">
                     <Ionicons name="calendar-outline" size={12} color={colors.textMuted} />
@@ -892,13 +987,13 @@ export function ProfilePage() {
         </View>
 
         <View className="gap-4 px-5">
-          <SectionLabel>Personal Information</SectionLabel>
+          <SectionLabel>{accountSectionLabel}</SectionLabel>
           <ProfileCard
             icon="person-outline"
             iconBackground="#E6F3FB"
             iconColor="#1D6FA4"
-            title="My Details"
-            subtitle="Basic info & contact"
+            title={detailsCardTitle}
+            subtitle={detailsCardSubtitle}
             badge={verificationBadge?.text}
             badgeStyle={verificationBadge?.style}
           >
@@ -943,6 +1038,31 @@ export function ProfilePage() {
               <InfoGrid rows={personalRows ?? EMPTY_PERSONAL_ROWS} />
             )}
           </ProfileCard>
+
+          {user && isProgramAdmin(parseUserRole(user.role)) ? (
+            <>
+              <SectionLabel>Program admin</SectionLabel>
+              <ProfileCardHeaderOnly
+                title="Facility onboarding"
+                subtitle="Create RHUs and invite codes for booth staff"
+              >
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => router.push("/admin/facilities" as never)}
+                >
+                  <SettingRow
+                    icon="business-outline"
+                    iconBg="#EDE9FC"
+                    iconColor="#6C3FC9"
+                    title="Manage facilities"
+                    subtitle="Invite codes, activate or deactivate sites"
+                    isLast
+                    right={<Ionicons name="chevron-forward" size={16} color="#8FA3B1" />}
+                  />
+                </TouchableOpacity>
+              </ProfileCardHeaderOnly>
+            </>
+          ) : null}
 
           <SectionLabel>Settings</SectionLabel>
           <ProfileCardHeaderOnly
@@ -993,7 +1113,10 @@ export function ProfilePage() {
             </TouchableOpacity>
             {user?.emailVerified ? (
               <View className="mt-5 pb-1">
-                <EmailVerifiedCard verifiedAt={user.emailVerifiedAt} />
+                <EmailVerifiedCard
+                  verifiedAt={user.emailVerifiedAt}
+                  isPatient={userRole ? isPatientRole(userRole) : false}
+                />
               </View>
             ) : (
               <TouchableOpacity activeOpacity={0.7} onPress={handleEmailVerification}>
@@ -1002,7 +1125,11 @@ export function ProfilePage() {
                   iconBg="#E6F3FB"
                   iconColor="#1E8449"
                   title="Email Verification"
-                  subtitle="Unlock screening PDF export"
+                  subtitle={
+                    userRole && isPatientRole(userRole)
+                      ? PATIENT_PROFILE_VERIFY_SUBTITLE
+                      : STAFF_PROFILE_VERIFY_SUBTITLE
+                  }
                   isLast
                   right={<Ionicons name="chevron-forward" size={16} color="#8FA3B1" />}
                 />
@@ -1039,7 +1166,7 @@ export function ProfilePage() {
               iconBg="#ffffff"
               iconColor="#5D6D7E"
               title="App version"
-              subtitle="TBhon Pre-screening App"
+              subtitle={APP_TAGLINE}
               isLast
               right={<Text className="text-sm font-semibold text-[#8FA3B1]">v1.4.2</Text>}
             />

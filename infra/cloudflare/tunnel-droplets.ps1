@@ -11,6 +11,7 @@ $dir = $PSScriptRoot
 $repoRoot = Resolve-Path (Join-Path $dir "..\..")
 $mobileEnv = Join-Path $repoRoot "mobile\.env"
 $teamEnv = Join-Path $dir "team-urls.env"
+. (Join-Path $dir "Merge-MobileEnv.ps1")
 
 $BACKEND_ORIGIN = if ($env:TBHON_BACKEND_ORIGIN) { $env:TBHON_BACKEND_ORIGIN } else { "http://159.223.42.179:4000" }
 $ML_ORIGIN = if ($env:TBHON_ML_ORIGIN) { $env:TBHON_ML_ORIGIN } else { "http://152.42.170.30:8000" }
@@ -40,31 +41,7 @@ function Wait-TunnelUrl([string]$logPath, [int]$timeoutSec = 45) {
 }
 
 function Update-EnvFile([string]$ApiUrl, [string]$TbUrl) {
-    if (-not (Test-Path $mobileEnv)) {
-        Write-Warning "No $mobileEnv - create from mobile/.env.example"
-        return
-    }
-    $lines = Get-Content $mobileEnv
-    $out = @()
-    $seenApi = $false
-    $seenTb = $false
-    foreach ($line in $lines) {
-        if ($line -match '^EXPO_PUBLIC_API_URL=') {
-            if ($ApiUrl) { $out += "EXPO_PUBLIC_API_URL=$ApiUrl"; $seenApi = $true }
-            else { $out += $line }
-        } elseif ($line -match '^EXPO_PUBLIC_TB_API_URL=') {
-            if ($TbUrl) { $out += "EXPO_PUBLIC_TB_API_URL=$TbUrl"; $seenTb = $true }
-            else { $out += $line }
-        } else {
-            $out += $line
-        }
-    }
-    if ($ApiUrl -and -not $seenApi) { $out += "EXPO_PUBLIC_API_URL=$ApiUrl" }
-    if ($TbUrl -and -not $seenTb) { $out += "EXPO_PUBLIC_TB_API_URL=$TbUrl" }
-    Set-Content -Path $mobileEnv -Value ($out -join "`n") -Encoding utf8
-    if ($ApiUrl -and $TbUrl) {
-        Set-Content -Path $teamEnv -Value "# Droplet tunnels $(Get-Date -Format 'yyyy-MM-dd HH:mm')`nEXPO_PUBLIC_API_URL=$ApiUrl`nEXPO_PUBLIC_TB_API_URL=$TbUrl`n" -Encoding utf8
-    }
+    Update-MobileEnvUrls -MobileEnvPath $mobileEnv -ApiUrl $ApiUrl -TbApiUrl $TbUrl -TeamEnvPath $teamEnv -HeaderComment "Droplet proxy tunnels (npm run tunnel:droplets)"
 }
 
 if (-not (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
@@ -105,13 +82,30 @@ Write-Host ""
 Write-Host "If using an IoT device, point its API host to EXPO_PUBLIC_API_URL (same as mobile/.env)." -ForegroundColor Yellow
 Write-Host "Restart Expo: cd mobile; npx expo start -c" -ForegroundColor DarkGray
 
-if (-not $NoWriteEnv) { Update-EnvFile $apiUrl $tbUrl; Write-Host "Updated $mobileEnv" -ForegroundColor DarkGray }
+if (-not $NoWriteEnv) { Update-EnvFile $apiUrl $tbUrl; Write-Host "Updated $mobileEnv (other keys preserved)" -ForegroundColor DarkGray }
+
+$knownApiUrl = $apiUrl
+$knownTbUrl = $tbUrl
 
 Write-Host "Tunnels running. Keep this session open. Ctrl+C stops tunnels." -ForegroundColor Yellow
+Write-Host "If cloudflared restarts, URLs auto-update in mobile/.env every 15s." -ForegroundColor DarkGray
 try {
+    $tick = 0
     while ($true) {
         foreach ($job in $jobs) {
             if ($job.Process.HasExited) { Write-Error "Tunnel to $($job.Origin) exited. Re-run this script." }
+        }
+        $tick++
+        if (-not $NoWriteEnv -and ($tick % 8) -eq 0) {
+            $freshApi = Get-TunnelUrlFromLog (Join-Path $dir "tunnel-remote-4000.err.log")
+            $freshTb = Get-TunnelUrlFromLog (Join-Path $dir "tunnel-remote-8000.err.log")
+            if ($freshApi -and $freshTb -and ($freshApi -ne $knownApiUrl -or $freshTb -ne $knownTbUrl)) {
+                $knownApiUrl = $freshApi
+                $knownTbUrl = $freshTb
+                Update-EnvFile $freshApi $freshTb
+                Write-Host "Tunnel URL rotated — updated mobile/.env" -ForegroundColor Yellow
+                Write-Host "  Restart Expo: cd mobile && npx expo start -c" -ForegroundColor DarkGray
+            }
         }
         Start-Sleep -Seconds 2
     }

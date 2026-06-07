@@ -1,10 +1,18 @@
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
+import {
+  CHECKLIST_ANSWERS_DISCLAIMER,
+  CHECKLIST_SESSION_RESPONSES_TITLE,
+  CHECKLIST_SUMMARY_HIGH_BODY,
+  CHECKLIST_SUMMARY_LOW_BODY,
+  CHECKLIST_SUMMARY_MODERATE_BODY,
+  CHECKLIST_YES_HEADER,
+} from "../../constants/screeningBoothCopy";
 import { useTheme } from "../../contexts/ThemeContext";
 
 type Answer = "yes" | "no";
@@ -30,18 +38,15 @@ function symptomSummary(answers: Record<string, Answer>): {
   if (symptomYes >= 3 || (symptomYes >= 2 && riskYes >= 1)) {
     level = "high";
     headline = "Several TB-related symptoms reported";
-    body =
-      "Your answers indicate multiple symptoms that are commonly associated with TB. We strongly encourage you to consult a healthcare professional for proper testing — especially after completing cough recording.";
+    body = CHECKLIST_SUMMARY_HIGH_BODY;
   } else if (symptomYes >= 1 || riskYes >= 2) {
     level = "moderate";
     headline = "Some risk factors or symptoms noted";
-    body =
-      "You reported one or more symptoms or risk factors linked to TB. Please complete cough recording and consider speaking with a healthcare provider.";
+    body = CHECKLIST_SUMMARY_MODERATE_BODY;
   } else {
     level = "low";
     headline = "No major symptoms reported";
-    body =
-      "You did not report significant TB symptoms at this time. Cough recording will help provide additional insight. Continue monitoring your health.";
+    body = CHECKLIST_SUMMARY_LOW_BODY;
   }
 
   return { yesCount, level, headline, body };
@@ -70,6 +75,12 @@ const LEVEL_LABEL: Record<"low" | "moderate" | "high", string> = {
 
 export default function ScreeningChecklistScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ sessionId?: string }>();
+  const sessionId =
+    typeof params.sessionId === "string" && params.sessionId.trim().length > 0
+      ? params.sessionId.trim()
+      : "";
+  const sessionNavParams = sessionId.length > 0 ? ({ sessionId } as const) : {};
   const { colors, isDark } = useTheme();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
@@ -132,7 +143,7 @@ export default function ScreeningChecklistScreen() {
 
           <View className="min-w-0 flex-1 items-center px-2">
             <Text className="text-center text-sm font-bold sm:text-base" style={{ color: colors.text }}>
-              {isDone ? "Your responses" : "Symptom check"}
+              {isDone ? CHECKLIST_SESSION_RESPONSES_TITLE : "Symptom check"}
             </Text>
             <Text className="mt-0.5 text-center text-xs font-semibold sm:text-sm" style={{ color: colors.textMuted }}>
               {isDone ? "Review before continuing" : `Question ${step + 1} of ${TOTAL}`}
@@ -249,7 +260,7 @@ export default function ScreeningChecklistScreen() {
             </Pressable>
 
             <Text className="mt-8 px-1 text-center text-xs italic leading-5" style={{ color: colors.textMuted }}>
-              Your answers are not a diagnosis. They help give context to the cough analysis.
+              {CHECKLIST_ANSWERS_DISCLAIMER}
             </Text>
           </View>
         ) : null}
@@ -307,7 +318,7 @@ export default function ScreeningChecklistScreen() {
             {summary.yesCount > 0 ? (
               <View className="mb-6 rounded-2xl border px-5 py-5 sm:px-6" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
                 <Text className="mb-4 text-xs font-bold uppercase tracking-wider" style={{ color: colors.textMuted }}>
-                  You answered Yes to
+                  {CHECKLIST_YES_HEADER}
                 </Text>
                 {QUESTIONS.filter((q) => answers[q.id] === "yes").map((q) => (
                   <View key={q.id} className="mb-4 flex-row items-start gap-3 last:mb-0">
@@ -334,6 +345,7 @@ export default function ScreeningChecklistScreen() {
                   params: {
                     checklist: payloadJson,
                     iotMode: "1",
+                    ...sessionNavParams,
                   },
                 } as any)
               }

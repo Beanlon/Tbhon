@@ -1,0 +1,9 @@
+{
+  "run_id": "20260531_014419",
+  "model_path": "runs/20260531_014419/model.pt",
+  "model_type": "hybrid_cnn",
+  "best_f1_macro": 0.6908297441627171,
+  "test_accuracy": 0.7574827321565618,
+  "fold": 1,
+  "notes": "Best single-fold hybrid CNN+GBM on held-out test split. Deploy model.pt and hybrid_bundle.pkl together."
+}

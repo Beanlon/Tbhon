@@ -106,6 +106,7 @@ export function profileAvatarInitials(user: ApiUserPayload): string {
   if (first && last) return (first[0] + last[0]).toUpperCase();
   if (first.length >= 2) return first.slice(0, 2).toUpperCase();
   if (first) return first.slice(0, 2).toUpperCase();
+  if (user.role === "PATIENT") return "?";
   const em = user.email?.trim();
   if (em && em.length >= 2) return em.slice(0, 2).toUpperCase();
   if (em) return em[0].toUpperCase();
@@ -118,17 +119,28 @@ export function profileFirstName(user: ApiUserPayload | null | undefined): strin
   return first || null;
 }
 
+export function isProfileIdentityComplete(user: ApiUserPayload | null | undefined): boolean {
+  const p = user?.profile;
+  return Boolean(p?.firstName?.trim() && p?.lastName?.trim() && p?.birthdate && p?.gender?.trim());
+}
+
 export function displayFullName(user: ApiUserPayload): string {
   const p = user.profile;
   if (p && (p.firstName?.trim() || p.lastName?.trim())) {
     return `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim();
+  }
+  if (user.role === "PATIENT") {
+    return "Add your name";
   }
   return user.email?.trim() || "Your account";
 }
 
 export function buildPersonalInfoRows(user: ApiUserPayload): PersonalGridRows {
   const p = user.profile;
-  const fullName = displayFullName(user);
+  const fullName =
+    p && (p.firstName?.trim() || p.lastName?.trim())
+      ? `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim()
+      : "—";
   const birthIso = p?.birthdate ?? "";
   const age = birthIso ? ageFromIsoBirthdate(birthIso) : null;
   const ageStr = age !== null ? `${age} years old` : "—";

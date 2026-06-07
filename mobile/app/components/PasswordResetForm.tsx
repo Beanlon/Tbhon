@@ -34,6 +34,15 @@ import {
 import { signupEmailValidationError } from "../../utils/signupHelpers";
 import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
 import { notifyPasswordChanged } from "../../services/accountActivityNotifications";
+import type { AuthAccountIntent } from "../../constants/patientAccess";
+import {
+  PATIENT_FORGOT_PASSWORD_EMAIL_LABEL,
+  PATIENT_FORGOT_PASSWORD_INTRO,
+  PATIENT_FORGOT_PASSWORD_TITLE,
+  STAFF_FORGOT_PASSWORD_EMAIL_LABEL,
+  STAFF_FORGOT_PASSWORD_INTRO,
+  STAFF_FORGOT_PASSWORD_TITLE,
+} from "../../constants/patientAccess";
 
 const OTP_LENGTH = 6;
 const SEND_CODE_COOLDOWN = 60;
@@ -42,6 +51,7 @@ export type PasswordResetMode = "forgot" | "change";
 
 type PasswordResetFormProps = {
   mode: PasswordResetMode;
+  accountIntent?: AuthAccountIntent;
   backLabel: string;
   onBack: () => void;
   onSuccess: () => void;
@@ -159,6 +169,7 @@ function formatDisplayEmail(email: string | null | undefined): string {
 
 export function PasswordResetForm({
   mode,
+  accountIntent = "staff",
   backLabel,
   onBack,
   onSuccess,
@@ -340,7 +351,20 @@ export function PasswordResetForm({
     </Pressable>
   );
 
-  const title = mode === "forgot" ? "Forgot password" : "Change password";
+  const title =
+    mode === "forgot"
+      ? accountIntent === "patient"
+        ? PATIENT_FORGOT_PASSWORD_TITLE
+        : STAFF_FORGOT_PASSWORD_TITLE
+      : "Change password";
+  const forgotIntro =
+    accountIntent === "patient" ? PATIENT_FORGOT_PASSWORD_INTRO : STAFF_FORGOT_PASSWORD_INTRO;
+  const emailLabel =
+    mode === "forgot"
+      ? accountIntent === "patient"
+        ? PATIENT_FORGOT_PASSWORD_EMAIL_LABEL
+        : STAFF_FORGOT_PASSWORD_EMAIL_LABEL
+      : "Email address";
   const missingEmail = mode === "change" && !loadingAccount && !effectiveEmail;
   const subtitle = loadingAccount
     ? "Loading your account…"
@@ -351,7 +375,7 @@ export function PasswordResetForm({
         : codeSent
           ? `Code sent to ${displayEmail}. Enter it below and tap Verify code.`
           : mode === "forgot"
-            ? "Enter your email, send a code, then verify it before setting a new password."
+            ? `${forgotIntro} Send a code, verify it, then set a new password.`
             : `Send a code to ${displayEmail}, then verify it before setting a new password.`;
 
   return (
@@ -395,7 +419,7 @@ export function PasswordResetForm({
               <>
                 {mode === "forgot" && (
                   <AuthFormField
-                    label="Email address"
+                    label={emailLabel}
                     placeholder="you@email.com"
                     value={email}
                     onChange={setEmail}

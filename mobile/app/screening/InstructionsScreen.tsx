@@ -1,15 +1,19 @@
-import { View, Text, TouchableOpacity, ScrollView } from "react-native";
+import { useState } from "react";
+import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../contexts/ThemeContext";
+import { ApiError } from "../../services/backendApi";
+import { SPUTUM_SMEAR_STEP_INSTRUCTION } from "../../constants/iotScreening";
+import { startWalkInSession } from "../../utils/startWalkInSession";
 
 const IOT_INSTRUCTIONS = [
-  "Stay on the same Wi‑Fi network as the screening device",
-  "Answer a quick symptoms & exposure checklist on this phone",
-  "Record 3 separate coughs on the screening device, one at a time",
-  "Sputum / phlegm capture is optional and is taken on the screening device",
+  "Confirm this phone and the booth device are on the same Wi‑Fi network",
+  "Record patient details on this phone, then complete the symptoms checklist",
+  "Guide the patient to record 3 separate coughs on the booth device, one at a time",
+  SPUTUM_SMEAR_STEP_INSTRUCTION,
 ];
 
 type Props = {
@@ -19,20 +23,30 @@ type Props = {
 export default function InstructionsScreen({ onClose }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
-  const instructions = IOT_INSTRUCTIONS;
+  const { colors } = useTheme();
+  const [starting, setStarting] = useState(false);
 
   const handleClose = () => {
     if (onClose) onClose();
     else router.back();
   };
 
-  const startScreening = () => {
-    if (onClose) onClose();
-    router.push({
-      pathname: "/screening/checklist",
-      params: { from: "iot-instructions" },
-    } as any);
+  const startSession = async () => {
+    setStarting(true);
+    try {
+      const sessionId = await startWalkInSession();
+      if (onClose) onClose();
+      router.push({
+        pathname: "/screening/client-intake",
+        params: { sessionId, from: "session-start" },
+      } as any);
+    } catch (e) {
+      const message =
+        e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Could not start session.";
+      Alert.alert("Start session", message);
+    } finally {
+      setStarting(false);
+    }
   };
 
   return (
@@ -44,7 +58,9 @@ export default function InstructionsScreen({ onClose }: Props) {
           contentContainerStyle={{ paddingTop: insets.top + 24 }}
         >
           <View className="flex-row items-center justify-between px-5 pb-5">
-            <Text className="text-2xl font-bold" style={{ color: colors.text }}>Instructions</Text>
+            <Text className="text-2xl font-bold" style={{ color: colors.text }}>
+              Staff instructions
+            </Text>
             <TouchableOpacity onPress={handleClose}>
               <Ionicons name="close" size={28} color={colors.text} />
             </TouchableOpacity>
@@ -52,13 +68,13 @@ export default function InstructionsScreen({ onClose }: Props) {
 
           <View className="mx-5 mb-4 rounded-2xl border px-4 py-3" style={{ borderColor: colors.border, backgroundColor: colors.primaryLight }}>
             <Text className="text-sm leading-6" style={{ color: colors.textSecondary }}>
-              Your phone guides the steps. Sputum imaging (optional) happens on the connected
-              hardware.
+              You run the booth session. Cough recording happens on the booth device; prepare a sputum smear when
+              when they provide a sample.
             </Text>
           </View>
 
           <View className="mt-2 px-5">
-            {instructions.map((instruction, idx) => (
+            {IOT_INSTRUCTIONS.map((instruction, idx) => (
               <View
                 key={idx}
                 className="mb-5 flex-row items-center rounded-2xl border p-5"
@@ -77,11 +93,16 @@ export default function InstructionsScreen({ onClose }: Props) {
 
           <View className="mb-10 mt-6 px-5">
             <TouchableOpacity
-              onPress={startScreening}
+              onPress={() => void startSession()}
+              disabled={starting}
               className="items-center justify-center rounded-xl px-5 py-4"
-              style={{ backgroundColor: colors.primary }}
+              style={{ backgroundColor: starting ? colors.surfaceAlt : colors.primary }}
             >
-              <Text className="text-base font-bold text-white">Start Screening</Text>
+              {starting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text className="text-base font-bold text-white">Start session</Text>
+              )}
             </TouchableOpacity>
           </View>
         </ScrollView>

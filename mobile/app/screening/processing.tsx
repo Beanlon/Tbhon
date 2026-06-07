@@ -10,6 +10,7 @@ import { resolveTbApiBaseUrls } from "../../utils/tbApiUrl";
 import { checkPhlegmImageQuality, phlegmQualityMessage } from "../../utils/phlegmQualityCheck";
 import { downloadSessionSputumToCache } from "../../services/backendApi";
 import { palette } from "../../constants/palette";
+import { PROCESSING_SUBTITLE, PROCESSING_TITLE } from "../../constants/screeningBoothCopy";
 import { fuseTbRisk, fusionToNavParams } from "../../utils/tbRiskFusion";
 
 const ANALYSIS_UPLOAD_TIMEOUT_MS = 90_000;
@@ -351,6 +352,7 @@ export default function ProcessingScreen() {
     deviceSputum?: string;
     sputumByteSize?: string;
     sputumCapturedAt?: string;
+    sputumSkipReason?: string;
   }>();
 
   useEffect(() => {
@@ -396,6 +398,12 @@ export default function ProcessingScreen() {
                 typeof params.sputumCapturedAt === "string" ? params.sputumCapturedAt : "",
             }
           : {};
+      const sputumSkipReason =
+        typeof params.sputumSkipReason === "string" && params.sputumSkipReason.trim().length > 0
+          ? params.sputumSkipReason.trim()
+          : "";
+      const sputumSkipNavParams =
+        sputumSkipReason.length > 0 ? ({ sputumSkipReason } as const) : {};
       const uploadExtras = checklistStr.length ? { checklist: checklistStr } : undefined;
       const phlegmOpts = {
         deviceSputum: params.deviceSputum === "1",
@@ -413,7 +421,7 @@ export default function ProcessingScreen() {
       if (uris.length === 0 && !imageUriStr.trim()) {
         const fusionNav = buildFusionNavParams(checklistStr, null, true, emptyPhlegm);
         router.replace({
-          pathname: "/screening/result",
+          pathname: "/screening/staff-review",
           params: {
             risk: fusionNav.risk,
             probTb: fusionNav.probTb,
@@ -424,6 +432,7 @@ export default function ProcessingScreen() {
             ...sessionNavParams,
             ...iotNavParams,
             ...deviceSputumNavParams,
+            ...sputumSkipNavParams,
             ...phlegmNavParams(emptyPhlegm),
           },
         } as any);
@@ -443,7 +452,7 @@ export default function ProcessingScreen() {
       if (usesLanApi && !isWifiLike && !cancelled) {
         const fusionNav = buildFusionNavParams(checklistStr, null, true, emptyPhlegm);
         router.replace({
-          pathname: "/screening/result",
+          pathname: "/screening/staff-review",
           params: {
             risk: fusionNav.risk,
             probTb: fusionNav.probTb,
@@ -457,6 +466,7 @@ export default function ProcessingScreen() {
             ...sessionNavParams,
             ...iotNavParams,
             ...deviceSputumNavParams,
+            ...sputumSkipNavParams,
             ...phlegmNavParams(emptyPhlegm),
           },
         } as any);
@@ -468,7 +478,7 @@ export default function ProcessingScreen() {
         if (cancelled) return;
         const fusionNav = buildFusionNavParams(checklistStr, null, true, phlegm);
         router.replace({
-          pathname: "/screening/result",
+          pathname: "/screening/staff-review",
           params: {
             risk: fusionNav.risk,
             probTb: fusionNav.probTb,
@@ -479,6 +489,7 @@ export default function ProcessingScreen() {
             ...sessionNavParams,
             ...iotNavParams,
             ...deviceSputumNavParams,
+            ...sputumSkipNavParams,
             ...phlegmNavParams(phlegm),
           },
         } as any);
@@ -527,7 +538,7 @@ export default function ProcessingScreen() {
           if (!cancelled) {
             const fusionNav = buildFusionNavParams(checklistStr, null, true, phlegm);
             router.replace({
-              pathname: "/screening/result",
+              pathname: "/screening/staff-review",
               params: {
                 risk: fusionNav.risk,
                 probTb: fusionNav.probTb,
@@ -541,6 +552,7 @@ export default function ProcessingScreen() {
                 ...sessionNavParams,
                 ...iotNavParams,
                 ...deviceSputumNavParams,
+            ...sputumSkipNavParams,
                 ...phlegmNavParams(phlegm),
               },
             } as any);
@@ -552,7 +564,7 @@ export default function ProcessingScreen() {
         if (!cancelled) {
           const fusionNav = buildFusionNavParams(checklistStr, avg, false, phlegm);
           router.replace({
-            pathname: "/screening/result",
+            pathname: "/screening/staff-review",
             params: {
               risk: fusionNav.risk,
               probTb: fusionNav.probTb,
@@ -563,6 +575,7 @@ export default function ProcessingScreen() {
               ...sessionNavParams,
               ...iotNavParams,
               ...deviceSputumNavParams,
+            ...sputumSkipNavParams,
               ...phlegmNavParams(phlegm),
             },
           } as any);
@@ -573,7 +586,7 @@ export default function ProcessingScreen() {
           const phlegm = await tryPredictPhlegm(apiBases, imageUriStr, phlegmOpts);
           const fusionNav = buildFusionNavParams(checklistStr, null, true, phlegm);
           router.replace({
-            pathname: "/screening/result",
+            pathname: "/screening/staff-review",
             params: {
               risk: fusionNav.risk,
               probTb: fusionNav.probTb,
@@ -584,6 +597,7 @@ export default function ProcessingScreen() {
               ...sessionNavParams,
               ...iotNavParams,
               ...deviceSputumNavParams,
+            ...sputumSkipNavParams,
               uploadError: "1",
               apiAttempt: apiBases.join(" | "),
               ...phlegmNavParams(phlegm),
@@ -705,7 +719,7 @@ export default function ProcessingScreen() {
                 marginBottom: 8,
               }}
             >
-              Analyzing your data
+              {PROCESSING_TITLE}
             </Text>
             <Text
               style={{
@@ -716,7 +730,7 @@ export default function ProcessingScreen() {
                 maxWidth: 260,
               }}
             >
-              Please wait while we process your screening results…
+              {PROCESSING_SUBTITLE}
             </Text>
           </View>
         </SafeAreaView>

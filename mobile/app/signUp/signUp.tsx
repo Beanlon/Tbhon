@@ -31,12 +31,13 @@ import DateTimePicker, {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import CachedImage from "../components/CachedImage";
-import { TBHON_ICON } from "../../constants/branding";
+import { TBHON_LOGO } from "../../constants/branding";
+import { getBrandLogoLayout } from "../../utils/brandLogoLayout";
 import { palette } from "../../constants/palette";
 import { useNavigation, useRouter } from "expo-router";
 import { resetAfterAuth } from "../../utils/authNavigation";
 import { onUnverifiedAccountSession } from "../../services/unverifiedEngagementNotifications";
-import { ApiError, postRegister } from "../../services/backendApi";
+import { ApiError, postRegister, postValidateFacilityInvite } from "../../services/backendApi";
 import { saveAuthSession } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
 import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
@@ -55,6 +56,12 @@ import {
   SIGNUP_PASSWORD_REQUIREMENTS,
   signupPasswordValidationError,
 } from "../../utils/passwordPolicy";
+import {
+  STAFF_SIGNUP_CALLOUT,
+  STAFF_SIGNUP_PATIENT_CTA,
+  STAFF_SIGNUP_SUBTITLE,
+  STAFF_SIGNUP_TITLE,
+} from "../../constants/patientAccess";
 
 // ─── Sign-up white screen + dark form card ───────────────────────────────
 const tk = {
@@ -94,8 +101,9 @@ const tk = {
   secondaryBtnBorder: "rgba(255, 255, 255, 0.28)",
 };
 
-const GENDERS = ["Male", "Female", "Intersex"] as const;
-type Gender = (typeof GENDERS)[number] | "";
+import { PROFILE_GENDER_OPTIONS } from "../../constants/profileGender";
+
+type Gender = (typeof PROFILE_GENDER_OPTIONS)[number] | "";
 
 const SIGNUP_STEP_NUMBERS = [1, 2] as const;
 const SIGNUP_STEP_COUNT = SIGNUP_STEP_NUMBERS.length;
@@ -334,7 +342,7 @@ type Step = 1 | 2 | 3;
 type WindowRect = { x: number; y: number; width: number; height: number };
 
 const GENDER_ROW_H = 48;
-const genderMenuHeight = GENDER_ROW_H * GENDERS.length;
+const genderMenuHeight = GENDER_ROW_H * PROFILE_GENDER_OPTIONS.length;
 
 const SCROLL_FUDGE = 8;
 
@@ -358,6 +366,7 @@ interface FormData {
   street: string;
   barangay: string;
   city: string;
+  facilityInviteCode: string;
   email: string;
   phone: string;
   password: string;
@@ -390,6 +399,11 @@ function validateStep1(f: FormData): ErrorMap {
 
 function validateStep2(f: FormData, country: Country): ErrorMap {
   const e: ErrorMap = {};
+  const code = f.facilityInviteCode.trim().replace(/\s+/g, "");
+  if (!code) e.facilityInviteCode = "Facility invite code is required.";
+  else if (!/^[A-Za-z0-9-]{6,64}$/.test(code)) {
+    e.facilityInviteCode = "Use 6–64 letters, numbers, or hyphens (e.g. RHU-MALAY-2026).";
+  }
   const emailError = signupEmailValidationError(f.email);
   if (emailError) e.email = emailError;
   const phoneDigits = f.phone.replace(/\D/g, "");
@@ -411,18 +425,26 @@ export default function SignUp() {
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const compactScreen = windowHeight < 760 || windowWidth < 390;
-  const heroMinHeight = compactScreen
-    ? Math.max(168, windowHeight * 0.17)
-    : Math.max(188, windowHeight * 0.19);
-  const sheetTopOverlap = compactScreen ? -44 : -52;
   const sheetPaddingHorizontal = compactScreen ? 16 : 18;
-  const sheetPaddingTop = compactScreen ? 20 : 24;
-  const sheetPaddingBottom = compactScreen ? 20 : 28;
+  const sheetPaddingTop = compactScreen ? 22 : 26;
+  const sheetPaddingBottom = compactScreen ? 22 : 28;
+
+  const brandLogo = useMemo(() => {
+    const layout = getBrandLogoLayout(windowHeight, windowWidth, 40);
+    return {
+      ...layout,
+      topMargin: Math.max(12, layout.topMargin - 14),
+    };
+  }, [windowHeight, windowWidth]);
 
   /** Scroll offset where the dark form card reaches the status bar region. */
   const statusBarThreshold = useMemo(
-    () => Math.max(0, heroMinHeight + sheetTopOverlap - 8),
-    [heroMinHeight, sheetTopOverlap],
+    () =>
+      Math.max(
+        0,
+        brandLogo.topMargin + brandLogo.boxWidth + brandLogo.bottomMargin + 8,
+      ),
+    [brandLogo],
   );
 
   const [statusBarStyle, setStatusBarStyle] = useState<"light" | "dark">("dark");
@@ -436,11 +458,6 @@ export default function SignUp() {
     [insets.top, insets.bottom],
   );
 
-  const authMarkSize = useMemo(() => {
-    const d = Math.min(windowWidth, windowHeight);
-    return Math.min(168, Math.max(76, Math.round(d * 0.27)));
-  }, [windowWidth, windowHeight]);
-
   const [step, setStep] = useState<Step>(1);
   const stepTransition = useRef(new Animated.Value(1)).current;
 
@@ -453,6 +470,7 @@ export default function SignUp() {
     street: "",
     barangay: "",
     city: "",
+    facilityInviteCode: "",
     email: "",
     phone: "",
     password: "",
@@ -473,6 +491,8 @@ export default function SignUp() {
     defaultSignupBirthdateDate(),
   );
   const [submittingAccount, setSubmittingAccount] = useState(false);
+  const [validatedFacilityName, setValidatedFacilityName] = useState<string | null>(null);
+  const [validatingInvite, setValidatingInvite] = useState(false);
   const [genderAnchor, setGenderAnchor] = useState<WindowRect | null>(null);
   const [countryAnchor, setCountryAnchor] = useState<WindowRect | null>(null);
 
@@ -493,6 +513,7 @@ export default function SignUp() {
     street: null,
     barangay: null,
     city: null,
+    facilityInviteCode: null,
     email: null,
     phone: null,
     password: null,
@@ -514,7 +535,27 @@ export default function SignUp() {
 
   const f = (k: keyof FormData) => (v: string) => {
     setForm((p) => ({ ...p, [k]: v }));
+    if (k === "facilityInviteCode") {
+      setValidatedFacilityName(null);
+    }
   };
+
+  const validateInviteCode = useCallback(async () => {
+    const code = form.facilityInviteCode.trim().replace(/\s+/g, "");
+    if (!code || !/^[A-Za-z0-9-]{6,64}$/.test(code)) {
+      setValidatedFacilityName(null);
+      return;
+    }
+    setValidatingInvite(true);
+    try {
+      const { facility } = await postValidateFacilityInvite(code);
+      setValidatedFacilityName(facility.name);
+    } catch {
+      setValidatedFacilityName(null);
+    } finally {
+      setValidatingInvite(false);
+    }
+  }, [form.facilityInviteCode]);
 
   const touchField = (k: keyof FormData) => () => {
     setTouched((p) => ({ ...p, [k]: true }));
@@ -709,7 +750,7 @@ export default function SignUp() {
 
   const handleCreateAccount = async () => {
     const errs = validateStep2(form, selectedCountry);
-    const allKeys: (keyof FormData)[] = ["email", "phone", "password", "confirm"];
+    const allKeys: (keyof FormData)[] = ["email", "phone", "password", "confirm", "facilityInviteCode"];
     setTouched((p) => {
       const n = { ...p };
       allKeys.forEach((k) => (n[k] = true));
@@ -749,6 +790,7 @@ export default function SignUp() {
         email: form.email.trim(),
         password: form.password,
         phoneNumber: phoneNumber ?? null,
+        facilityInviteCode: form.facilityInviteCode.trim(),
         profile: {
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
@@ -853,19 +895,17 @@ export default function SignUp() {
           : {})}
       >
         <View onLayout={onInnerLayout} collapsable={false} style={styles.screenContent}>
-          <View style={[styles.hero, { minHeight: heroMinHeight }]}>
-            <View style={styles.heroCircleLarge} />
-            <View style={styles.heroCircleSmall} />
-            <View style={styles.heroTitleRow}>
-              <CachedImage
-                source={TBHON_ICON}
-                style={{ width: authMarkSize, height: authMarkSize }}
-                resizeMode="contain"
-              />
-              <View style={styles.heroTitleText}>
-                <Text style={styles.heroTitle}>Create Account</Text>
-                <Text style={styles.heroSubtitle}>TBhon Pre-screening App</Text>
-              </View>
+          <View
+            style={[
+              styles.heroBrand,
+              {
+                marginTop: brandLogo.topMargin,
+                marginBottom: brandLogo.bottomMargin,
+              },
+            ]}
+          >
+            <View style={[styles.logoBox, { width: brandLogo.boxWidth }]}>
+              <CachedImage source={TBHON_LOGO} style={styles.logoImage} resizeMode="contain" />
             </View>
           </View>
 
@@ -873,13 +913,27 @@ export default function SignUp() {
             style={[
               styles.cardContainer,
               {
-                marginTop: sheetTopOverlap,
+                marginTop: 4,
                 paddingHorizontal: sheetPaddingHorizontal,
                 paddingTop: sheetPaddingTop,
                 paddingBottom: sheetPaddingBottom,
               },
             ]}
           >
+            <Text style={styles.signupHeading}>{STAFF_SIGNUP_TITLE}</Text>
+            <Text style={styles.signupSubheading}>{STAFF_SIGNUP_SUBTITLE}</Text>
+            <View style={styles.patientRedirect}>
+              <Text style={styles.patientRedirectText}>
+                {STAFF_SIGNUP_CALLOUT}{" "}
+                <Text
+                  style={styles.patientRedirectLink}
+                  onPress={() => router.push("/patient/access" as never)}
+                >
+                  {STAFF_SIGNUP_PATIENT_CTA}
+                </Text>
+              </Text>
+            </View>
+
             {step <= SIGNUP_STEP_COUNT ? (
               <View style={styles.stepProgress}>
                 <View style={styles.stepBarRow}>
@@ -912,7 +966,7 @@ export default function SignUp() {
                     Personal Info
                   </Text>
                   <Text style={[styles.sectionSubtitle, { color: tk.textSub }]}>
-                    Tell us a little about yourself.
+                    Your details as the booth operator — not the person being screened.
                   </Text>
 
                   <Field
@@ -1078,14 +1132,15 @@ export default function SignUp() {
                   </Pressable>
 
                   <View style={styles.subtleRow}>
-                    <Text style={[styles.subtleText, { color: tk.textSub }]}>
+                    <Text style={styles.subtleText}>
                       Already have an account?{" "}
-                    </Text>
-                    <Pressable onPress={() => router.push("/login/login")}>
-                      <Text style={[styles.subtleLink, { color: tk.violetLight }]}>
+                      <Text
+                        style={styles.subtleLink}
+                        onPress={() => router.push("/login/login")}
+                      >
                         Log In
                       </Text>
-                    </Pressable>
+                    </Text>
                   </View>
                 </View>
               )}
@@ -1096,8 +1151,45 @@ export default function SignUp() {
                     Account Setup
                   </Text>
                   <Text style={[styles.sectionSubtitle, { color: tk.textSub }]}>
-                    Secure your TBHON account.
+                    Enter your RHU invite code and secure your booth account.
                   </Text>
+
+                  <Field
+                    label="Facility invite code"
+                    placeholder="RHU-MALAY-2026"
+                    value={form.facilityInviteCode}
+                    onChange={f("facilityInviteCode")}
+                    onBlur={() => {
+                      touchField("facilityInviteCode")();
+                      void validateInviteCode();
+                    }}
+                    fieldRef={(el) => { fieldRefsMap.facilityInviteCode = el; }}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    icon={
+                      <Ionicons
+                        name="business-outline"
+                        size={17}
+                        color={
+                          touched.facilityInviteCode && errors.facilityInviteCode
+                            ? tk.error
+                            : tk.icon
+                        }
+                      />
+                    }
+                    suffix={
+                      validatingInvite ? (
+                        <ActivityIndicator size="small" color={tk.icon} />
+                      ) : null
+                    }
+                    error={errors.facilityInviteCode}
+                    touched={touched.facilityInviteCode}
+                  />
+                  {validatedFacilityName ? (
+                    <Text style={[styles.inviteFacilityHint, { color: tk.success }]}>
+                      ✓ {validatedFacilityName}
+                    </Text>
+                  ) : null}
 
                   <Field
                     label="Email Address"
@@ -1332,7 +1424,7 @@ export default function SignUp() {
                     Account Created!
                   </Text>
                   <Text style={[styles.successSubtitle, { color: tk.textSub }]}>
-                    Welcome to TBHON. Your health companion is ready.
+                    Welcome to TBHON. Staff triage support is ready.
                   </Text>
                   <Pressable
                     style={styles.primaryButton}
@@ -1394,7 +1486,7 @@ export default function SignUp() {
                       },
                     ]}
                   >
-                    {GENDERS.map((g, idx) => (
+                    {PROFILE_GENDER_OPTIONS.map((g, idx) => (
                       <Pressable
                         key={g}
                         onPress={() => {
@@ -1406,7 +1498,7 @@ export default function SignUp() {
                           minHeight: GENDER_ROW_H,
                           justifyContent: "center",
                           borderBottomWidth:
-                            idx === GENDERS.length - 1 ? 0 : 1,
+                            idx === PROFILE_GENDER_OPTIONS.length - 1 ? 0 : 1,
                           borderBottomColor: tk.dropdownBorder,
                         }}
                       >
@@ -1626,62 +1718,55 @@ const styles = StyleSheet.create({
     backgroundColor: tk.screenBg,
   },
   screenContent: {
-    flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 10,
   },
-  hero: {
-    position: "relative",
-    paddingTop: 14,
-    paddingHorizontal: 18,
-    paddingBottom: 4,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-    backgroundColor: tk.screenBg,
-    overflow: "hidden",
-  },
-  heroCircleLarge: {
-    position: "absolute",
-    top: -24,
-    right: -34,
-    width: 172,
-    height: 172,
-    borderRadius: 86,
-    backgroundColor: tk.violetGlow,
-    display: "none",
-  },
-  heroCircleSmall: {
-    position: "absolute",
-    top: 18,
-    right: 22,
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: "rgba(91, 91, 199, 0.14)",
-    display: "none",
-  },
-  heroTitleRow: {
-    flexDirection: "row",
+  heroBrand: {
+    width: "100%",
     alignItems: "center",
-    marginBottom: 0,
+    backgroundColor: tk.screenBg,
+    zIndex: 2,
   },
-  heroTitleText: {
-    marginLeft: 14,
-    flex: 1,
+  logoBox: {
+    aspectRatio: 1,
   },
-  heroTitle: {
-    color: tk.heroTitle,
-    fontSize: 28,
+  logoImage: {
+    width: "100%",
+    height: "100%",
+  },
+  signupHeading: {
+    fontSize: 22,
     fontWeight: "800",
-    letterSpacing: -0.4,
+    color: tk.textPrimary,
+    textAlign: "left",
+    marginBottom: 6,
+    letterSpacing: -0.3,
   },
-  heroSubtitle: {
-    color: tk.heroSub,
+  signupSubheading: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: tk.textSub,
+    textAlign: "left",
+    marginBottom: 14,
+    lineHeight: 20,
+  },
+  patientRedirect: {
+    marginBottom: 18,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.12)",
+  },
+  patientRedirectText: {
+    color: tk.textMuted,
     fontSize: 13,
-    marginTop: 6,
+    textAlign: "left",
+    lineHeight: 19,
+  },
+  patientRedirectLink: {
+    color: tk.violetLight,
+    fontSize: 13,
+    fontWeight: "700",
   },
   stepProgress: {
-    marginTop: 6,
     marginBottom: 18,
   },
   stepBarRow: {
@@ -1708,17 +1793,13 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   cardContainer: {
-    flex: 1,
+    marginTop: 4,
     backgroundColor: tk.cardBg,
+    zIndex: 1,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
-    marginTop: -36,
-    paddingTop: 20,
-    paddingHorizontal: 18,
-    paddingBottom: 18,
-    minHeight: 420,
     shadowColor: palette.deepNavy,
     shadowOpacity: 0.2,
     shadowOffset: { width: 0, height: 14 },
@@ -1752,6 +1833,12 @@ const styles = StyleSheet.create({
     color: tk.textSub,
     fontSize: 14,
     marginBottom: 20,
+  },
+  inviteFacilityHint: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: -12,
+    marginBottom: 16,
   },
   rowSplit: {
     flexDirection: "column",
@@ -1907,10 +1994,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   subtleRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    marginTop: 16,
+    alignItems: "center",
+    marginTop: 18,
   },
   passwordHintsContainer: {
     marginBottom: 20,
@@ -1949,11 +2034,13 @@ const styles = StyleSheet.create({
   subtleText: {
     color: tk.textSub,
     fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
   },
   subtleLink: {
     color: tk.violetLight,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "600",
   },
   helpText: {
     color: tk.textMuted,

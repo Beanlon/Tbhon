@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  ActivityIndicator,
   Easing,
   Modal,
   Pressable,
@@ -26,8 +27,23 @@ import {
   peekScreenings,
   setCachedScreenings,
 } from "../../utils/screeningHistoryCache";
+import { formatClientFullName, formatClientHistoryMeta } from "../../utils/clientDisplay";
+import {
+  NO_PATIENT_ON_FILE,
+  PATIENT_HISTORY_EMPTY,
+  PATIENT_HISTORY_LOADING,
+  PATIENT_HISTORY_SIGN_IN_BODY,
+  PATIENT_HISTORY_SIGN_IN_TITLE,
+  PATIENT_HISTORY_TITLE,
+  STAFF_HISTORY_EMPTY,
+  STAFF_HISTORY_LOADING,
+  STAFF_HISTORY_SIGN_IN_BODY,
+  STAFF_HISTORY_SIGN_IN_TITLE,
+  STAFF_HISTORY_TITLE,
+} from "../../constants/accountModel";
 import { useTheme } from "../../contexts/ThemeContext";
-import { setCachedProfile } from "../../utils/profileCache";
+import { isPatientRole, parseUserRole } from "../../constants/userRole";
+import { peekProfile } from "../../utils/profileCache";
 
 const SCREENING_LIST_LIMIT = 100;
 
@@ -40,6 +56,8 @@ interface ScreeningRecord {
   time: string;
   risk: RiskLevel;
   tagline: string;
+  clientName: string;
+  clientMeta: ReturnType<typeof formatClientHistoryMeta>;
 }
 
 const RISK_META: Record<RiskLevel, { label: string; color: string; bg: string; icon: string }> = {
@@ -77,6 +95,8 @@ function rowToRecord(row: ScreeningHistoryRow): ScreeningRecord {
     time: display.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
     risk,
     tagline: TAGLINE[risk],
+    clientName: formatClientFullName(row.client),
+    clientMeta: formatClientHistoryMeta(row.client),
   };
 }
 
@@ -135,6 +155,16 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(true);
+  const isPatientPortal = isPatientRole(parseUserRole(peekProfile()?.role));
+  const historyTitle = isPatientPortal ? PATIENT_HISTORY_TITLE : STAFF_HISTORY_TITLE;
+  const historyLoadingText = isPatientPortal ? PATIENT_HISTORY_LOADING : STAFF_HISTORY_LOADING;
+  const historySignInTitle = isPatientPortal
+    ? PATIENT_HISTORY_SIGN_IN_TITLE
+    : STAFF_HISTORY_SIGN_IN_TITLE;
+  const historySignInBody = isPatientPortal
+    ? PATIENT_HISTORY_SIGN_IN_BODY
+    : STAFF_HISTORY_SIGN_IN_BODY;
+  const historyEmptyText = isPatientPortal ? PATIENT_HISTORY_EMPTY : STAFF_HISTORY_EMPTY;
 
   const load = useCallback(async (mode: "initial" | "refresh") => {
     setLoadError(null);
@@ -291,7 +321,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
 
           <View className="min-w-0 flex-1">
             <Text className="text-center text-lg font-black" style={{ color: colors.text }} numberOfLines={1}>
-              Screening History
+              {historyTitle}
             </Text>
           </View>
 
@@ -371,17 +401,19 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
       {loading ? (
         <View className="flex-1 items-center justify-center pt-10">
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text className="mt-3 text-base" style={{ color: colors.textMuted }}>Loading your screenings…</Text>
+          <Text className="mt-3 text-base" style={{ color: colors.textMuted }}>
+            {historyLoadingText}
+          </Text>
         </View>
       ) : !signedIn ? (
         <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 48 }} showsVerticalScrollIndicator={false}>
           <View className="items-center">
             <Ionicons name="lock-closed-outline" size={48} color="#D1D5DB" />
             <Text className="mt-3 text-center text-base font-bold" style={{ color: colors.textSecondary }}>
-              Sign in to see screening history
+              {historySignInTitle}
             </Text>
             <Text className="mt-2 text-center text-base leading-6" style={{ color: colors.textMuted }}>
-              Completed screenings are saved to your account when you finish a session while signed in.
+              {historySignInBody}
             </Text>
           </View>
         </ScrollView>
@@ -399,7 +431,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
               <Ionicons name="folder-open-outline" size={48} color="#D1D5DB" />
               <Text className="mt-3 text-base font-bold" style={{ color: colors.textMuted }}>No records found</Text>
               <Text className="mt-1 text-center text-base" style={{ color: colors.textMuted }}>
-                {hasActiveFilters ? "Try changing your filters" : "Complete a screening to build your history"}
+                {hasActiveFilters ? "Try changing your filters" : historyEmptyText}
               </Text>
             </View>
           )}
@@ -426,7 +458,31 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
                         {meta.label}
                       </Text>
                     </View>
-                    <Text className="mb-1 text-base font-bold" style={{ color: colors.text }}>{record.tagline}</Text>
+                    <Text className="mb-1 text-base font-bold" style={{ color: colors.text }}>{record.clientName}</Text>
+                    {record.clientMeta ? (
+                      <>
+                        <Text className="mb-1 text-sm" style={{ color: colors.textMuted }}>
+                          {record.clientMeta.demographics}
+                        </Text>
+                        <View className="mb-1 flex-row items-start gap-1.5">
+                          <Ionicons name="location-outline" size={14} color={colors.textMuted} style={{ marginTop: 2 }} />
+                          <Text className="flex-1 text-sm leading-5" style={{ color: colors.textSecondary }}>
+                            {record.clientMeta.address}
+                          </Text>
+                        </View>
+                        <View className="mb-1 flex-row items-center gap-1.5">
+                          <Ionicons name="call-outline" size={14} color={colors.textMuted} />
+                          <Text className="flex-1 text-sm" style={{ color: colors.textSecondary }}>
+                            {record.clientMeta.contactNumber}
+                          </Text>
+                        </View>
+                      </>
+                    ) : (
+                      <Text className="mb-1 text-sm" style={{ color: colors.textMuted }}>
+                        {NO_PATIENT_ON_FILE}
+                      </Text>
+                    )}
+                    <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>{record.tagline}</Text>
                     <Text className="text-base" style={{ color: colors.textMuted }}>
                       {record.date} · {record.time}
                     </Text>

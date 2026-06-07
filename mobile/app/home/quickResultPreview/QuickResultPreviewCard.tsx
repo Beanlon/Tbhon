@@ -22,6 +22,12 @@ import {
   setCachedScreenings,
   clearScreeningCache,
 } from "../../../utils/screeningHistoryCache";
+import {
+  PATIENT_QUICK_PREVIEW_EMPTY,
+  PATIENT_QUICK_PREVIEW_TITLE,
+  STAFF_QUICK_PREVIEW_EMPTY,
+  STAFF_QUICK_PREVIEW_TITLE,
+} from "../../../constants/accountModel";
 import { GaugeChart, type GaugeRiskLevel } from "./GaugeChart";
 import { useTheme } from "../../../contexts/ThemeContext";
 
@@ -60,6 +66,7 @@ type Props = {
   /** When false, skip network refresh (home tab inactive). */
   isActive: boolean;
   onHistoryPress?: () => void;
+  mode?: "operator" | "patient";
 };
 
 const RISK_LABEL: Record<GaugeRiskLevel, string> = {
@@ -86,7 +93,7 @@ const ACTION_LABEL: Record<GaugeRiskLevel, string> = {
   high: "Seek medical attention",
 };
 
-export function QuickResultPreviewCard({ isActive, onHistoryPress }: Props) {
+export function QuickResultPreviewCard({ isActive, onHistoryPress, mode = "operator" }: Props) {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const { colors, isDark } = useTheme();
@@ -177,6 +184,12 @@ export function QuickResultPreviewCard({ isActive, onHistoryPress }: Props) {
     alignSelf: isTinyPhone ? "flex-end" : "center",
   };
 
+  const isPatientPortal = mode === "patient";
+  const sectionTitle = isPatientPortal ? PATIENT_QUICK_PREVIEW_TITLE : STAFF_QUICK_PREVIEW_TITLE;
+  const emptyBody = isPatientPortal ? PATIENT_QUICK_PREVIEW_EMPTY : STAFF_QUICK_PREVIEW_EMPTY;
+  const emptyTitle = isPatientPortal ? "No results yet" : "No booth sessions yet";
+  const historyLinkLabel = isPatientPortal ? "All results" : "All sessions";
+
   const openDetails = () => {
     if (!latest?.sessionId) return;
     router.push({
@@ -189,7 +202,7 @@ export function QuickResultPreviewCard({ isActive, onHistoryPress }: Props) {
     <View className="mt-5 mb-6 px-5">
       <View className="mb-3.5 flex-row items-center justify-between">
         <Text style={{ color: colors.text }} className="text-[17px] font-extrabold leading-6">
-          Quick Result Preview
+          {sectionTitle}
         </Text>
         {onHistoryPress ? (
           <Pressable
@@ -197,9 +210,11 @@ export function QuickResultPreviewCard({ isActive, onHistoryPress }: Props) {
             hitSlop={8}
             className="flex-row items-center gap-0.5"
             accessibilityRole="button"
-            accessibilityLabel="Open screening history"
+            accessibilityLabel={isPatientPortal ? "Open all results" : "Open booth session history"}
           >
-            <Text style={{ color: isDark ? colors.textSecondary : colors.accent }} className="text-sm font-semibold">History</Text>
+            <Text style={{ color: isDark ? colors.textSecondary : colors.accent }} className="text-sm font-semibold">
+              {historyLinkLabel}
+            </Text>
             <Ionicons name="chevron-forward" size={16} color={isDark ? colors.textSecondary : colors.accent} />
           </Pressable>
         ) : null}
@@ -254,10 +269,12 @@ export function QuickResultPreviewCard({ isActive, onHistoryPress }: Props) {
         ) : !latest ? (
           <>
             <View className="min-w-0" style={textStyle}>
-              <Text style={{ color: colors.textSecondary }} className="mb-1.5 text-base font-bold">No screening results yet</Text>
+              <Text style={{ color: colors.textSecondary }} className="mb-1.5 text-base font-bold">
+                {emptyTitle}
+              </Text>
               <Text className="text-sm italic">“This is not a medical diagnosis”</Text>
               <Text style={{ color: colors.textMuted }} className="mt-1 text-sm font-semibold">
-                Begin a screening to generate your first result preview.
+                {emptyBody}
               </Text>
             </View>
             <View style={gaugeBoxStyle}>

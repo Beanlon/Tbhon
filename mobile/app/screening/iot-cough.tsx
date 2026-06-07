@@ -10,6 +10,7 @@ import { Audio } from "expo-av";
 import type { AVPlaybackStatus } from "expo-av/build/AV.types";
 import { CoughQualityBadge } from "../../components/CoughQualityBadge";
 import { IOT_COUGH_COUNT, IOT_COUGH_STEPS } from "../../constants/iotScreening";
+import { COUGH_LINK_SIGN_IN_403 } from "../../constants/screeningBoothCopy";
 import { palette } from "../../constants/palette";
 import {
   checkCoughRecordingQuality,
@@ -691,7 +692,7 @@ export default function IotCoughScreen() {
         "Please sign in to continue. If you're already signed in, the app may need to be restarted.",
       );
     } else if (e instanceof ApiError && e.status === 403) {
-      setErrorText("Please sign in to link this recording to your screening session.");
+      setErrorText(COUGH_LINK_SIGN_IN_403);
     } else if (e instanceof ApiError && e.status === 409) {
       setErrorText(
         e.message.includes("seconds")
@@ -1027,8 +1028,7 @@ export default function IotCoughScreen() {
     }
 
     iotStartQueuedRef.current = false;
-    console.log(`[IoT Cough] Go — show recording UI immediately (cough ${coughIndexRef.current})`);
-    enterRecordingUiAtGo();
+    console.log(`[IoT Cough] Go — queue audio immediately (cough ${coughIndexRef.current})`);
 
     void (async () => {
       try {
@@ -1046,6 +1046,8 @@ export default function IotCoughScreen() {
         startingDeviceRef.current = false;
       }
     })();
+
+    enterRecordingUiAtGo();
   }, [enterRecordingUiAtGo, handleIoTError, queueIotAudioStartWithRetry, stopDeviceRecordSync]);
 
   const startCountdownOverlay = useCallback(() => {
@@ -1478,6 +1480,7 @@ export default function IotCoughScreen() {
 
     const audioUris = slots.map((s) => s?.localUri ?? "").filter((u) => u.length > 0);
     const iotRecordingIds = slots.map((s) => s?.recordingId ?? "").filter((id) => id.length > 0);
+    const sid = sessionIdRef.current.trim();
     router.push({
       pathname: "/screening/iot-sputum",
       params: {
@@ -1486,10 +1489,10 @@ export default function IotCoughScreen() {
         iotMode: "1",
         audioUris: JSON.stringify(audioUris),
         iotRecordingIds: JSON.stringify(iotRecordingIds),
-        ...(screeningSessionId.trim().length > 0 ? { sessionId: screeningSessionId.trim() } : {}),
+        ...(sid.length > 0 ? { sessionId: sid } : {}),
       },
     } as any);
-  }, [checklist, completedCoughs, currentSlot, kickOffBackgroundPrep, router, screeningSessionId, slots, stopCurrent]);
+  }, [checklist, completedCoughs, currentSlot, kickOffBackgroundPrep, router, slots, stopCurrent]);
 
   const { mainLabel, subLabel } = useMemo(() => {
     if (allDone && captured) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  ActivityIndicator,
   Platform,
   Pressable,
   ScrollView,
@@ -10,6 +11,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -23,17 +25,26 @@ import {
   buildServerSputumImageUrl,
 } from "../../services/backendApi";
 import SputumSamplePhoto from "../components/SputumSamplePhoto";
+import PatientResultQr from "../components/PatientResultQr";
 import { clearScreeningCache } from "../../utils/screeningHistoryCache";
 import { getAuthToken } from "../../utils/authStorage";
 import { useTheme } from "../../contexts/ThemeContext";
 import type { FusionModalityBreakdown } from "../../utils/tbRiskFusion";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
+import { canRunScreenings, resolveUserRole } from "../../constants/userRole";
 import { onUnverifiedScreeningCompleted } from "../../services/unverifiedEngagementNotifications";
 import {
   isEmailVerified,
   promptEmailVerification,
 } from "../../utils/emailVerifiedGate";
 import { buildResultPdfExport, shareScreeningPdf } from "../../utils/screeningPdfExport";
+import {
+  SCREENING_DISCLAIMER_LIMITS,
+  SCREENING_DISCLAIMER_SCOPE,
+  SCREENING_DISCLAIMER_TITLE,
+  SCREENING_FUSION_METHOD_NOTE,
+  SCREENING_STAFF_REFERRAL_LINE,
+} from "../../constants/screeningDisclaimer";
 
 type RiskLevel = "low" | "moderate" | "high";
 type PhlegmTone = { color: string; bg: string; border: string; label: string };
@@ -127,8 +138,11 @@ const RISK_CONFIG: Record<
 
 export default function ResultScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { width: windowWidth } = useWindowDimensions();
   const { colors, isDark } = useTheme();
+  const [reviewGateReady, setReviewGateReady] = useState(false);
+  const [reviewChecking, setReviewChecking] = useState(true);
 
   /** Risk ring scales with viewport so it never overflows narrow phones */
   const ring = useMemo(() => {
@@ -168,7 +182,72 @@ export default function ResultScreen() {
     deviceSputum?: string;
     sputumByteSize?: string;
     sputumCapturedAt?: string;
+    sputumSkipReason?: string;
+    staffNotes?: string;
+    staffResultConfirmed?: string;
   }>();
+
+  const forwardParams = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === "string" && value.length > 0) out[key] = value;
+    }
+    return out;
+  }, [params]);
+
+  const enforceStaffReview = useCallback(async () => {
+    if (params.staffResultConfirmed === "1") {
+      setReviewGateReady(true);
+      setReviewChecking(false);
+      return;
+    }
+
+    let role = resolveUserRole(peekProfile()?.role);
+    if (!role) {
+      try {
+        const { user } = await getMe();
+        setCachedProfile(user);
+        role = resolveUserRole(user.role);
+      } catch {
+        role = null;
+      }
+    }
+
+    if (!role || !canRunScreenings(role)) {
+      setReviewGateReady(true);
+      setReviewChecking(false);
+      return;
+    }
+
+    setReviewGateReady(false);
+    setReviewChecking(false);
+    router.replace({
+      pathname: "/screening/staff-review",
+      params: forwardParams,
+    } as never);
+  }, [forwardParams, params.staffResultConfirmed, router]);
+
+  useEffect(() => {
+    void enforceStaffReview();
+  }, [enforceStaffReview]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void enforceStaffReview();
+    }, [enforceStaffReview]),
+  );
+
+  useEffect(() => {
+    const unsub = navigation.addListener("beforeRemove", (e) => {
+      if (params.staffResultConfirmed === "1" || reviewGateReady) return;
+      e.preventDefault();
+      router.replace({
+        pathname: "/screening/staff-review",
+        params: forwardParams,
+      } as never);
+    });
+    return unsub;
+  }, [forwardParams, navigation, params.staffResultConfirmed, reviewGateReady, router]);
 
   const risk: RiskLevel =
     params.risk === "moderate" || params.risk === "high" ? params.risk : "low";
@@ -212,6 +291,13 @@ export default function ResultScreen() {
   const imageProvided =
     imageUriParam.length > 0 || params.deviceSputum === "1" || phlegmAnalyzed;
 
+  const [savedSessionId, setSavedSessionId] = useState<string | null>(() => {
+    const id = typeof params.sessionId === "string" ? params.sessionId.trim() : "";
+    return id.length > 0 ? id : null;
+  });
+  const [patientClaimUrl, setPatientClaimUrl] = useState<string | null>(null);
+  const [displayImageUri, setDisplayImageUri] = useState("");
+
   const handleDownloadPdf = useCallback(async () => {
     let profile = peekProfile();
     if (!isEmailVerified(profile)) {
@@ -224,7 +310,7 @@ export default function ResultScreen() {
       }
     }
     if (!isEmailVerified(profile)) {
-      promptEmailVerification(router);
+      promptEmailVerification(router, profile);
       return;
     }
 
@@ -245,6 +331,7 @@ export default function ResultScreen() {
         phlegmConfidence: phlegmConfidence,
         phlegmFailed,
         imageProvided,
+        patientClaimUrl,
       });
       await shareScreeningPdf(pdfData);
     } catch (e) {
@@ -273,18 +360,12 @@ export default function ResultScreen() {
     probTb,
     risk,
     router,
+    patientClaimUrl,
   ]);
-
-  /** Prefer server-stored sputum bytes once screening is saved (not phone-local file). */
-  const [displayImageUri, setDisplayImageUri] = useState("");
-
-  const [savedSessionId, setSavedSessionId] = useState<string | null>(() => {
-    const id = typeof params.sessionId === "string" ? params.sessionId.trim() : "";
-    return id.length > 0 ? id : null;
-  });
 
   const persistScreeningAttempted = useRef(false);
   useEffect(() => {
+    if (!reviewGateReady) return;
     if (persistScreeningAttempted.current) return;
     persistScreeningAttempted.current = true;
 
@@ -380,6 +461,13 @@ export default function ResultScreen() {
           ...(typeof params.phlegmProbs === "string" && params.phlegmProbs.length > 0
             ? { phlegmProbs: params.phlegmProbs }
             : {}),
+          ...(typeof params.sputumSkipReason === "string" && params.sputumSkipReason.trim().length > 0
+            ? { sputumSkipReason: params.sputumSkipReason.trim() }
+            : {}),
+          ...(typeof params.staffNotes === "string" && params.staffNotes.trim().length > 0
+            ? { staffNotes: params.staffNotes.trim() }
+            : {}),
+          ...(params.staffResultConfirmed === "1" ? { staffResultConfirmed: true } : {}),
         });
         clearScreeningCache();
 
@@ -388,6 +476,7 @@ export default function ResultScreen() {
           void onUnverifiedScreeningCompleted({
             sessionId: response?.session?.sessionId,
             riskLabel: cfg.label,
+            user: profile,
           });
         }
 
@@ -397,6 +486,9 @@ export default function ResultScreen() {
         const sessionId = response?.session?.sessionId;
         if (typeof sessionId === "string" && sessionId.length > 0) {
           setSavedSessionId(sessionId);
+          if (response.patientAccess?.claimUrl) {
+            setPatientClaimUrl(response.patientAccess.claimUrl);
+          }
 
           if (iotCoughFlow) {
             // IoT path: the ESP32 already uploaded the WAV bytes to the server
@@ -486,7 +578,16 @@ export default function ResultScreen() {
     };
 
     void run();
-  }, []);
+  }, [reviewGateReady]);
+
+  if (reviewChecking || !reviewGateReady) {
+    return (
+      <SafeAreaView className="flex-1 items-center justify-center" style={{ backgroundColor: colors.background }}>
+        <StatusBar style={colors.statusBar} />
+        <ActivityIndicator size="large" color={colors.primary} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <>
@@ -608,8 +709,8 @@ export default function ResultScreen() {
               {cfg.tagline}
             </Text>
 
-            <Text className="mt-1.5 px-2 text-center text-xs italic" style={{ color: colors.textMuted }}>
-              This is not a medical diagnosis
+            <Text className="mt-1.5 px-2 text-center text-xs font-bold sm:text-sm" style={{ color: colors.textMuted }}>
+              {SCREENING_DISCLAIMER_TITLE}
             </Text>
           </View>
 
@@ -622,6 +723,12 @@ export default function ResultScreen() {
               label={displayImageUri.length > 0 ? "Sputum sample (from server)" : undefined}
             />
           </View>
+
+          {patientClaimUrl ? (
+            <View className="mb-6">
+              <PatientResultQr claimUrl={patientClaimUrl} />
+            </View>
+          ) : null}
 
           {(() => {
             const fusedProb =
@@ -759,8 +866,7 @@ export default function ResultScreen() {
                 </View>
 
                 <Text className="mt-3 text-[11px] italic leading-4" style={{ color: colors.textMuted }}>
-                  {fusionBreakdown?.method ||
-                    "Weighted log-odds fusion of checklist, cough ML, and sputum ML. Screening triage only — not a diagnosis."}
+                  {fusionBreakdown?.method || SCREENING_FUSION_METHOD_NOTE}
                 </Text>
               </View>
             );
@@ -776,10 +882,50 @@ export default function ResultScreen() {
             <View className="mb-2.5 flex-row items-center gap-2">
               <Ionicons name="information-circle" size={20} color={cfg.color} />
               <Text className="text-sm font-bold" style={{ color: cfg.color }}>
-                Recommendation
+                {risk === "low" ? "Recommendation" : "Staff triage action"}
               </Text>
             </View>
+            {risk !== "low" ? (
+              <View
+                className="mb-3 flex-row items-start gap-2.5 rounded-xl border px-3.5 py-3"
+                style={{
+                  borderColor: cfg.color,
+                  backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#FFFFFF",
+                }}
+              >
+                <Ionicons name="medkit-outline" size={18} color={cfg.color} style={{ marginTop: 1 }} />
+                <View className="min-w-0 flex-1">
+                  <Text className="text-[11px] font-bold uppercase tracking-wide" style={{ color: cfg.color }}>
+                    Referral
+                  </Text>
+                  <Text className="mt-0.5 text-sm font-bold leading-5" style={{ color: colors.text }}>
+                    {SCREENING_STAFF_REFERRAL_LINE}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
             <Text className="text-sm leading-6" style={{ color: colors.textSecondary }}>{cfg.recommendation}</Text>
+          </View>
+
+          <View
+            className="mb-7 rounded-2xl border p-4"
+            style={{
+              borderColor: isDark ? "rgba(251,191,36,0.35)" : "#FDE68A",
+              backgroundColor: isDark ? "rgba(120,53,15,0.22)" : "#FFFBEB",
+            }}
+          >
+            <View className="mb-2 flex-row items-center gap-2">
+              <Ionicons name="shield-outline" size={18} color={isDark ? "#FCD34D" : "#B45309"} />
+              <Text className="text-sm font-bold" style={{ color: isDark ? "#FDE68A" : "#92400E" }}>
+                {SCREENING_DISCLAIMER_TITLE}
+              </Text>
+            </View>
+            <Text className="text-xs leading-5 sm:text-sm" style={{ color: isDark ? "#FDE68A" : "#78350F" }}>
+              {SCREENING_DISCLAIMER_SCOPE}
+            </Text>
+            <Text className="mt-2.5 text-xs leading-5 sm:text-sm" style={{ color: isDark ? "#FDE68A" : "#78350F" }}>
+              {SCREENING_DISCLAIMER_LIMITS}
+            </Text>
           </View>
 
           <Pressable
@@ -803,6 +949,9 @@ export default function ResultScreen() {
                   phlegmError: params.phlegmError ?? "0",
                   phlegmErrorDetail: params.phlegmErrorDetail ?? "",
                   fusionBreakdown: typeof params.fusionBreakdown === "string" ? params.fusionBreakdown : "",
+                  ...(typeof params.sputumSkipReason === "string" && params.sputumSkipReason.trim().length > 0
+                    ? { sputumSkipReason: params.sputumSkipReason.trim() }
+                    : {}),
                 },
               } as any)
             }

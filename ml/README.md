@@ -56,23 +56,14 @@ Each run creates a timestamped folder under `ml/runs/` containing:
 
 ## Inference (after training)
 
-```bash
-python train_tb_cough_cnn.py --predict "C:\path\to\cough.wav" --model "ml\runs\<run>\model.pt"
-```
-
-## Mobile integration (record → upload → result)
-
-The mobile app uploads the recorded audio to a local HTTP endpoint.
-
-1) Start the inference server (auto-selects the checkpoint with highest `best_f1_macro` under `ml/runs/`):
+Production checkpoint is pinned in `ml/production_model.json` (currently **hybrid fold 1**, test macro-F1 **~0.69**).
 
 ```bash
 python -m pip install -r ml/requirements.txt
-set TB_MODEL_PATH=ml\runs\20260504_005928\model.pt
 python -m uvicorn ml.infer_api:app --host 0.0.0.0 --port 8000
 ```
 
-Recommended default until a new run beats **0.629** test macro-F1: `ml\runs\20260504_005928\model.pt`.
+`infer_api` loads models in this order: `TB_MODEL_PATH` env → `production_model.json` → highest `best_f1_macro` under `ml/runs/`.
 
 Confirm the active model:
 
@@ -80,11 +71,32 @@ Confirm the active model:
 curl http://127.0.0.1:8000/healthz
 ```
 
-2) Point the Expo app at your server by setting:
-- `EXPO_PUBLIC_TB_API_URL` (recommended), e.g. `http://192.168.1.10:8000`
+### Deploy best hybrid to ML droplet
+
+From repo root (requires SSH to `152.42.170.30`):
+
+```bash
+npm run ml:deploy-cough
+```
+
+Uploads `model.pt` + `hybrid_bundle.pkl`, sets `TB_MODEL_PATH`, restarts `tbhon-ml`.
+
+After a new training run beats the current F1:
+
+```bash
+python ml/scripts/promote_cough_model.py
+npm run ml:deploy-cough
+```
+
+Legacy CNN-only baseline (~0.63 F1): `ml/runs/20260504_005928/model.pt`.
+
+## Mobile integration (record → upload → result)
+
+Point the Expo app at your ML server:
+
+- `EXPO_PUBLIC_TB_API_URL` (recommended), e.g. `http://192.168.1.10:8000` or the ML Cloudflare tunnel URL
 
 Then record coughs in the app; the `Processing` screen will upload the clips and route to `Result`.
-
 ## Validation
 
 Smoke tests (no running server):

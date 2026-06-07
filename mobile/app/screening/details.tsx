@@ -9,10 +9,12 @@ import {
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
@@ -20,15 +22,23 @@ import { Audio } from "expo-av";
 import {
   ApiError,
   buildServerSputumImageUrl,
+  downloadSessionCoughToCache,
   getAuthMediaHeaders,
   getMe,
   getScreening,
+  getScreeningPatientAccess,
+  patchScreeningReferral,
   resolveMediaUrl,
   type ScreeningSessionDetail,
 } from "../../services/backendApi";
 import SputumSamplePhoto from "../components/SputumSamplePhoto";
+import PatientRecoveryPanel from "./PatientRecoveryPanel";
+import PatientSlipPanel from "./PatientSlipPanel";
 import { getAuthToken } from "../../utils/authStorage";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
+import { SPUTUM_DETAILS_MISSING_LABEL, formatSputumDetailsMissingSub } from "../../constants/iotScreening";
+import { DETAILS_CHECKLIST_EMPTY_HINT } from "../../constants/screeningBoothCopy";
+import { REFERRAL_STATUS_LABELS, canRunScreenings, resolveUserRole, type ReferralStatus } from "../../constants/userRole";
 import { useTheme } from "../../contexts/ThemeContext";
 import { fuseTbRisk, type FusionModalityBreakdown } from "../../utils/tbRiskFusion";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
@@ -37,6 +47,15 @@ import {
   promptEmailVerification,
 } from "../../utils/emailVerifiedGate";
 import { buildDetailsPdfExport, shareScreeningPdf } from "../../utils/screeningPdfExport";
+import {
+  ADD_PATIENT_DETAILS,
+  CLIENT_RECORD_TITLE,
+  NO_PATIENT_ON_FILE,
+  PATIENT_NOT_RECORDED,
+  PATIENT_DETAILS_SCREEN_TITLE,
+  STAFF_DETAILS_SCREEN_TITLE,
+} from "../../constants/accountModel";
+import { formatClientFullName, formatClientSubtitle, buildClientDetailRows, type ClientDetailRow } from "../../utils/clientDisplay";
 
 type RiskLevel = "low" | "moderate" | "high";
 
@@ -46,6 +65,12 @@ type ChecklistAnswerRow = {
   questionText: string;
   category: string;
   answerYes: boolean | null;
+};
+
+type CoughPlaybackClip = {
+  uri: string;
+  recordingId?: string;
+  mimeType?: string | null;
 };
 
 const RISK_COPY: Record<
@@ -288,7 +313,7 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
   probTb: number | null;
   fusionModalities: FusionModalityBreakdown[];
   fusionMethod: string;
-  audioUris: string[];
+  audioClips: CoughPlaybackClip[];
   imageUri: string;
   imageAnalyzed: boolean;
   phlegmLoad: string;
@@ -303,6 +328,13 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
   savedRecommendation: string | null;
   headerSubtitle: string;
   completedAt: string | null;
+  clientName: string;
+  clientSubtitle: string;
+  clientDetailRows: ClientDetailRow[];
+  sputumSkipReason: string | null;
+  staffNotes: string | null;
+  referralStatus: ReferralStatus;
+  referralNotes: string | null;
 } {
   const risk = coerceRisk(s.finalRiskLevel ?? s.result?.riskLevel);
 
@@ -343,12 +375,18 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
       : fusion.probTb;
 
   // Only server-persisted media (hasRawData + fileUrl). Never use phone-local file:// paths.
-  const audioUris = s.coughRecordings
+  const audioClips: CoughPlaybackClip[] = s.coughRecordings
     .map((r) => {
-      if (!r.hasRawData || typeof r.fileUrl !== "string" || r.fileUrl.length === 0) return "";
-      return resolveMediaUrl(r.fileUrl) ?? "";
+      if (!r.hasRawData || typeof r.fileUrl !== "string" || r.fileUrl.length === 0) return null;
+      const uri = resolveMediaUrl(r.fileUrl) ?? "";
+      if (uri.length === 0) return null;
+      return {
+        uri,
+        recordingId: typeof r.recordingId === "string" ? r.recordingId : undefined,
+        mimeType: r.mimeType ?? null,
+      };
     })
-    .filter((u) => u.length > 0);
+    .filter((c): c is CoughPlaybackClip => c !== null);
 
   const imageUri = buildServerSputumImageUrl(s.sessionId, img) ?? "";
   const imageAnalyzed = Boolean(pp);
@@ -364,15 +402,15 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
   const completed = s.completedAt ? new Date(s.completedAt) : null;
   const headerSubtitle =
     completed && Number.isFinite(completed.getTime())
-      ? `Saved screening · ${completed.toLocaleString()}`
-      : "Saved screening";
+      ? `${formatClientFullName(s.client)} · ${completed.toLocaleString()}`
+      : formatClientFullName(s.client);
 
   return {
     risk,
     probTb,
     fusionModalities: fusion.modalities,
     fusionMethod: fusion.method,
-    audioUris,
+    audioClips,
     imageUri,
     imageAnalyzed,
     phlegmLoad,
@@ -387,6 +425,13 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
     savedRecommendation: s.result?.recommendation ?? null,
     headerSubtitle,
     completedAt: s.completedAt ?? null,
+    clientName: formatClientFullName(s.client),
+    clientSubtitle: formatClientSubtitle(s.client),
+    clientDetailRows: buildClientDetailRows(s.client),
+    sputumSkipReason: s.sputumSkipReason ?? null,
+    staffNotes: s.staffNotes ?? null,
+    referralStatus: (s.result?.referralStatus as ReferralStatus | undefined) ?? "none",
+    referralNotes: s.result?.referralNotes ?? null,
   };
 }
 
@@ -478,7 +523,7 @@ const SputumSampleCard = memo(function SputumSampleCard({
   textColor: string;
 }) {
   return (
-    <DetailsCard title="Sputum sample" cardBorder={cardBorder} cardBg={cardBg} textColor={textColor}>
+    <DetailsCard title="Sputum smear" cardBorder={cardBorder} cardBg={cardBg} textColor={textColor}>
       <SputumSamplePhoto
         sessionId={sessionId}
         uri={imageUri}
@@ -512,6 +557,7 @@ export default function ScreeningDetailsScreen() {
     phlegmError?: string;
     phlegmErrorDetail?: string;
     fusionBreakdown?: string;
+    sputumSkipReason?: string;
   }>();
 
   const fromScreeningFlow = params.from === "result";
@@ -529,7 +575,6 @@ export default function ScreeningDetailsScreen() {
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const playingIndexRef = useRef<number | null>(null);
   const [audioHint, setAudioHint] = useState<string | null>(null);
-  const [audioHeaders, setAudioHeaders] = useState<Record<string, string> | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const checklistHeightAnim = useRef(new Animated.Value(0)).current;
 
@@ -561,6 +606,39 @@ export default function ScreeningDetailsScreen() {
     if (checklistOpen) setChecklistBodyMounted(true);
   }, [checklistOpen]);
 
+  const loadRemoteSession = useCallback(
+    async (showSpinner: boolean) => {
+      if (!sessionId) return;
+      if (showSpinner) {
+        setRemoteLoading(true);
+        setRemoteError(null);
+        setRemoteVm(null);
+      }
+      try {
+        const { session } = await getScreening(sessionId);
+        if (session.sessionId !== sessionId) {
+          throw new Error("Screening session mismatch.");
+        }
+        setRemoteVm(mapSessionToViewModel(session));
+        if (showSpinner) setRemoteError(null);
+      } catch (e) {
+        const message =
+          e instanceof ApiError
+            ? e.message
+            : e instanceof Error
+              ? e.message
+              : "Could not load screening.";
+        if (showSpinner) {
+          setRemoteError(message);
+          setRemoteVm(null);
+        }
+      } finally {
+        if (showSpinner) setRemoteLoading(false);
+      }
+    },
+    [sessionId],
+  );
+
   useEffect(() => {
     if (!sessionId) {
       setRemoteLoading(false);
@@ -568,36 +646,14 @@ export default function ScreeningDetailsScreen() {
       setRemoteVm(null);
       return;
     }
-    let cancelled = false;
-    setRemoteLoading(true);
-    setRemoteError(null);
-    setRemoteVm(null);
-    void (async () => {
-      try {
-        const { session } = await getScreening(sessionId);
-        if (cancelled) return;
-        if (session.sessionId !== sessionId) {
-          throw new Error("Screening session mismatch.");
-        }
-        setRemoteVm(mapSessionToViewModel(session));
-      } catch (e) {
-        if (cancelled) return;
-        const message =
-          e instanceof ApiError
-            ? e.message
-            : e instanceof Error
-              ? e.message
-              : "Could not load screening.";
-        setRemoteError(message);
-        setRemoteVm(null);
-      } finally {
-        if (!cancelled) setRemoteLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
+    void loadRemoteSession(true);
+  }, [sessionId, loadRemoteSession]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (sessionId) void loadRemoteSession(false);
+    }, [sessionId, loadRemoteSession]),
+  );
 
   const paramVm = useMemo(() => {
     if (sessionId) return null;
@@ -606,9 +662,11 @@ export default function ScreeningDetailsScreen() {
     const probTbRaw = typeof params.probTb === "string" ? Number(params.probTb) : NaN;
     const probTb = Number.isFinite(probTbRaw) ? probTbRaw : null;
 
-    const audioUris = parseAudioUris(params.audioUris).filter(
-      (u) => !u.toLowerCase().startsWith("file://") && !u.toLowerCase().startsWith("content://"),
-    );
+    const audioClips: CoughPlaybackClip[] = parseAudioUris(params.audioUris)
+      .filter(
+        (u) => !u.toLowerCase().startsWith("file://") && !u.toLowerCase().startsWith("content://"),
+      )
+      .map((uri) => ({ uri }));
     const imageUri = "";
     const imageProvided = false;
     const imageAnalyzed = params.phlegmAnalyzed === "1";
@@ -706,7 +764,7 @@ export default function ScreeningDetailsScreen() {
       probTb,
       fusionModalities,
       fusionMethod,
-      audioUris,
+      audioClips,
       imageUri,
       imageAnalyzed,
       phlegmLoad,
@@ -721,6 +779,13 @@ export default function ScreeningDetailsScreen() {
       savedRecommendation: null as string | null,
       headerSubtitle: "Inputs & insights",
       completedAt: null,
+      clientName: PATIENT_NOT_RECORDED,
+      clientSubtitle: NO_PATIENT_ON_FILE,
+      clientDetailRows: [],
+      sputumSkipReason: null,
+      staffNotes: null,
+      referralStatus: "none" as ReferralStatus,
+      referralNotes: null,
     };
   }, [sessionId, params]);
 
@@ -731,31 +796,8 @@ export default function ScreeningDetailsScreen() {
   const hasProb = probTb !== null && Number.isFinite(probTb);
   const confidence = hasProb && probTb !== null ? Math.max(probTb, 1 - probTb) : NaN;
 
-  const audioUris = vm?.audioUris ?? [];
-  const audioAnalyzed = audioUris.length > 0;
-  const hasRemoteAudio = useMemo(
-    () => audioUris.some((uri) => /^https?:\/\//i.test(uri)),
-    [audioUris],
-  );
-
-  useEffect(() => {
-    if (!hasRemoteAudio) {
-      setAudioHeaders(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const headers = await getAuthMediaHeaders();
-        if (!cancelled) setAudioHeaders(headers);
-      } catch {
-        if (!cancelled) setAudioHeaders(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [hasRemoteAudio, sessionId]);
+  const audioClips = vm?.audioClips ?? [];
+  const audioAnalyzed = audioClips.length > 0;
 
   const imageUri = vm?.imageUri ?? "";
   const imageProvided = imageUri.length > 0;
@@ -804,6 +846,69 @@ export default function ScreeningDetailsScreen() {
   const hasSavedChecklist = checklistAnswered.length > 0;
   const savedRecommendation = vm?.savedRecommendation ?? null;
   const headerSubtitle = vm?.headerSubtitle ?? "Inputs & insights";
+  const clientName = vm?.clientName ?? PATIENT_NOT_RECORDED;
+  const clientSubtitle = vm?.clientSubtitle ?? NO_PATIENT_ON_FILE;
+  const clientDetailRows = vm?.clientDetailRows ?? [];
+  const sputumSkipReasonDisplay =
+    vm?.sputumSkipReason ??
+    (typeof params.sputumSkipReason === "string" && params.sputumSkipReason.trim().length > 0
+      ? params.sputumSkipReason.trim()
+      : null);
+  const staffNotesDisplay = vm?.staffNotes ?? null;
+  const referralStatus = vm?.referralStatus ?? "none";
+  const detailsSessionId =
+    typeof sessionId === "string" && sessionId.trim().length > 0 ? sessionId.trim() : "";
+  const [referralNotesDraft, setReferralNotesDraft] = useState("");
+  const [referralSaving, setReferralSaving] = useState(false);
+  const [isStaffBooth, setIsStaffBooth] = useState(() => {
+    const role = resolveUserRole(peekProfile()?.role);
+    return role ? canRunScreenings(role) : false;
+  });
+
+  useEffect(() => {
+    void (async () => {
+      let role = resolveUserRole(peekProfile()?.role);
+      if (!role) {
+        try {
+          const { user } = await getMe();
+          setCachedProfile(user);
+          role = resolveUserRole(user.role);
+        } catch {
+          role = null;
+        }
+      }
+      setIsStaffBooth(role ? canRunScreenings(role) : false);
+    })();
+  }, []);
+
+  useEffect(() => {
+    setReferralNotesDraft(vm?.referralNotes ?? "");
+  }, [vm?.referralNotes]);
+
+  const saveReferralStatus = useCallback(
+    async (next: ReferralStatus) => {
+      if (!detailsSessionId) return;
+      setReferralSaving(true);
+      try {
+        await patchScreeningReferral({
+          sessionId: detailsSessionId,
+          referralStatus: next,
+          referralNotes: referralNotesDraft.trim(),
+        });
+        await loadRemoteSession(false);
+      } catch (e) {
+        Alert.alert(
+          "Referral update failed",
+          e instanceof ApiError ? e.message : "Could not save referral status.",
+        );
+      } finally {
+        setReferralSaving(false);
+      }
+    },
+    [detailsSessionId, loadRemoteSession, referralNotesDraft],
+  );
+
+  const hasPatientDetails = clientName !== PATIENT_NOT_RECORDED;
 
   const checklistCollapsedSubtitle = useMemo(() => {
     if (checklistRows.length === 0) {
@@ -849,77 +954,103 @@ export default function ScreeningDetailsScreen() {
     () => fusionFactorsFromModalities(fusionModalities),
     [fusionModalities],
   );
-  const handleDownloadPdf = useCallback(async () => {
-    if (!vm) return;
+  const handleDownloadPdf = useCallback(
+    async (overrideClaimUrl?: string | null) => {
+      if (!vm) return;
 
-    let profile = peekProfile();
-    if (!isEmailVerified(profile)) {
-      try {
-        const { user } = await getMe();
-        setCachedProfile(user);
-        profile = user;
-      } catch {
-        // use cached profile if any
+      let profile = peekProfile();
+      if (!isEmailVerified(profile)) {
+        try {
+          const { user } = await getMe();
+          setCachedProfile(user);
+          profile = user;
+        } catch {
+          // use cached profile if any
+        }
       }
-    }
-    if (!isEmailVerified(profile)) {
-      promptEmailVerification(router);
-      return;
-    }
+      if (!isEmailVerified(profile)) {
+        promptEmailVerification(router, profile);
+        return;
+      }
 
-    try {
-      const pdfData = buildDetailsPdfExport({
-        risk,
-        riskTitle: copy.title,
-        riskSummary: copy.simple,
-        probTb: hasProb && probTb !== null ? probTb : null,
-        fusionModalities,
-        fusionFactors,
-        checklistRows,
-        recommendations: copy.recommendations,
-        savedRecommendation,
-        completedAt: vm.completedAt,
-        audioCount: audioUris.length,
-        invalidAudio,
-        invalidLabel,
-        imageProvided,
-        imageAnalyzed,
-        phlegmLoad,
-        phlegmConf: Number.isFinite(phlegmConf) ? phlegmConf : null,
-        phlegmFailed,
-      });
-      await shareScreeningPdf(pdfData);
-    } catch (e) {
-      const message =
-        e instanceof ApiError
-          ? e.message
-          : e instanceof Error
+      try {
+        let patientClaimUrl = overrideClaimUrl ?? null;
+        if (!patientClaimUrl && detailsSessionId && isStaffBooth) {
+          try {
+            const access = await getScreeningPatientAccess(detailsSessionId);
+            patientClaimUrl = access.claimUrl;
+          } catch {
+            // Claimed, expired, or unavailable — PDF still exports without QR block.
+          }
+        }
+
+        const pdfData = buildDetailsPdfExport({
+          risk,
+          riskTitle: copy.title,
+          riskSummary: copy.simple,
+          probTb: hasProb && probTb !== null ? probTb : null,
+          fusionModalities,
+          fusionFactors,
+          checklistRows,
+          recommendations: copy.recommendations,
+          savedRecommendation,
+          completedAt: vm.completedAt,
+          audioCount: audioClips.length,
+          invalidAudio,
+          invalidLabel,
+          imageProvided,
+          imageAnalyzed,
+          phlegmLoad,
+          phlegmConf: Number.isFinite(phlegmConf) ? phlegmConf : null,
+          phlegmFailed,
+          patientName: hasPatientDetails ? clientName : null,
+          patientDetailRows: hasPatientDetails ? clientDetailRows : [],
+          patientClaimUrl,
+        });
+        await shareScreeningPdf(pdfData);
+      } catch (e) {
+        const message =
+          e instanceof ApiError
             ? e.message
-            : "Could not create PDF.";
-      Alert.alert("Download PDF", message);
-    }
-  }, [
-    audioUris.length,
-    checklistRows,
-    copy.recommendations,
-    copy.simple,
-    copy.title,
-    fusionFactors,
-    fusionModalities,
-    hasProb,
-    imageAnalyzed,
-    imageProvided,
-    invalidAudio,
-    invalidLabel,
-    phlegmConf,
-    phlegmFailed,
-    phlegmLoad,
-    probTb,
-    risk,
-    router,
-    savedRecommendation,
-    vm,
-  ]);
+            : e instanceof Error
+              ? e.message
+              : "Could not create PDF.";
+        Alert.alert("Download PDF", message);
+      }
+    },
+    [
+      audioClips.length,
+      checklistRows,
+      clientDetailRows,
+      clientName,
+      copy.recommendations,
+      copy.simple,
+      copy.title,
+      detailsSessionId,
+      fusionFactors,
+      fusionModalities,
+      hasPatientDetails,
+      hasProb,
+      imageAnalyzed,
+      imageProvided,
+      invalidAudio,
+      invalidLabel,
+      isStaffBooth,
+      phlegmConf,
+      phlegmFailed,
+      phlegmLoad,
+      probTb,
+      risk,
+      router,
+      savedRecommendation,
+      vm,
+    ],
+  );
+
+  const handleShareSlipPdf = useCallback(
+    (claimUrl: string) => handleDownloadPdf(claimUrl),
+    [handleDownloadPdf],
+  );
 
   const handleOpenImageViewer = useCallback(() => {
     setImageViewerVisible(true);
@@ -939,6 +1070,22 @@ export default function ScreeningDetailsScreen() {
     }
   }, []);
 
+  const resolvePlaybackUri = useCallback(
+    async (clip: CoughPlaybackClip): Promise<string> => {
+      const isRemote = /^https?:\/\//i.test(clip.uri);
+      if (!isRemote || !sessionId) return clip.uri;
+
+      const recordingId =
+        clip.recordingId ??
+        clip.uri.match(/\/cough-recordings\/([^/?#]+)\/file/i)?.[1] ??
+        "";
+      if (!recordingId) return clip.uri;
+
+      return downloadSessionCoughToCache(sessionId, recordingId, clip.mimeType);
+    },
+    [sessionId],
+  );
+
   const playAudioAt = useCallback(async (index: number) => {
     // Tap again while playing = stop
     if (playingIndexRef.current === index) {
@@ -946,14 +1093,9 @@ export default function ScreeningDetailsScreen() {
       return;
     }
 
-    const uri = audioUris[index];
-    if (!uri) {
+    const clip = audioClips[index];
+    if (!clip?.uri) {
       setAudioHint("Playback is not available for this clip.");
-      return;
-    }
-    const needsAuthHeader = /^https?:\/\//i.test(uri);
-    if (needsAuthHeader && !audioHeaders) {
-      setAudioHint("Preparing secure playback… Please tap play again.");
       return;
     }
 
@@ -964,17 +1106,24 @@ export default function ScreeningDetailsScreen() {
     playingIndexRef.current = index;
     setPlayingIndex(index);
     try {
+      const needsDownload = /^https?:\/\//i.test(clip.uri) && Boolean(sessionId);
+      if (needsDownload) {
+        setAudioHint("Downloading audio…");
+      }
+
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
         staysActiveInBackground: false,
       });
+
+      const playUri = await resolvePlaybackUri(clip);
+      if (playingIndexRef.current !== index) return;
+
+      setAudioHint(null);
       const sound = new Audio.Sound();
       soundRef.current = sound;
-      await sound.loadAsync(
-        needsAuthHeader && audioHeaders ? { uri, headers: audioHeaders } : { uri },
-        { shouldPlay: true },
-      );
+      await sound.loadAsync({ uri: playUri }, { shouldPlay: true });
 
       // Cancelled while loading (user tapped stop during network fetch)
       if (soundRef.current !== sound) {
@@ -1006,7 +1155,7 @@ export default function ScreeningDetailsScreen() {
       );
       setPlayingIndex(null);
     }
-  }, [audioHeaders, audioUris, stopCurrentSound]);
+  }, [audioClips, resolvePlaybackUri, stopCurrentSound]);
 
   return (
     <>
@@ -1034,7 +1183,7 @@ export default function ScreeningDetailsScreen() {
 
           <View className="min-w-0 flex-1 items-center px-2">
             <Text className="text-center text-lg font-bold sm:text-xl" style={{ color: colors.text }} numberOfLines={2}>
-              Result Details
+              {isStaffBooth ? STAFF_DETAILS_SCREEN_TITLE : PATIENT_DETAILS_SCREEN_TITLE}
             </Text>
             <Text className="mt-1 text-center text-sm font-semibold sm:text-base" style={{ color: colors.textMuted }} numberOfLines={2}>
               {headerSubtitle}
@@ -1102,6 +1251,49 @@ export default function ScreeningDetailsScreen() {
                 )}
 
                 <DetailsCard
+                  title={CLIENT_RECORD_TITLE}
+                  cardBorder={colors.cardBorder}
+                  cardBg={colors.card}
+                  textColor={colors.text}
+                >
+                  <Text className="text-base font-bold" style={{ color: colors.text }}>{clientName}</Text>
+                  <Text className="mt-1 text-sm leading-5" style={{ color: colors.textMuted }}>{clientSubtitle}</Text>
+                  {clientDetailRows.map((row) => (
+                    <View key={row.label} className="mt-3">
+                      <Text className="text-xs font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
+                        {row.label}
+                      </Text>
+                      <Text className="mt-1 text-sm leading-5" style={{ color: colors.textSecondary }}>
+                        {row.value}
+                      </Text>
+                    </View>
+                  ))}
+                  {!hasPatientDetails && detailsSessionId.length > 0 && isStaffBooth ? (
+                    <Pressable
+                      onPress={() =>
+                        router.push({
+                          pathname: "/screening/client-intake",
+                          params: { sessionId: detailsSessionId, from: "details" },
+                        } as any)
+                      }
+                      className="mt-4 flex-row items-center justify-center gap-2 rounded-xl border py-3"
+                      style={{ borderColor: colors.primary, backgroundColor: colors.primaryLight }}
+                    >
+                      <Ionicons name="person-add-outline" size={18} color={colors.primary} />
+                      <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+                        {ADD_PATIENT_DETAILS}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </DetailsCard>
+
+                {detailsSessionId && isStaffBooth ? (
+                  <PatientSlipPanel sessionId={detailsSessionId} onSharePdf={handleShareSlipPdf} />
+                ) : null}
+
+                {detailsSessionId && isStaffBooth ? <PatientRecoveryPanel sessionId={detailsSessionId} /> : null}
+
+                <DetailsCard
                   title="Risk Breakdown"
                   cardBorder={colors.cardBorder}
                   cardBg={colors.card}
@@ -1147,7 +1339,7 @@ export default function ScreeningDetailsScreen() {
                   <DetailsCheckRow
                     ok={audioAnalyzed}
                     label="Cough audio analyzed"
-                    sub={audioAnalyzed ? `Clips: ${audioUris.length}` : "No recorded audio was provided."}
+                    sub={audioAnalyzed ? `Clips: ${audioClips.length}` : "No recorded audio was provided."}
                     successColor={colors.success}
                     textMuted={colors.textMuted}
                     textColor={colors.text}
@@ -1155,7 +1347,7 @@ export default function ScreeningDetailsScreen() {
                   <DetailsCheckRow
                     ok={imageProvided}
                     label={
-                      imageProvided ? "Sputum / phlegm image received" : "Sputum / phlegm skipped (optional)"
+                      imageProvided ? "Sputum smear captured" : SPUTUM_DETAILS_MISSING_LABEL
                     }
                     sub={
                       imageProvided
@@ -1168,9 +1360,9 @@ export default function ScreeningDetailsScreen() {
                           : phlegmFailed
                             ? phlegmDetail
                               ? `Analysis failed: ${phlegmDetail.slice(0, 200)}`
-                              : "Analysis could not be completed for the sputum image."
-                            : "Image captured; analysis not run."
-                        : "No sample photo — results use cough audio (and checklist) only."
+                              : "Analysis could not be completed for the sputum smear image."
+                            : "Smear captured; analysis not run."
+                        : formatSputumDetailsMissingSub(sputumSkipReasonDisplay ?? undefined)
                     }
                     successColor={colors.success}
                     textMuted={colors.textMuted}
@@ -1217,8 +1409,7 @@ export default function ScreeningDetailsScreen() {
                       >
                         {checklistRows.length === 0 ? (
                           <Text className="text-base leading-6" style={{ color: colors.textSecondary }}>
-                            No checklist data for this view. Complete the symptom checklist before recording, finish while
-                            signed in so answers save with your screening, then open Details from results or History.
+                            {DETAILS_CHECKLIST_EMPTY_HINT}
                           </Text>
                         ) : (
                           <>
@@ -1277,9 +1468,9 @@ export default function ScreeningDetailsScreen() {
                   cardBg={colors.card}
                   textColor={colors.text}
                 >
-                  {audioUris.length > 0 ? (
+                  {audioClips.length > 0 ? (
                     <View className="gap-2">
-                      {audioUris.map((_, i) => (
+                      {audioClips.map((_, i) => (
                         <Pressable
                           key={`audio-${i}`}
                           onPress={() => void playAudioAt(i)}
@@ -1365,6 +1556,87 @@ export default function ScreeningDetailsScreen() {
                     ))
                   )}
                 </DetailsCard>
+
+                {staffNotesDisplay ? (
+                  <DetailsCard
+                    title="Staff notes"
+                    cardBorder={colors.cardBorder}
+                    cardBg={colors.card}
+                    textColor={colors.text}
+                  >
+                    <Text className="text-base leading-6" style={{ color: colors.textSecondary }}>
+                      {staffNotesDisplay}
+                    </Text>
+                  </DetailsCard>
+                ) : null}
+
+                {detailsSessionId && referralStatus !== "none" ? (
+                  isStaffBooth ? (
+                    <DetailsCard
+                      title="Referral follow-up"
+                      cardBorder={colors.cardBorder}
+                      cardBg={colors.card}
+                      textColor={colors.text}
+                    >
+                      <Text className="mb-3 text-sm leading-6" style={{ color: colors.textSecondary }}>
+                        Status: {REFERRAL_STATUS_LABELS[referralStatus]}
+                      </Text>
+                      <TextInput
+                        value={referralNotesDraft}
+                        onChangeText={setReferralNotesDraft}
+                        placeholder="GeneXpert / clinic notes"
+                        placeholderTextColor={colors.textMuted}
+                        multiline
+                        className="mb-3 min-h-[72px] rounded-xl border px-3 py-2 text-base"
+                        style={{
+                          borderColor: colors.inputBorder,
+                          backgroundColor: colors.inputBg,
+                          color: colors.text,
+                          textAlignVertical: "top",
+                        }}
+                      />
+                      <View className="flex-row flex-wrap gap-2">
+                        {(["documented", "completed"] as ReferralStatus[]).map((status) => (
+                          <Pressable
+                            key={status}
+                            disabled={referralSaving}
+                            onPress={() => void saveReferralStatus(status)}
+                            className="rounded-xl px-4 py-2 active:opacity-80"
+                            style={{
+                              backgroundColor:
+                                referralStatus === status ? colors.primary : colors.surfaceAlt,
+                            }}
+                          >
+                            <Text
+                              className="text-sm font-semibold"
+                              style={{
+                                color: referralStatus === status ? "#fff" : colors.text,
+                              }}
+                            >
+                              {REFERRAL_STATUS_LABELS[status]}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </DetailsCard>
+                  ) : (
+                    <DetailsCard
+                      title="Referral follow-up"
+                      cardBorder={colors.cardBorder}
+                      cardBg={colors.card}
+                      textColor={colors.text}
+                    >
+                      <Text className="text-sm leading-6" style={{ color: colors.textSecondary }}>
+                        Status: {REFERRAL_STATUS_LABELS[referralStatus]}
+                      </Text>
+                      {referralNotesDraft.trim().length > 0 ? (
+                        <Text className="mt-3 text-sm leading-6" style={{ color: colors.textSecondary }}>
+                          {referralNotesDraft.trim()}
+                        </Text>
+                      ) : null}
+                    </DetailsCard>
+                  )
+                ) : null}
 
                 <DetailsCard
                   title="Disclaimer"

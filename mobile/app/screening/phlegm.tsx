@@ -15,6 +15,19 @@ import {
   getMe,
   queueIotDeviceImageCommand,
 } from "../../services/backendApi";
+import {
+  SPUTUM_DEVICE_CAPTURE_SUBTITLE,
+  SPUTUM_DEVICE_CAPTURE_TITLE,
+  SPUTUM_DEVICE_EMPTY_HINT,
+  SPUTUM_DEVICE_INITIAL_STATUS,
+  SPUTUM_DEVICE_RECEIVED,
+  SPUTUM_DEVICE_START_BUTTON,
+  SPUTUM_SKIP_BUTTON_LABEL,
+  SPUTUM_STAFF_SMEAR_BANNER,
+} from "../../constants/iotScreening";
+import type { SputumSkipReason } from "../../constants/iotScreening";
+import { SESSION_LINK_SIGN_IN_403 } from "../../constants/screeningBoothCopy";
+import { SputumSkipReasonModal } from "./SputumSkipReasonModal";
 
 const IOT_POLL_MS = 2500;
 
@@ -43,13 +56,12 @@ export default function PhlegmCaptureScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [iotBusy, setIotBusy] = useState(false);
   const [iotPolling, setIotPolling] = useState(false);
-  const [iotStatusText, setIotStatusText] = useState(
-    "Tap Request sample — queues the same `image` command as the terminal.",
-  );
+  const [iotStatusText, setIotStatusText] = useState(SPUTUM_DEVICE_INITIAL_STATUS);
   const [iotPreviewKey, setIotPreviewKey] = useState(0);
   const [iotPreviewUrl, setIotPreviewUrl] = useState<string | null>(null);
   const [hasReceivedPhoto, setHasReceivedPhoto] = useState(false);
   const [authMediaHeaders, setAuthMediaHeaders] = useState<Record<string, string> | null>(null);
+  const [skipModalVisible, setSkipModalVisible] = useState(false);
 
   /** Fingerprint of the image currently shown (or last accepted). */
   const acceptedFingerprintRef = useRef<string | null>(null);
@@ -76,7 +88,7 @@ export default function PhlegmCaptureScreen() {
     retakeBaselineRef.current = null;
     setIotPolling(false);
     setHasReceivedPhoto(true);
-    setIotStatusText("Photo received from device. Proceed or retake.");
+    setIotStatusText(SPUTUM_DEVICE_RECEIVED);
   },
     [screeningSessionId],
   );
@@ -136,6 +148,7 @@ export default function PhlegmCaptureScreen() {
   const goToReview = (
     imageUri: string,
     serverPreview: NonNullable<SputumPreview>,
+    skipReason?: SputumSkipReason,
   ) => {
     setErrorText(null);
     router.replace({
@@ -146,15 +159,17 @@ export default function PhlegmCaptureScreen() {
         deviceSputum: "1",
         sputumByteSize: String(serverPreview.byteSize),
         sputumCapturedAt: serverPreview.capturedAt ?? "",
+        ...(skipReason ? { sputumSkipReason: skipReason } : {}),
       },
     } as any);
   };
 
-  const skipPhlegmToReview = () => {
+  const skipPhlegmToReview = (reason: SputumSkipReason) => {
+    setSkipModalVisible(false);
     setErrorText(null);
     router.replace({
       pathname: "/screening/review",
-      params: { ...screeningParams, imageUri: "" },
+      params: { ...screeningParams, imageUri: "", sputumSkipReason: reason },
     } as any);
   };
 
@@ -203,14 +218,14 @@ export default function PhlegmCaptureScreen() {
             "Sign in on the app, or check EXPO_PUBLIC_IOT_API_KEY in mobile/.env if you are already signed in.",
           );
         } else if (e instanceof ApiError && e.status === 403) {
-          setErrorText("Sign in to link the device capture to your screening.");
+          setErrorText(SESSION_LINK_SIGN_IN_403);
         } else {
           setErrorText(String((e as Error)?.message ?? "Failed to queue image command"));
         }
         setIotStatusText(
           mode === "retake"
             ? "Retake failed. Tap Retake to try again."
-            : "Request failed. Tap Request sample to try again.",
+            : "Capture failed. Tap Start capture to try again.",
         );
       } finally {
         setIotBusy(false);
@@ -299,14 +314,20 @@ export default function PhlegmCaptureScreen() {
 
           <View className="min-w-0 flex-1 items-center px-2">
             <Text className="text-center text-sm font-bold text-white sm:text-base" numberOfLines={2}>
-              Device sputum sample
+              {SPUTUM_DEVICE_CAPTURE_TITLE}
             </Text>
             <Text className="mt-0.5 text-center text-xs font-semibold text-white/55 sm:text-sm">
-              Request a still photo from the bench device
+              {SPUTUM_DEVICE_CAPTURE_SUBTITLE}
             </Text>
           </View>
 
           <View className="size-11" />
+        </View>
+
+        <View className="mx-4 mb-3 rounded-xl border border-violet-300/30 bg-violet-500/15 px-3.5 py-2.5 sm:mx-5 md:mx-6">
+          <Text className="text-center text-xs font-semibold leading-5 text-violet-200 sm:text-sm">
+            {SPUTUM_STAFF_SMEAR_BANNER}
+          </Text>
         </View>
 
         <View className="min-h-0 flex-1 px-4 sm:px-5 md:px-6">
@@ -329,15 +350,15 @@ export default function PhlegmCaptureScreen() {
                 </Text>
                 <Text className="text-center text-xs leading-5 text-white/50">
                   {retakeBaselineRef.current
-                    ? "New photo will replace the previous one when uploaded."
-                    : "After upload, the photo appears here."}
+                    ? "New image will replace the previous one when uploaded."
+                    : "After upload, the image appears here."}
                 </Text>
               </View>
             ) : (
               <View className="flex-1 items-center justify-center px-6">
                 <Ionicons name="hardware-chip-outline" size={40} color="rgba(255,255,255,0.35)" />
                 <Text className="mt-3 text-center text-sm text-white/60">
-                  No sample yet. Tap Request sample below.
+                  {SPUTUM_DEVICE_EMPTY_HINT}
                 </Text>
               </View>
             )}
@@ -374,16 +395,29 @@ export default function PhlegmCaptureScreen() {
 
         <View className="gap-3 px-4 pt-3 pb-6 sm:px-5 sm:pb-8 md:px-6">
           {!showCaptureActions ? (
-            <Pressable
-              onPress={() => void requestSample()}
-              disabled={waitingForDevice}
-              className={`items-center justify-center rounded-2xl py-3.5 sm:py-4 ${
-                waitingForDevice ? "bg-white/20" : "bg-cyan-500 active:bg-cyan-600"
-              }`}
-              accessibilityRole="button"
-            >
-              <Text className="text-sm font-bold text-white sm:text-base">Request sample</Text>
-            </Pressable>
+            <>
+              <Pressable
+                onPress={() => void requestSample()}
+                disabled={waitingForDevice}
+                className={`items-center justify-center rounded-2xl py-3.5 sm:py-4 ${
+                  waitingForDevice ? "bg-white/20" : "bg-cyan-500 active:bg-cyan-600"
+                }`}
+                accessibilityRole="button"
+              >
+                <Text className="text-sm font-bold text-white sm:text-base">{SPUTUM_DEVICE_START_BUTTON}</Text>
+              </Pressable>
+              {!waitingForDevice ? (
+                <Pressable
+                  onPress={() => setSkipModalVisible(true)}
+                  className="items-center rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 active:bg-white/10"
+                  accessibilityRole="button"
+                >
+                  <Text className="text-center text-xs font-semibold leading-5 text-white/72 sm:text-sm">
+                    {SPUTUM_SKIP_BUTTON_LABEL}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </>
           ) : (
             <View className="flex-row gap-3">
               <Pressable
@@ -408,18 +442,13 @@ export default function PhlegmCaptureScreen() {
               </Pressable>
             </View>
           )}
-
-          <Pressable
-            onPress={skipPhlegmToReview}
-            className="self-center rounded-lg px-3 py-2 active:opacity-80"
-            accessibilityRole="button"
-          >
-            <Text className="text-center text-xs font-semibold text-white/55 underline decoration-white/30">
-              Skip — no sample
-            </Text>
-          </Pressable>
         </View>
       </SafeAreaView>
+      <SputumSkipReasonModal
+        visible={skipModalVisible}
+        onCancel={() => setSkipModalVisible(false)}
+        onConfirm={skipPhlegmToReview}
+      />
     </>
   );
 }

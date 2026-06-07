@@ -3,7 +3,8 @@
 #        npm run start:remote           (from mobile/)
 param(
     [int]$Port = 8081,
-    [switch]$NoStartExpo
+    [switch]$NoStartExpo,
+    [switch]$Clear
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,6 +53,8 @@ Write-Host "Expo Metro Cloudflare tunnel (port $Port)" -ForegroundColor Cyan
 Write-Host "Ngrok tunnel is unreliable; this uses the same cloudflared setup as npm run tunnel." -ForegroundColor DarkGray
 Write-Host ""
 
+& (Join-Path $mobileDir "scripts\ensure-expo-metro.ps1") -Port $Port
+
 Assert-PortFree $Port
 
 Remove-Item $log -ErrorAction SilentlyContinue
@@ -96,11 +99,16 @@ if ($NoStartExpo) {
 
 $env:EXPO_PACKAGER_PROXY_URL = $publicUrl
 $env:REACT_NATIVE_PACKAGER_HOSTNAME = $hostName
+$env:EXPO_NO_DEPENDENCY_VALIDATION = "1"
 
 Push-Location $mobileDir
 try {
-    Write-Host "Starting Expo (LAN + Cloudflare proxy) on port $Port..." -ForegroundColor Yellow
-    npx expo start --lan --port $Port
+    Write-Host "Starting Expo (Cloudflare tunnel + Metro on port $Port)..." -ForegroundColor Yellow
+    if ($Clear) {
+        npx expo start --lan --port $Port --clear
+    } else {
+        npx expo start --lan --port $Port
+    }
 } finally {
     Pop-Location
     if (-not $tunnelProc.HasExited) {

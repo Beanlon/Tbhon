@@ -3,7 +3,13 @@ import { View, Text, Pressable, Platform, ScrollView, useWindowDimensions } from
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import CachedImage from "../components/CachedImage";
-import { TBHON_LOGO } from "../../constants/branding";
+import { APP_TAGLINE, TBHON_LOGO } from "../../constants/branding";
+import {
+  PATIENT_ACCESS_TITLE,
+  STAFF_EXISTING_DESC,
+  STAFF_LANDING_SECTION,
+  STAFF_NEW_DESC,
+} from "../../constants/patientAccess";
 import { getBrandLogoLayout } from "../../utils/brandLogoLayout";
 import { useRouter } from "expo-router";
 
@@ -36,7 +42,7 @@ function OptionRow({
 }) {
   return (
     <Pressable
-      className={`mb-4 flex-row items-center gap-4 rounded-3xl border border-[#EDEDED] bg-[#FAFAFA] p-4 active:bg-[#F3F3F3] sm:mb-5 sm:gap-5 sm:p-5`}
+      className="mb-3 flex-row items-center gap-4 rounded-3xl border border-[#EDEDED] bg-[#FAFAFA] p-4 active:bg-[#F3F3F3] sm:gap-5 sm:p-5"
       style={cardShadow}
       onPress={onPress}
       android_ripple={{ color: "#E8E8E8" }}
@@ -57,6 +63,14 @@ function OptionRow({
   );
 }
 
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <Text className="mb-3 mt-2 text-xs font-bold uppercase tracking-[1.4px] text-[#888888] sm:text-sm">
+      {children}
+    </Text>
+  );
+}
+
 export default function LandingPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -73,11 +87,7 @@ export default function LandingPage() {
   );
 
   return (
-    <SafeAreaView
-      className="flex-1 bg-white"
-      style={{ flex: 1 }}
-      edges={["top", "right", "bottom", "left"]}
-    >
+    <SafeAreaView className="flex-1 bg-white" style={{ flex: 1 }} edges={["top", "right", "bottom", "left"]}>
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
@@ -100,43 +110,57 @@ export default function LandingPage() {
               }}
             >
               <View style={{ width: brandLogo.boxWidth, aspectRatio: 1 }}>
-                <CachedImage
-                  source={TBHON_LOGO}
-                  className="size-full"
-                  resizeMode="contain"
-                />
+                <CachedImage source={TBHON_LOGO} className="size-full" resizeMode="contain" />
               </View>
             </View>
 
-            <Text className="mb-4 mt-5 text-sm font-semibold uppercase tracking-[1.2px] text-[#888888] sm:mb-5 sm:mt-6 sm:text-base">
-              Get started
-            </Text>
+            <Text className="mb-1 text-center text-sm text-[#666666]">{APP_TAGLINE}</Text>
+
+            <SectionLabel>{STAFF_LANDING_SECTION}</SectionLabel>
 
             <OptionRow
-              title="Existing user"
-              description="Sign in to access your scan history and health data"
-              icon="person-circle-outline"
+              title="Staff sign in"
+              description={STAFF_EXISTING_DESC}
+              icon="medkit-outline"
               iconBgClass="bg-[#F3EEFF]"
               iconBorderClass="border-[#E4D9FF]"
               iconColor="#5B5BFF"
-              onPress={() => router.push("/login/login")}
+              onPress={() => router.push("/login/login?intent=staff" as never)}
             />
 
-            <View className="mb-4 flex-row items-center gap-3 sm:mb-5">
-              <View className="h-px flex-1 bg-[#E0E0E0]" />
-              <Text className="text-xs font-medium text-[#999999] sm:text-sm">or</Text>
-              <View className="h-px flex-1 bg-[#E0E0E0]" />
-            </View>
-
             <OptionRow
-              title="New user"
-              description="Create your account with personal info, email and password"
+              title="New booth staff"
+              description={STAFF_NEW_DESC}
               icon="person-add-outline"
               iconBgClass="bg-[#E8FAF5]"
               iconBorderClass="border-[#C8EDE0]"
               iconColor="#0F766E"
-              onPress={() => router.push("/signUp/signUp")}
+              onPress={() => router.push("/signUp/signUp" as never)}
             />
+
+            <View className="my-4 flex-row items-center gap-3">
+              <View className="h-px flex-1 bg-[#E0E0E0]" />
+              <Text className="text-xs font-medium text-[#999999] sm:text-sm">screened at the booth?</Text>
+              <View className="h-px flex-1 bg-[#E0E0E0]" />
+            </View>
+
+            <Pressable
+              className="mt-2 items-center py-2 active:opacity-70"
+              onPress={() => router.push("/patient/access" as never)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={PATIENT_ACCESS_TITLE}
+            >
+              <View className="flex-row items-center gap-1.5">
+                <Ionicons name="qr-code-outline" size={16} color="#5B5BFF" />
+                <Text className="text-sm font-semibold text-[#5B5BFF] sm:text-base">
+                  {PATIENT_ACCESS_TITLE}
+                </Text>
+              </View>
+              <Text className="mt-1.5 text-center text-xs leading-5 text-[#888888] sm:text-sm">
+                Scan the QR code on your result slip
+              </Text>
+            </Pressable>
           </View>
         </View>
       </ScrollView>

@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as NavigationBar from "expo-navigation-bar";
@@ -30,6 +30,25 @@ import { getMe } from "../../services/backendApi";
 import { resetToLanding } from "../../utils/authNavigation";
 import { getAuthToken } from "../../utils/authStorage";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
+import { canRunScreenings, isBoothOperator, isPatientRole, parseUserRole } from "../../constants/userRole";
+import {
+  PATIENT_HISTORY_TITLE,
+  PATIENT_QUICK_PREVIEW_EMPTY,
+  PATIENT_QUICK_PREVIEW_TITLE,
+  STAFF_HISTORY_TITLE,
+  STAFF_HOME_CTA,
+  STAFF_HOME_GREETING_FALLBACK,
+  STAFF_HOME_HERO,
+  STAFF_HOME_HERO_BADGE,
+  STAFF_HOME_SECTION,
+  STAFF_HOME_TILE_COACHING,
+  STAFF_HOME_TILE_HISTORY,
+  STAFF_HOME_TILE_SCREENING,
+  STAFF_QUICK_PREVIEW_EMPTY,
+  STAFF_QUICK_PREVIEW_TITLE,
+} from "../../constants/accountModel";
+import { APP_TAGLINE } from "../../constants/branding";
+import { PATIENT_HOME_HERO, PATIENT_NOTIFICATION_EMPTY, STAFF_NOTIFICATION_EMPTY } from "../../constants/patientAccess";
 import { profileFirstName } from "../../utils/profileDisplay";
 import {
   clearNotificationInbox,
@@ -97,6 +116,9 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState<BottomNavTab>("home");
   const [firstName, setFirstName] = useState<string | null>(() => profileFirstName(peekProfile()));
+  const [userRole, setUserRole] = useState(() => parseUserRole(peekProfile()?.role));
+  const isPatientPortal = isPatientRole(userRole);
+  const isOperator = isBoothOperator(userRole);
 
   // Screening modal state (slide-up like Edit Profile)
   const [screeningModalVisible, setScreeningModalVisible] = useState(false);
@@ -104,6 +126,15 @@ export default function HomeScreen() {
   const screeningSlideAnim = useRef(new Animated.Value(0)).current;
 
   const openScreening = useCallback(() => {
+    const profile = peekProfile();
+    const role = parseUserRole(profile?.role);
+    if (profile && !canRunScreenings(role)) {
+      Alert.alert(
+        "Staff access required",
+        "This account cannot start screenings. Sign in with a facility staff account.",
+      );
+      return;
+    }
     setScreeningModalMounted(true);
     setScreeningModalVisible(true);
   }, []);
@@ -157,6 +188,9 @@ export default function HomeScreen() {
     if (cachedFirst) {
       setFirstName(cachedFirst);
     }
+    if (cached?.role) {
+      setUserRole(parseUserRole(cached.role));
+    }
 
     const token = await getAuthToken();
     if (!token) {
@@ -168,6 +202,7 @@ export default function HomeScreen() {
       const { user } = await getMe();
       setCachedProfile(user);
       setFirstName(profileFirstName(user));
+      setUserRole(parseUserRole(user.role));
       if (user.emailVerified) void onUserBecameVerified();
       else void syncUnverifiedEngagementNotifications(user);
     } catch {
@@ -305,29 +340,53 @@ export default function HomeScreen() {
     [refreshInbox, router],
   );
 
-  const serviceTiles: ServiceTile[] = [
-    {
-      key: "cough",
-      icon: "mic-outline",
-      title: "Record Cough",
-      subtitle: "Audio analysis",
-      onPress: openScreening,
-    },
-    {
-      key: "phlegm",
-      icon: "camera-outline",
-      title: "Capture Phlegm",
-      subtitle: "Image analysis",
-      onPress: openScreening,
-    },
-    {
-      key: "results",
-      icon: "clipboard-outline",
-      title: "View Results",
-      subtitle: "Full report",
-      onPress: () => handleTabPress("history"),
-    },
-  ];
+  const serviceTiles: ServiceTile[] = isPatientPortal
+    ? [
+        {
+          key: "results",
+          icon: "clipboard-outline",
+          title: "My results",
+          subtitle: "Screening reports",
+          onPress: () => handleTabPress("history"),
+        },
+        {
+          key: "learn",
+          icon: "book-outline",
+          title: "Learn",
+          subtitle: "TB information",
+          onPress: () => handleTabPress("learn"),
+        },
+        {
+          key: "support",
+          icon: "chatbubble-ellipses-outline",
+          title: "Questions?",
+          subtitle: "Contact your RHU",
+          onPress: () => handleTabPress("learn"),
+        },
+      ]
+    : [
+        {
+          key: "screening",
+          icon: "scan-outline",
+          title: STAFF_HOME_TILE_SCREENING.title,
+          subtitle: STAFF_HOME_TILE_SCREENING.subtitle,
+          onPress: openScreening,
+        },
+        {
+          key: "coaching",
+          icon: "book-outline",
+          title: STAFF_HOME_TILE_COACHING.title,
+          subtitle: STAFF_HOME_TILE_COACHING.subtitle,
+          onPress: () => handleTabPress("learn"),
+        },
+        {
+          key: "results",
+          icon: "clipboard-outline",
+          title: STAFF_HOME_TILE_HISTORY.title,
+          subtitle: STAFF_HOME_TILE_HISTORY.subtitle,
+          onPress: () => handleTabPress("history"),
+        },
+      ];
 
   const renderTabContent = (tab: BottomNavTab) => {
     if (tab === "home") {
@@ -342,8 +401,17 @@ export default function HomeScreen() {
               <View style={styles.headerTextCol}>
                 <Text style={[styles.greetingSub, { color: colors.textMuted }]}>{`${timeGreeting()},`}</Text>
                 <Text style={[styles.greetingName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
-                  {firstName ? `${firstName}!` : "Welcome!"}
+                  {firstName
+                    ? `${firstName}!`
+                    : isPatientPortal
+                      ? "Welcome!"
+                      : `${STAFF_HOME_GREETING_FALLBACK}!`}
                 </Text>
+                {isOperator ? (
+                  <Text style={[styles.greetingRole, { color: colors.textMuted }]} numberOfLines={2}>
+                    {APP_TAGLINE}
+                  </Text>
+                ) : null}
               </View>
               <Pressable
                 style={[styles.notifyBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -369,52 +437,90 @@ export default function HomeScreen() {
               <View style={[styles.heroCircleSmall, { backgroundColor: colors.heroCardAccent }]} />
               <View style={[styles.heroBadge, { backgroundColor: colors.heroBadgeBg }]}>
                 <Ionicons name="shield-checkmark-outline" size={14} color={colors.heroText} />
-                <Text style={[styles.heroBadgeText, { color: colors.heroText }]}>LUNG HEALTH</Text>
+                <Text style={[styles.heroBadgeText, { color: colors.heroText }]}>
+                  {isPatientPortal ? "MY RESULTS" : STAFF_HOME_HERO_BADGE}
+                </Text>
               </View>
               <Text style={[styles.heroBody, { color: colors.heroText }]}>
-                Maintain lung health to support overall well-being.
+                {isPatientPortal ? PATIENT_HOME_HERO : STAFF_HOME_HERO}
               </Text>
               <View style={styles.heroActionsRow}>
-                <Pressable
-                  onPress={openScreening}
-                  style={styles.heroCtaPressable}
-                  accessibilityRole="button"
-                >
-                  {({ pressed }) => (
-                    <View
-                      style={[
-                        styles.heroCta,
-                        {
-                          backgroundColor: pressed
-                            ? isDark
-                              ? "#DBD8F8"
-                              : "#4E43B7"
-                            : isDark
-                              ? palette.lavender
-                              : palette.violet,
-                          borderColor: isDark ? "rgba(12,30,74,0.18)" : "rgba(255,255,255,0.35)",
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.heroCtaText, { color: isDark ? palette.deepNavy : "#FFFFFF" }]}>
-                        Get Checked Now
-                      </Text>
-                    </View>
-                  )}
-                </Pressable>
+                {isOperator ? (
+                  <Pressable
+                    onPress={openScreening}
+                    style={styles.heroCtaPressable}
+                    accessibilityRole="button"
+                  >
+                    {({ pressed }) => (
+                      <View
+                        style={[
+                          styles.heroCta,
+                          {
+                            backgroundColor: pressed
+                              ? isDark
+                                ? "#DBD8F8"
+                                : "#4E43B7"
+                              : isDark
+                                ? palette.lavender
+                                : palette.violet,
+                            borderColor: isDark ? "rgba(12,30,74,0.18)" : "rgba(255,255,255,0.35)",
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.heroCtaText, { color: isDark ? palette.deepNavy : "#FFFFFF" }]}>
+                          {STAFF_HOME_CTA}
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={() => handleTabPress("history")}
+                    style={styles.heroCtaPressable}
+                    accessibilityRole="button"
+                  >
+                    {({ pressed }) => (
+                      <View
+                        style={[
+                          styles.heroCta,
+                          {
+                            backgroundColor: pressed
+                              ? isDark
+                                ? "#DBD8F8"
+                                : "#4E43B7"
+                              : isDark
+                                ? palette.lavender
+                                : palette.violet,
+                            borderColor: isDark ? "rgba(12,30,74,0.18)" : "rgba(255,255,255,0.35)",
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.heroCtaText, { color: isDark ? palette.deepNavy : "#FFFFFF" }]}>
+                          View my results
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
+                )}
                 <Pressable style={styles.heroLearnRow} onPress={() => handleTabPress("learn")} hitSlop={8}>
                   <Text style={[styles.heroLearnText, { color: colors.heroTextMuted }]}>Learn More</Text>
                   <Ionicons name="arrow-forward" size={16} color={colors.heroTextMuted} />
                 </Pressable>
               </View>
               <View style={styles.heroArt} pointerEvents="none">
-                <MaterialCommunityIcons name="lungs" size={96} color="rgba(255,255,255,0.18)" />
+                <Ionicons
+                  name={isPatientPortal ? "clipboard-outline" : "medkit-outline"}
+                  size={96}
+                  color="rgba(255,255,255,0.18)"
+                />
               </View>
             </View>
           </View>
 
           <View style={styles.sectionBlock}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Offered Services</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              {isPatientPortal ? "Your visit" : STAFF_HOME_SECTION}
+            </Text>
             <View style={styles.serviceRow}>
               {serviceTiles.map((item) => (
                 <Pressable
@@ -442,13 +548,14 @@ export default function HomeScreen() {
           <QuickResultPreviewCard
             isActive={activeTab === "home"}
             onHistoryPress={() => handleTabPress("history")}
+            mode={isPatientPortal ? "patient" : "operator"}
           />
         </ScrollView>
       );
     }
 
     if (tab === "learn") {
-      return <LearnContent />;
+      return <LearnContent mode={isPatientPortal ? "patient" : "operator"} />;
     }
 
     if (tab === "history") {
@@ -484,7 +591,11 @@ export default function HomeScreen() {
             },
           ]}
         >
-          <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
+          <BottomNav
+            activeTab={activeTab}
+            onTabPress={handleTabPress}
+            mode={isPatientPortal ? "patient" : "operator"}
+          />
         </View>
       </View>
 
@@ -549,7 +660,7 @@ export default function HomeScreen() {
                   </View>
                   <Text style={[styles.notificationEmptyTitle, { color: colors.text }]}>No notifications</Text>
                   <Text style={[styles.notificationEmptyBody, { color: colors.textSecondary }]}>
-                    Screening saves, email verification, and TB learning tips appear here when you are signed in.
+                    {isPatientPortal ? PATIENT_NOTIFICATION_EMPTY : STAFF_NOTIFICATION_EMPTY}
                   </Text>
                 </View>
               ) : (
@@ -600,7 +711,7 @@ export default function HomeScreen() {
       </Modal>
 
       {/* Screening Device Setup - absolutely positioned overlay (no Modal to avoid layout shifts) */}
-      {screeningModalMounted && (
+      {isOperator && screeningModalMounted && (
         <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
           {/* Backdrop that fades in */}
           <Animated.View
@@ -692,6 +803,11 @@ const styles = StyleSheet.create({
     color: TEXT_NAVY,
     letterSpacing: -0.4,
     lineHeight: 34,
+  },
+  greetingRole: {
+    fontSize: 13,
+    marginTop: 4,
+    lineHeight: 18,
   },
   notifyBtn: {
     width: 44,
@@ -847,7 +963,6 @@ const styles = StyleSheet.create({
     backgroundColor: NAVY,
     borderRadius: 24,
     padding: 20,
-    paddingBottom: 12,
     minHeight: 210,
     overflow: "hidden",
     ...cardShadow,
@@ -898,7 +1013,8 @@ const styles = StyleSheet.create({
   heroActionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 16,
     marginTop: 8,
   },
   heroCta: {
@@ -929,8 +1045,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginTop: 6,
-    marginRight: 6,
   },
   heroLearnText: {
     color: "rgba(255,255,255,0.92)",

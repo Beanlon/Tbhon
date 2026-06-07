@@ -1,5 +1,7 @@
+import { ActivityIndicator, View } from "react-native";
 import { Stack } from "expo-router";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useRequireBoothOperator } from "../../utils/useRequireBoothOperator";
 
 /**
  * Per-screen `StatusBar` (see each route) matches home/login: dark icons on light
@@ -15,6 +17,15 @@ const RECORDING_BG = "#0B1530";
 export default function ScreeningLayout() {
   const { colors } = useTheme();
   const lightBg = colors.background;
+  const { checked, allowed } = useRequireBoothOperator();
+
+  if (!checked || !allowed) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: lightBg }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <Stack
@@ -24,7 +35,6 @@ export default function ScreeningLayout() {
         header: () => null,
         headerShadowVisible: false,
         headerTransparent: false,
-        // Default: slide right for light screens (instructions → checklist → review → result → details)
         animation: "slide_from_right",
         animationDuration: 200,
         contentStyle: { backgroundColor: lightBg },
@@ -39,6 +49,10 @@ export default function ScreeningLayout() {
         options={{ contentStyle: { backgroundColor: lightBg } }}
       />
       <Stack.Screen
+        name="client-intake"
+        options={{ contentStyle: { backgroundColor: lightBg } }}
+      />
+      <Stack.Screen
         name="checklist"
         options={{ contentStyle: { backgroundColor: lightBg } }}
       />
@@ -46,7 +60,6 @@ export default function ScreeningLayout() {
         name="iot-cough"
         options={{
           contentStyle: { backgroundColor: RECORDING_BG },
-          // Fade into dark recording screen to avoid harsh slide
           animation: "fade",
           animationDuration: 150,
           gestureEnabled: false,
@@ -88,18 +101,10 @@ export default function ScreeningLayout() {
           gestureEnabled: false,
         }}
       />
-      <Stack.Screen
-        name="details"
-        options={{ contentStyle: { backgroundColor: lightBg } }}
-      />
-      <Stack.Screen
-        name="result"
-        options={{ contentStyle: { backgroundColor: lightBg } }}
-      />
-      <Stack.Screen
-        name="review"
-        options={{ contentStyle: { backgroundColor: lightBg } }}
-      />
+      <Stack.Screen name="details" options={{ contentStyle: { backgroundColor: lightBg } }} />
+      <Stack.Screen name="staff-review" options={{ contentStyle: { backgroundColor: lightBg } }} />
+      <Stack.Screen name="result" options={{ contentStyle: { backgroundColor: lightBg } }} />
+      <Stack.Screen name="review" options={{ contentStyle: { backgroundColor: lightBg } }} />
     </Stack>
   );
 }

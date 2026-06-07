@@ -5,6 +5,17 @@ import { addInboxNotification } from "../utils/notificationInbox";
 import { setPendingHomeTab } from "../utils/pendingHomeTab";
 import { setPendingAppRoute } from "../utils/pendingAppRoute";
 import {
+  PATIENT_SCREENING_SAVED_NUDGE,
+  PATIENT_VERIFY_INBOX_NUDGE,
+  PATIENT_VERIFY_INBOX_REPEAT,
+  STAFF_SCREENING_SAVED_NUDGE,
+  STAFF_VERIFY_INBOX_INITIAL_PUSH,
+  STAFF_VERIFY_INBOX_NUDGE,
+  STAFF_VERIFY_INBOX_REPEAT,
+} from "../constants/patientAccess";
+import { isPatientRole, parseUserRole } from "../constants/userRole";
+import { peekProfile } from "../utils/profileCache";
+import {
   cancelNativeNotificationsWithPrefix,
   configureNativeNotificationPresentation,
   ensureNativeNotificationPermission,
@@ -86,11 +97,11 @@ export async function onEmailVerificationSucceeded(userId: string): Promise<bool
   return celebrateFirstEmailVerification(userId);
 }
 
-async function scheduleOccasionalReminders(): Promise<void> {
+async function scheduleOccasionalReminders(isPatient: boolean): Promise<void> {
   await scheduleOneShot({
     identifier: ID_VERIFY_REMINDER,
     title: "Verify your TBhon email",
-    body: "Verify your email to export screening reports as PDF.",
+    body: isPatient ? PATIENT_VERIFY_INBOX_REPEAT : STAFF_VERIFY_INBOX_REPEAT,
     seconds: VERIFY_REPEAT_SECONDS,
     data: { type: "verify_email", route: "verifyEmail" },
   });
@@ -116,6 +127,7 @@ export async function onUnverifiedAccountSession(user: ApiUserPayload): Promise<
   const granted = isNativeNotificationsAvailable()
     ? await ensureNativeNotificationPermission()
     : false;
+  const isPatient = isPatientRole(parseUserRole(user.role));
   const isFirst = await markAccountEngagementStarted();
 
   if (isFirst) {
@@ -123,7 +135,7 @@ export async function onUnverifiedAccountSession(user: ApiUserPayload): Promise<
       id: "verify-email-nudge",
       type: "verify_email",
       title: "Verify your email",
-      body: "Verify your email to unlock screening PDF export.",
+      body: isPatient ? PATIENT_VERIFY_INBOX_NUDGE : STAFF_VERIFY_INBOX_NUDGE,
     });
   }
 
@@ -131,14 +143,14 @@ export async function onUnverifiedAccountSession(user: ApiUserPayload): Promise<
     await scheduleOneShot({
       identifier: ID_VERIFY_INITIAL,
       title: "Welcome to TBhon",
-      body: "Verify your email when you have a moment — it unlocks PDF export for screening reports.",
+      body: isPatient ? PATIENT_VERIFY_INBOX_NUDGE : STAFF_VERIFY_INBOX_INITIAL_PUSH,
       seconds: VERIFY_INITIAL_SECONDS,
       data: { type: "verify_email", route: "verifyEmail" },
     });
   }
 
   if (granted) {
-    await scheduleOccasionalReminders();
+    await scheduleOccasionalReminders(isPatient);
   }
 }
 
@@ -154,18 +166,20 @@ export async function syncUnverifiedEngagementNotifications(
     return;
   }
   if (!(await ensureNativeNotificationPermission())) return;
-  await scheduleOccasionalReminders();
+  const isPatient = isPatientRole(parseUserRole(user.role));
+  await scheduleOccasionalReminders(isPatient);
 }
 
 /** Every completed screening while email is unverified. */
 export async function onUnverifiedScreeningCompleted(args?: {
   sessionId?: string;
   riskLabel?: string;
+  user?: ApiUserPayload | null;
 }): Promise<void> {
-  const title = "Screening saved";
+  const isPatient = isPatientRole(parseUserRole(args?.user?.role ?? peekProfile()?.role));
+  const title = isPatient ? "Result saved" : "Screening saved";
   const risk = args?.riskLabel ? ` (${args.riskLabel})` : "";
-  const body =
-    "Your screening is saved. Verify your email to export a PDF report. Not a medical diagnosis.";
+  const body = isPatient ? PATIENT_SCREENING_SAVED_NUDGE : STAFF_SCREENING_SAVED_NUDGE;
 
   await addInboxNotification({
     id: args?.sessionId ? `screening-${args.sessionId}` : undefined,

@@ -240,7 +240,8 @@ def load_checkpoint(model_path: Path) -> tuple[nn.Module, InferenceConfig, dict[
 
 # Default model path: best test macro-F1 under runs/, else explicit env var.
 DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "runs"
-KNOWN_GOOD_MODEL = DEFAULT_MODEL_PATH / "20260504_005928" / "model.pt"
+PRODUCTION_MANIFEST = Path(__file__).resolve().parent / "production_model.json"
+KNOWN_GOOD_MODEL = DEFAULT_MODEL_PATH / "20260531_014419" / "model.pt"
 
 _active_model_path: Path | None = None
 _active_model_meta: dict[str, Any] | None = None
@@ -481,6 +482,40 @@ def predict_phlegm_image_bytes(data: bytes, *, skip_quality: bool = False) -> di
   return out
 
 
+def _read_cough_metrics_score(model_path: Path) -> float:
+  """Return test macro-F1 for ranking cough checkpoints (metrics.json preferred)."""
+  metrics_path = model_path.parent / "metrics.json"
+  if metrics_path.is_file():
+    try:
+      metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+      return float(metrics.get("best_f1_macro", 0.0) or 0.0)
+    except Exception:
+      pass
+  try:
+    meta = read_checkpoint_meta(model_path)
+    return float(meta.get("best_f1_macro", 0.0) or 0.0)
+  except Exception:
+    return 0.0
+
+
+def _resolve_production_manifest_path() -> Path | None:
+  if not PRODUCTION_MANIFEST.is_file():
+    return None
+  try:
+    manifest = json.loads(PRODUCTION_MANIFEST.read_text(encoding="utf-8"))
+  except Exception:
+    return None
+  rel = manifest.get("model_path")
+  run_id = manifest.get("run_id")
+  if isinstance(rel, str) and rel.strip():
+    candidate = Path(__file__).resolve().parent / rel.strip()
+  elif isinstance(run_id, str) and run_id.strip():
+    candidate = DEFAULT_MODEL_PATH / run_id.strip() / "model.pt"
+  else:
+    return None
+  return candidate if candidate.is_file() else None
+
+
 def resolve_model_path() -> Path:
   import os
 
@@ -498,17 +533,17 @@ def resolve_model_path() -> Path:
     _active_model_meta = read_checkpoint_meta(mp)
     return mp
 
+  manifest_path = _resolve_production_manifest_path()
+  if manifest_path is not None:
+    _active_model_path = manifest_path
+    _active_model_meta = read_checkpoint_meta(manifest_path)
+    return manifest_path
+
   best_path: Path | None = None
   best_score = -1.0
   if DEFAULT_MODEL_PATH.exists():
     for candidate in DEFAULT_MODEL_PATH.glob("**/model.pt"):
-      try:
-        meta = read_checkpoint_meta(candidate)
-        acc = float(meta.get("test_accuracy", 0.0) or 0.0)
-        f1 = float(meta.get("best_f1_macro", 0.0) or 0.0)
-        score = acc if acc > 0 else f1
-      except Exception:
-        continue
+      score = _read_cough_metrics_score(candidate)
       if score > best_score:
         best_score = score
         best_path = candidate

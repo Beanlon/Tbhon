@@ -2,6 +2,7 @@ import "../global.css";
 import { Stack, useRouter } from "expo-router";
 import React, { useEffect } from 'react';
 import { Asset } from 'expo-asset';
+import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { LogBox } from "react-native";
@@ -11,6 +12,7 @@ import { getMe } from "../services/backendApi";
 import { getAuthToken } from "../utils/authStorage";
 import { setCachedProfile, peekProfile } from "../utils/profileCache";
 import { consumePendingAppRoute } from "../utils/pendingAppRoute";
+import { parsePatientClaimToken } from "../constants/patientAccess";
 import {
   configureNotificationPresentation,
   handleNotificationResponse,
@@ -34,6 +36,22 @@ function RootNavigator() {
   useEffect(() => {
     Asset.loadAsync([TBHON_LOGO, TBHON_ICON]).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const routePatientClaim = (url: string | null) => {
+      if (!url) return;
+      const token = parsePatientClaimToken(url);
+      if (!token) return;
+      router.push({
+        pathname: "/patient/access",
+        params: { token, autoClaim: "1" },
+      } as never);
+    };
+
+    void Linking.getInitialURL().then(routePatientClaim);
+    const sub = Linking.addEventListener("url", ({ url }) => routePatientClaim(url));
+    return () => sub.remove();
+  }, [router]);
 
   useEffect(() => {
     configureNotificationPresentation();
@@ -114,6 +132,8 @@ function RootNavigator() {
         <Stack.Screen name="signUp/signUp" />
         <Stack.Screen name="verifyEmail/verifyEmail" />
         <Stack.Screen name="changePassword/changePassword" />
+        <Stack.Screen name="admin" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="patient" options={{ animation: "slide_from_right" }} />
         <Stack.Screen
           name="screening"
           options={{

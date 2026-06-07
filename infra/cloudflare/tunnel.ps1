@@ -10,6 +10,7 @@ $dir = $PSScriptRoot
 $repoRoot = Resolve-Path (Join-Path $dir "..\..")
 $mobileEnv = Join-Path $repoRoot "mobile\.env"
 $teamEnv = Join-Path $dir "team-urls.env"
+. (Join-Path $dir "Merge-MobileEnv.ps1")
 
 function Write-EnvBlock([string]$ApiUrl, [string]$TbApiUrl) {
     Write-Host ""
@@ -110,27 +111,41 @@ for ($i = 0; $i -lt $jobs.Count; $i++) {
 Write-EnvBlock $apiUrl $tbUrl
 
 if (-not $NoWriteEnv) {
-    $lines = @()
-    if ($apiUrl) { $lines += "EXPO_PUBLIC_API_URL=$apiUrl" }
-    if ($tbUrl) { $lines += "EXPO_PUBLIC_TB_API_URL=$tbUrl" }
-    $body = ($lines -join "`n") + "`n"
-    $header = "# Cloudflare quick tunnels - updated $(Get-Date -Format 'yyyy-MM-dd HH:mm')`n"
-    Set-Content -Path $mobileEnv -Value ($header + $body) -Encoding utf8
-    $teamBody = "# Share with teammates - copy into mobile/.env`n" + ($lines -join "`n") + "`n"
-    Set-Content -Path $teamEnv -Value $teamBody -Encoding utf8
-    Write-Host "Wrote $mobileEnv" -ForegroundColor DarkGray
+    Update-MobileEnvUrls -MobileEnvPath $mobileEnv -ApiUrl $apiUrl -TbApiUrl $tbUrl -TeamEnvPath $teamEnv -HeaderComment "Local Cloudflare quick tunnels (npm run tunnel)"
+    Write-Host "Wrote $mobileEnv (other keys preserved)" -ForegroundColor DarkGray
     Write-Host "Wrote $teamEnv" -ForegroundColor DarkGray
     Write-Host ""
 }
 
+$knownApiUrl = $apiUrl
+$knownTbUrl = $tbUrl
+
 Write-Host "Tunnels running. Press Ctrl+C to stop." -ForegroundColor Yellow
+Write-Host "If cloudflared restarts, URLs auto-update in mobile/.env every 15s." -ForegroundColor DarkGray
 Write-Host ""
 
 try {
+    $tick = 0
     while ($true) {
         foreach ($job in $jobs) {
             if ($job.Process.HasExited) {
                 Write-Error "Tunnel on port $($job.Port) exited. Re-run: npm run tunnel"
+            }
+        }
+        $tick++
+        if (-not $NoWriteEnv -and ($tick % 8) -eq 0) {
+            $freshApi = Get-TunnelUrlFromLog (Join-Path $dir "tunnel-4000.err.log")
+            $freshTb = Get-TunnelUrlFromLog (Join-Path $dir "tunnel-8000.err.log")
+            if ($freshApi -and $freshTb -and ($freshApi -ne $knownApiUrl -or $freshTb -ne $knownTbUrl)) {
+                $knownApiUrl = $freshApi
+                $knownTbUrl = $freshTb
+                Update-MobileEnvUrls -MobileEnvPath $mobileEnv -ApiUrl $freshApi -TbApiUrl $freshTb -TeamEnvPath $teamEnv -HeaderComment "Local Cloudflare quick tunnels (auto-refresh)"
+                Write-Host ""
+                Write-Host "Tunnel URL rotated — updated mobile/.env" -ForegroundColor Yellow
+                Write-Host "  EXPO_PUBLIC_API_URL=$freshApi" -ForegroundColor Green
+                Write-Host "  EXPO_PUBLIC_TB_API_URL=$freshTb" -ForegroundColor Green
+                Write-Host "  Restart Expo: cd mobile && npx expo start -c" -ForegroundColor DarkGray
+                Write-Host ""
             }
         }
         Start-Sleep -Seconds 2

@@ -1,5 +1,6 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { IOT_COUGH_COUNT } from "../constants/iotScreening";
+import type { ReferralStatus } from "../constants/userRole";
 import { resolveApiBaseUrl } from "../utils/apiBaseUrl";
 import {
   clearAuthToken,
@@ -32,10 +33,19 @@ function isRetryableNetworkError(e: unknown): boolean {
   );
 }
 
+export type ApiFacilitySummary = {
+  facilityId: string;
+  name: string;
+  city: string | null;
+  barangay: string | null;
+};
+
 export type ApiUserPayload = {
   userId: string;
   email: string | null;
   phoneNumber: string | null;
+  role?: "STAFF" | "ADMIN" | "PATIENT";
+  facility?: ApiFacilitySummary | null;
   emailVerified?: boolean;
   emailVerifiedAt?: string | null;
   createdAt: string;
@@ -161,6 +171,18 @@ async function parseErrorMessage(response: Response): Promise<string> {
     return "Cannot reach the server. Check that the backend is running and EXPO_PUBLIC_API_URL is current.";
   }
 
+  if (response.status === 409) {
+    return "This result slip is already linked to an account. Sign in with the email and password you chose when you set it up.";
+  }
+
+  if (response.status === 410) {
+    return "This result access code has expired. Ask booth staff for help.";
+  }
+
+  if (response.status === 404) {
+    return "Result access is not available for this code.";
+  }
+
   if (response.status >= 500) {
     return "Server error. If this persists, the backend may need database migrations (prisma migrate deploy).";
   }
@@ -262,10 +284,22 @@ export type RegisterProfile = {
   countryCode?: string | null;
 };
 
+export async function postValidateFacilityInvite(inviteCode: string) {
+  return apiRequest<{ ok: boolean; facility: ApiFacilitySummary }>(
+    "/auth/facility-invite/validate",
+    {
+      method: "POST",
+      json: { facilityInviteCode: inviteCode.trim() },
+    },
+    null,
+  );
+}
+
 export async function postRegister(args: {
   email: string;
   password: string;
   phoneNumber?: string | null;
+  facilityInviteCode: string;
   profile: RegisterProfile;
 }) {
   return apiRequest<LoginRegisterResponse>(
@@ -276,6 +310,7 @@ export async function postRegister(args: {
         email: args.email.trim(),
         password: args.password,
         phoneNumber: args.phoneNumber ?? null,
+        facilityInviteCode: args.facilityInviteCode.trim(),
         profile: args.profile,
       },
     },
@@ -395,6 +430,37 @@ export type RequestIotCaptureResponse = {
 /** Open a screening session before IoT sample capture (same sessionId for retakes). */
 export async function createScreeningDraft() {
   return apiRequest<{ ok: boolean; sessionId: string }>("/screenings/draft", { method: "POST" });
+}
+
+export type ScreeningClientPayload = {
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  birthdate: string;
+  gender: string;
+  street?: string;
+  barangay?: string;
+  city?: string;
+  contactNumber: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelation?: string;
+  governmentIdType?: string;
+  governmentIdNumber?: string;
+};
+
+export type ScreeningClientRecord = ScreeningClientPayload & {
+  clientId: string;
+  sessionId: string;
+  middleName?: string | null;
+};
+
+/** Attach the screened person to an open session (facility account owns the session). */
+export async function putScreeningClient(sessionId: string, client: ScreeningClientPayload) {
+  return apiRequest<{ ok: boolean; client: ScreeningClientRecord }>(
+    `/screenings/${encodeURIComponent(sessionId)}/client`,
+    { method: "PUT", json: { client } },
+  );
 }
 
 /** Local UUID when POST /screenings/draft is not on the server yet (IoT upload still creates the row). */
@@ -1127,15 +1193,28 @@ export type CompleteScreeningPayload = {
   phlegmLoad?: string;
   phlegmConfidence?: number | null;
   phlegmProbs?: string;
+  sputumSkipReason?: string;
+  staffNotes?: string;
+  staffResultConfirmed?: boolean;
 };
 
 /** Returned from POST /screenings with the rows the server just created. */
+export type PatientAccessResponse = {
+  sessionId: string;
+  token: string;
+  claimUrl: string;
+  expiresAt: string | null;
+  alreadyClaimed?: boolean;
+  maskedEmail?: string | null;
+};
+
 export type CompleteScreeningResponse = {
   session: {
     sessionId: string;
     coughRecordings: Array<{ recordingId: string; mimeType: string; byteSize: number | null }>;
     sputumImage: { imageId: string; mimeType: string; byteSize: number | null } | null;
   };
+  patientAccess?: PatientAccessResponse | null;
 };
 
 /** Persist a finished screening run for the authenticated user. */
@@ -1143,6 +1222,99 @@ export async function postCompleteScreening(payload: CompleteScreeningPayload) {
   return apiRequest<CompleteScreeningResponse>("/screenings", {
     method: "POST",
     json: { ...payload } as JsonBody,
+  });
+}
+
+export async function getScreeningPatientAccess(sessionId: string) {
+  return apiRequest<PatientAccessResponse>(
+    `/screenings/${encodeURIComponent(sessionId)}/patient-access`,
+    { method: "GET" },
+  );
+}
+
+export type PatientRecoveryInfo =
+  | { linked: false; message: string }
+  | {
+      linked: true;
+      maskedEmail: string | null;
+      patientClaimedAt: string | null;
+      clientName: string | null;
+    };
+
+export async function getScreeningPatientRecovery(sessionId: string) {
+  return apiRequest<PatientRecoveryInfo>(
+    `/screenings/${encodeURIComponent(sessionId)}/patient-recovery`,
+    { method: "GET" },
+  );
+}
+
+export async function postScreeningPatientRecoveryReset(sessionId: string) {
+  return apiRequest<{ ok: boolean; maskedEmail: string | null; message: string }>(
+    `/screenings/${encodeURIComponent(sessionId)}/patient-recovery/send-reset`,
+    { method: "POST", json: {} },
+  );
+}
+
+export type PatientClaimProfilePrefill = {
+  firstName: string;
+  lastName: string;
+  birthdate: string;
+  gender: string;
+  street: string | null;
+  barangay: string | null;
+  city: string | null;
+  phoneNumber: string;
+};
+
+export type PatientClaimPreviewResponse = {
+  sessionId: string;
+  profile: PatientClaimProfilePrefill | null;
+  fromBoothIntake: boolean;
+};
+
+export type PatientClaimStatusResponse =
+  | {
+      status: "available";
+      sessionId: string;
+      profile: PatientClaimProfilePrefill | null;
+      fromBoothIntake: boolean;
+    }
+  | {
+      status: "claimed" | "expired" | "invalid";
+      message: string;
+      maskedEmail?: string | null;
+    };
+
+export async function getPatientClaimStatus(token: string) {
+  return apiRequest<PatientClaimStatusResponse>(
+    `/patient/claim/status?token=${encodeURIComponent(token)}`,
+    { method: "GET" },
+  );
+}
+
+export async function getPatientClaimPreview(token: string) {
+  return apiRequest<PatientClaimPreviewResponse>(
+    `/patient/claim/preview?token=${encodeURIComponent(token)}`,
+    { method: "GET" },
+  );
+}
+
+export async function postPatientClaim(payload: {
+  token: string;
+  email: string;
+  password: string;
+  phoneNumber?: string;
+  profile: UpsertMyProfilePayload;
+}) {
+  return apiRequest<{
+    accessToken: string;
+    refreshToken: string;
+    token: string;
+    user: ApiUserPayload;
+    sessionId: string;
+  }>("/patient/claim", {
+    method: "POST",
+    json: payload as JsonBody,
   });
 }
 
@@ -1260,10 +1432,14 @@ export type ScreeningHistoryRow = {
   finalRiskLevel: string | null;
   averageTbProbability: number | null;
   uploadError: boolean;
+  client: ScreeningClientRecord | null;
   result: {
     riskLevel: string;
     invalidAudio: boolean;
     createdAt: string;
+    referralStatus?: ReferralStatus;
+    referralNotes?: string | null;
+    referralUpdatedAt?: string | null;
   } | null;
   _count: { coughRecordings: number; symptomResponses: number };
 };
@@ -1275,13 +1451,20 @@ export type ScreeningSessionDetail = {
   finalRiskLevel: string | null;
   averageTbProbability: number | null;
   uploadError: boolean;
+  sputumSkipReason?: string | null;
+  staffNotes?: string | null;
+  staffResultConfirmedAt?: string | null;
   checklistPayload?: unknown | null;
+  client: ScreeningClientRecord | null;
   result: {
     riskLevel: string;
     recommendation: string;
     invalidAudio: boolean;
     invalidAudioLabel: string | null;
     invalidAudioReasonsJson: unknown;
+    referralStatus?: ReferralStatus;
+    referralNotes?: string | null;
+    referralUpdatedAt?: string | null;
   } | null;
   symptomResponses: Array<{
     answerValue: boolean;
@@ -1363,6 +1546,66 @@ export async function getScreening(sessionId: string, timeoutMs?: number) {
     {
       method: "GET",
       ...(timeoutMs != null ? { timeoutMs } : {}),
+    },
+  );
+}
+
+export async function patchScreeningReferral(args: {
+  sessionId: string;
+  referralStatus: ReferralStatus;
+  referralNotes?: string;
+}) {
+  return apiRequest<{ ok: boolean }>(
+    `/screenings/${encodeURIComponent(args.sessionId)}/referral`,
+    {
+      method: "PATCH",
+      json: {
+        referralStatus: args.referralStatus,
+        ...(args.referralNotes !== undefined ? { referralNotes: args.referralNotes } : {}),
+      } as JsonBody,
+    },
+  );
+}
+
+export type ApiAdminFacility = ApiFacilitySummary & {
+  inviteCode: string;
+  isActive: boolean;
+  staffCount: number;
+  createdAt: string;
+};
+
+export async function getAdminFacilities() {
+  return apiRequest<{ facilities: ApiAdminFacility[] }>("/admin/facilities", {
+    method: "GET",
+  });
+}
+
+export async function postAdminFacility(args: {
+  name: string;
+  inviteCode?: string;
+  city?: string;
+  barangay?: string;
+}) {
+  return apiRequest<{ facility: ApiAdminFacility }>("/admin/facilities", {
+    method: "POST",
+    json: {
+      name: args.name.trim(),
+      ...(args.inviteCode?.trim() ? { inviteCode: args.inviteCode.trim() } : {}),
+      ...(args.city?.trim() ? { city: args.city.trim() } : {}),
+      ...(args.barangay?.trim() ? { barangay: args.barangay.trim() } : {}),
+    },
+  });
+}
+
+export async function patchAdminFacility(
+  facilityId: string,
+  args: { isActive?: boolean; name?: string; city?: string; barangay?: string },
+) {
+  return apiRequest<{ facility: ApiAdminFacility }>(
+    `/admin/facilities/${encodeURIComponent(facilityId)}`,
+    {
+      method: "PATCH",
+      json: args as JsonBody,
     },
   );
 }

@@ -2,7 +2,7 @@
  * Multimodal TB screening risk fusion.
  *
  * Combines three independent signals via weighted log-odds fusion:
- *   1. Pre-screening checklist (11 yes/no symptom + exposure questions)
+ *   1. Triage checklist (11 yes/no symptom + exposure questions)
  *   2. Cough audio ML probability (hybrid CNN+GBM, mean of valid clips)
  *   3. Sputum smear image ML probability (AFB / load grade)
  *
@@ -13,6 +13,7 @@
  */
 
 import { SCREENING_CHECKLIST_QUESTIONS } from "../constants/screeningChecklist";
+import { SCREENING_FUSION_METHOD_NOTE } from "../constants/screeningDisclaimer";
 
 export type RiskLevel = "low" | "moderate" | "high";
 
@@ -338,7 +339,7 @@ export function fuseTbRisk(input: FuseTbRiskInput): FusionResult {
       weight: MODALITY_WEIGHT.sputum,
       probTb: null,
       riskLevel: null,
-      detail: input.sputumAnalyzed ? "Analysis failed" : "Not provided",
+      detail: input.sputumAnalyzed ? "Analysis failed" : "No sample available",
     });
   }
 
@@ -352,7 +353,7 @@ export function fuseTbRisk(input: FuseTbRiskInput): FusionResult {
     riskLevel,
     checklistLevel,
     modalities,
-    method: "Weighted log-odds fusion of checklist, cough ML, and sputum ML (screening triage — not a diagnosis).",
+    method: SCREENING_FUSION_METHOD_NOTE,
   };
 }
 

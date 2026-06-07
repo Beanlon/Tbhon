@@ -25,12 +25,13 @@ import { getBrandLogoLayout } from "../../utils/brandLogoLayout";
 import { authFormTk as tk } from "../../constants/authFormTheme";
 import { authFormButtonStyles } from "../../constants/authFormStyles";
 import { palette } from "../../constants/palette";
-import { useNavigation, useRouter } from "expo-router";
+import { useNavigation, useRouter, useLocalSearchParams } from "expo-router";
 import { ApiError, getMe, postLogin } from "../../services/backendApi";
 import { resetAfterAuth } from "../../utils/authNavigation";
 import { onUnverifiedAccountSession } from "../../services/unverifiedEngagementNotifications";
 import { getAuthToken, saveAuthSession } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
+import { STAFF_EXISTING_DESC, PATIENT_LOGIN_HINT, PATIENT_ACCESS_TITLE } from "../../constants/patientAccess";
 import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
 
 const SCROLL_FUDGE = 8;
@@ -38,6 +39,8 @@ const SCROLL_FUDGE = 8;
 export default function Login() {
   const router = useRouter();
   const navigation = useNavigation();
+  const { intent } = useLocalSearchParams<{ intent?: string }>();
+  const loginIntent = intent === "patient" ? "patient" : "staff";
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [email, setEmail] = useState("");
@@ -200,7 +203,9 @@ export default function Login() {
               <Text style={styles.welcomeHeadingAccent}>back!</Text>
             </Text>
             <Text style={styles.sectionSubtitle}>
-              Enter your email and password to continue.
+              {loginIntent === "patient"
+                ? PATIENT_LOGIN_HINT
+                : STAFF_EXISTING_DESC}
             </Text>
 
             <AuthFormField
@@ -249,13 +254,23 @@ export default function Login() {
             />
 
             <Pressable
-              onPress={() => router.push("/forgotPassword/forgotPassword" as never)}
+              onPress={() =>
+                router.push(
+                  `/forgotPassword/forgotPassword?intent=${loginIntent}` as never,
+                )
+              }
               style={styles.forgotRow}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Forgot password"
+              accessibilityLabel={
+                loginIntent === "patient"
+                  ? "Reset result account password"
+                  : "Forgot password"
+              }
             >
-              <Text style={styles.forgotLink}>Forgot password?</Text>
+              <Text style={styles.forgotLink}>
+                {loginIntent === "patient" ? "Forgot result account password?" : "Forgot password?"}
+              </Text>
             </Pressable>
 
             <Pressable
@@ -271,12 +286,20 @@ export default function Login() {
               )}
             </Pressable>
 
-            <View style={styles.subtleRow}>
-              <Text style={styles.subtleText}>{"Don't have an account? "}</Text>
-              <Pressable onPress={handleSignUp} hitSlop={8}>
-                <Text style={styles.subtleLink}>Sign up</Text>
-              </Pressable>
-            </View>
+            {loginIntent === "patient" ? (
+              <View style={styles.subtleRow}>
+                <Pressable onPress={() => router.push("/patient/access" as never)} hitSlop={8}>
+                  <Text style={styles.subtleLink}>{PATIENT_ACCESS_TITLE}</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.subtleRow}>
+                <Text style={styles.subtleText}>{"Don't have an account? "}</Text>
+                <Pressable onPress={handleSignUp} hitSlop={8}>
+                  <Text style={styles.subtleLink}>Sign up</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
           </View>
         </ScrollView>

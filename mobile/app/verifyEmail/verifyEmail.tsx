@@ -24,6 +24,13 @@ import { resetToAuthenticatedHome, resetToLanding } from "../../utils/authNaviga
 import { onEmailVerificationSucceeded } from "../../services/unverifiedEngagementNotifications";
 import { clearAuthToken, getAuthToken } from "../../utils/authStorage";
 import { clearProfileCache, setCachedProfile } from "../../utils/profileCache";
+import { parseUserRole, isPatientRole, type UserRole } from "../../constants/userRole";
+import {
+  PATIENT_VERIFY_EMAIL_BENEFIT,
+  PATIENT_VERIFY_EMAIL_SUCCESS,
+  STAFF_VERIFY_EMAIL_BENEFIT,
+  STAFF_VERIFY_EMAIL_SUCCESS,
+} from "../../constants/patientAccess";
 
 const COLORS = {
   brand900: palette.deepNavy,
@@ -190,6 +197,7 @@ export default function VerifyEmailScreen() {
   const router = useRouter();
 
   const [email, setEmail] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<UserRole>("STAFF");
   const [loadingUser, setLoadingUser] = useState(true);
   const [code, setCode] = useState("");
   const [isVerifying, setVerifying] = useState(false);
@@ -219,6 +227,7 @@ export default function VerifyEmailScreen() {
         return;
       }
       setEmail(user.email ?? null);
+      setUserRole(parseUserRole(user.role));
     } catch {
       Alert.alert("Session expired", "Please log in again.", [
         {
@@ -276,9 +285,12 @@ export default function VerifyEmailScreen() {
       setCachedProfile(user);
       const firstCelebration = await onEmailVerificationSucceeded(user.userId);
       if (firstCelebration) {
+        const successMessage = isPatientRole(parseUserRole(user.role))
+          ? PATIENT_VERIFY_EMAIL_SUCCESS
+          : STAFF_VERIFY_EMAIL_SUCCESS;
         Alert.alert(
           "Email verified",
-          "You can now export screening reports as PDF.",
+          successMessage,
           [
             {
               text: "OK",
@@ -342,6 +354,10 @@ export default function VerifyEmailScreen() {
     resetToAuthenticatedHome(navigation);
   }, [navigation, router]);
 
+  const verifyBenefit = isPatientRole(userRole)
+    ? PATIENT_VERIFY_EMAIL_BENEFIT
+    : STAFF_VERIFY_EMAIL_BENEFIT;
+
   const displayEmail =
     email && email.length > 30
       ? `${email.slice(0, 14)}…${email.slice(email.indexOf("@"))}`
@@ -374,13 +390,12 @@ export default function VerifyEmailScreen() {
                 "Loading your account…"
               ) : codeSent ? (
                 <>
-                  Code sent to <Text style={styles.heroEmail}>{displayEmail}</Text>. Unlocks screening
-                  PDF export.
+                  Code sent to <Text style={styles.heroEmail}>{displayEmail}</Text>. {verifyBenefit}
                 </>
               ) : (
                 <>
-                  We&apos;ll send a code to <Text style={styles.heroEmail}>{displayEmail}</Text>. Unlocks
-                  screening PDF export.
+                  We&apos;ll send a code to <Text style={styles.heroEmail}>{displayEmail}</Text>.{" "}
+                  {verifyBenefit}
                 </>
               )}
             </Text>
