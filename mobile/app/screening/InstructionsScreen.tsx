@@ -37,8 +37,8 @@ export default function InstructionsScreen({ onClose }: Props) {
       const sessionId = await startWalkInSession();
       if (onClose) onClose();
       router.push({
-        pathname: "/screening/client-intake",
-        params: { sessionId, from: "session-start" },
+        pathname: "/screening/patient-type",
+        params: { sessionId },
       } as any);
     } catch (e) {
       const message =

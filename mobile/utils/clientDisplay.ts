@@ -51,6 +51,7 @@ export type ClientHistoryMeta = {
   demographics: string;
   address: string;
   contactNumber: string;
+  emergencyContact: string | null;
 };
 
 /** Compact patient facts for history list cards. */
@@ -61,10 +62,17 @@ export function formatClientHistoryMeta(
   const age = ageFromIsoBirthdate(client.birthdate);
   const agePart = age !== null ? `${age} yrs` : "Age —";
   const gender = client.gender?.trim() ? client.gender : "—";
+  const ecName = client.emergencyContactName?.trim();
+  const ecRelation = client.emergencyContactRelation?.trim();
+  const ecPhone = client.emergencyContactPhone?.trim();
+  const emergencyNamePart = [ecName, ecRelation].filter(Boolean).join(" · ");
+  const emergencyContact = [emergencyNamePart, ecPhone].filter(Boolean).join(" · ");
+
   return {
     demographics: `${agePart} · ${gender}`,
     address: formatClientAddress(client) ?? "Address not provided",
     contactNumber: client.contactNumber?.trim() || "Contact not recorded",
+    emergencyContact: emergencyContact || "Emergency contact not provided",
   };
 }
 

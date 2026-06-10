@@ -13,7 +13,7 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { IOT_HARDWARE_CHECKS } from "../../constants/iotScreening";
-import { fetchIotHealth } from "../../services/iotApi";
+import { waitForIotSetupAcknowledgement } from "../../services/iotApi";
 import { useTheme } from "../../contexts/ThemeContext";
 
 type CheckStatus = "idle" | "running" | "ok" | "error";
@@ -79,17 +79,41 @@ export function IotHardwareContent({ onClose, onContinue }: IotHardwareContentPr
   }, []);
 
   const runHealthTest = useCallback(async () => {
-    setHealthState({ status: "running" });
+    setHealthState({
+      status: "running",
+      message: "Sending setup command to the IoT device...",
+    });
     try {
-      await fetchIotHealth();
+      const check = await waitForIotSetupAcknowledgement({
+        onProgress: (current) => {
+          if (current.status === "queued") {
+            setHealthState({
+              status: "running",
+              message: "Command queued. Waiting for the device to receive it...",
+            });
+            return;
+          }
+          if (current.status === "delivered") {
+            setHealthState({
+              status: "running",
+              message: "Command received by the device. Waiting for acknowledgement...",
+            });
+          }
+        },
+      });
       setHealthState({
         status: "ok",
-        message: `Service is online · ${new Date().toLocaleTimeString()}`,
+        message:
+          check.acknowledgementMessage ??
+          `Device is turned on and connected · ${new Date().toLocaleTimeString()}`,
       });
     } catch (e) {
       setHealthState({
         status: "error",
-        message: e instanceof Error ? e.message : "Could not reach the screening service.",
+        message:
+          e instanceof Error
+            ? e.message
+            : "Device is not turned on or did not answer the setup command.",
       });
     }
   }, [setHealthState]);

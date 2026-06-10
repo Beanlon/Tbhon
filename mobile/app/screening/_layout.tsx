@@ -101,6 +101,8 @@ export default function ScreeningLayout() {
           gestureEnabled: false,
         }}
       />
+      <Stack.Screen name="patient-type" options={{ contentStyle: { backgroundColor: lightBg } }} />
+      <Stack.Screen name="returning-patient" options={{ contentStyle: { backgroundColor: lightBg } }} />
       <Stack.Screen name="details" options={{ contentStyle: { backgroundColor: lightBg } }} />
       <Stack.Screen name="staff-review" options={{ contentStyle: { backgroundColor: lightBg } }} />
       <Stack.Screen name="result" options={{ contentStyle: { backgroundColor: lightBg } }} />

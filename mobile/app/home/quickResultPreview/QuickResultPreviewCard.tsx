@@ -278,7 +278,7 @@ export function QuickResultPreviewCard({ isActive, onHistoryPress, mode = "opera
               </Text>
             </View>
             <View style={gaugeBoxStyle}>
-              <GaugeChart size={gaugeSize} riskLevel="low" disabled />
+              <GaugeChart size={gaugeSize} riskLevel="low" />
             </View>
           </>
         ) : (

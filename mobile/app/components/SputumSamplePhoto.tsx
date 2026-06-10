@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,31 +24,18 @@ type Props = {
   onPress?: () => void;
 };
 
-let cachedAuthHeaders: Record<string, string> | null = null;
-let authHeadersPromise: Promise<Record<string, string>> | null = null;
-
-async function loadAuthHeaders(): Promise<Record<string, string>> {
-  if (cachedAuthHeaders) return cachedAuthHeaders;
-  if (!authHeadersPromise) {
-    authHeadersPromise = getAuthMediaHeaders()
-      .then((headers) => {
-        cachedAuthHeaders = headers;
-        return headers;
-      })
-      .finally(() => {
-        authHeadersPromise = null;
-      });
-  }
-  return authHeadersPromise;
-}
+const MAX_AUTH_RETRIES = 2;
 
 /**
  * Displays sputum bytes stored on the backend (requires Bearer auth).
  * Refuses file:// and content:// so history always reflects database media.
  */
 function SputumSamplePhoto({ sessionId, uri, height = 220, label, onPress }: Props) {
-  const [headers, setHeaders] = useState<Record<string, string> | null>(cachedAuthHeaders);
+  const [headers, setHeaders] = useState<Record<string, string> | null>(null);
+  const [headersLoading, setHeadersLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [authRetry, setAuthRetry] = useState(0);
+  const retryCountRef = useRef(0);
 
   const trimmed = uri.trim();
   const sid = typeof sessionId === "string" ? sessionId.trim() : "";
@@ -62,27 +49,45 @@ function SputumSamplePhoto({ sessionId, uri, height = 220, label, onPress }: Pro
     [headers, needsAuth, trimmed],
   );
 
+  const loadHeaders = useCallback(async () => {
+    if (!needsAuth || blocked) return;
+    setHeadersLoading(true);
+    try {
+      const h = await getAuthMediaHeaders();
+      setHeaders(h);
+      setLoadError(false);
+    } catch {
+      setHeaders(null);
+      setLoadError(true);
+    } finally {
+      setHeadersLoading(false);
+    }
+  }, [blocked, needsAuth]);
+
   useEffect(() => {
+    retryCountRef.current = 0;
+    setAuthRetry(0);
     setLoadError(false);
-    if (!needsAuth || blocked) {
+    setHeaders(null);
+    if (!needsAuth || blocked) return;
+    void loadHeaders();
+  }, [trimmed, needsAuth, blocked, sid, loadHeaders]);
+
+  const handleImageError = useCallback(() => {
+    if (!needsAuth) {
+      setLoadError(true);
       return;
     }
-    if (cachedAuthHeaders) {
-      setHeaders(cachedAuthHeaders);
+    if (retryCountRef.current < MAX_AUTH_RETRIES) {
+      retryCountRef.current += 1;
+      setHeaders(null);
+      setLoadError(false);
+      setAuthRetry((n) => n + 1);
+      void loadHeaders();
       return;
     }
-    let cancelled = false;
-    void loadAuthHeaders()
-      .then((h) => {
-        if (!cancelled) setHeaders(h);
-      })
-      .catch(() => {
-        if (!cancelled) setHeaders(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [trimmed, needsAuth, blocked, sid]);
+    setLoadError(true);
+  }, [loadHeaders, needsAuth]);
 
   if (blocked) {
     return (
@@ -97,7 +102,7 @@ function SputumSamplePhoto({ sessionId, uri, height = 220, label, onPress }: Pro
 
   const imageContent = (
     <>
-      {needsAuth && !headers ? (
+      {(needsAuth && (headersLoading || !headers)) || (!needsAuth && !trimmed) ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator color="#0f172a" />
         </View>
@@ -110,13 +115,13 @@ function SputumSamplePhoto({ sessionId, uri, height = 220, label, onPress }: Pro
       ) : (
         <>
           <Image
+            key={`${sid || trimmed}-${authRetry}`}
             source={source}
             style={{ width: "100%", height: "100%" }}
             contentFit="cover"
             transition={0}
-            recyclingKey={sid || trimmed}
-            cachePolicy="memory-disk"
-            onError={() => setLoadError(true)}
+            cachePolicy={needsAuth ? "none" : "memory-disk"}
+            onError={handleImageError}
           />
           {onPress ? (
             <View

@@ -4,6 +4,7 @@ import {
   Alert,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -25,6 +26,7 @@ import {
 } from "../../constants/patientAccess";
 import { useTheme } from "../../contexts/ThemeContext";
 import { ApiError, postPatientClaim } from "../../services/backendApi";
+import { onUnverifiedAccountSession } from "../../services/unverifiedEngagementNotifications";
 import { resetAfterAuth } from "../../utils/authNavigation";
 import { saveAuthSession } from "../../utils/authStorage";
 import {
@@ -39,6 +41,10 @@ import {
   normalizeGenderForApi,
   signupBirthdateToIso,
 } from "../../utils/signupHelpers";
+import {
+  SIGNUP_PASSWORD_REQUIREMENTS,
+  signupPasswordValidationError,
+} from "../../utils/passwordPolicy";
 
 import {
   genderLabelFromApi,
@@ -57,6 +63,45 @@ function FieldLabel({ children, colors }: { children: string; colors: { textMute
     <Text className="mb-1.5 text-xs font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
       {children}
     </Text>
+  );
+}
+
+function PasswordRequirements({
+  password,
+  colors,
+}: {
+  password: string;
+  colors: { card: string; primary: string; textMuted: string };
+}) {
+  return (
+    <View style={[styles.passwordHintsContainer, { backgroundColor: colors.card }]}>
+      <Text style={[styles.passwordHintLabel, { color: colors.textMuted }]}>
+        Password requirements:
+      </Text>
+      {SIGNUP_PASSWORD_REQUIREMENTS.map((req) => {
+        const met = req.test(password);
+        return (
+          <View key={req.id} style={styles.passwordHintRow}>
+            <Text
+              style={[
+                styles.passwordHintIcon,
+                { color: met ? colors.primary : colors.textMuted },
+              ]}
+            >
+              ✓
+            </Text>
+            <Text
+              style={[
+                styles.passwordHintText,
+                { color: met ? colors.primary : colors.textMuted },
+              ]}
+            >
+              {req.label}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -246,8 +291,9 @@ export default function PatientAccessScreen() {
       Alert.alert("Missing info", "Enter your email and a password.");
       return;
     }
-    if (password.length < 8) {
-      Alert.alert("Password too short", "Use at least 8 characters.");
+    const passwordError = signupPasswordValidationError(password);
+    if (passwordError) {
+      Alert.alert("Password requirements", passwordError);
       return;
     }
     if (password !== confirmPassword) {
@@ -274,6 +320,7 @@ export default function PatientAccessScreen() {
       });
       await saveAuthSession(accessToken ?? token, refreshToken);
       setCachedProfile(user);
+      void onUnverifiedAccountSession(user);
       resetAfterAuth(navigation);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -326,6 +373,11 @@ export default function PatientAccessScreen() {
     borderColor: colors.border,
     color: colors.text,
     backgroundColor: colors.surfaceAlt,
+  };
+  const lockedNameInputStyle = {
+    ...inputStyle,
+    color: colors.textSecondary,
+    backgroundColor: isDark ? "#111827" : "#F1F5F9",
   };
 
   return (
@@ -397,7 +449,7 @@ export default function PatientAccessScreen() {
               </Text>
               <Text className="mb-4 text-sm leading-6" style={{ color: colors.textSecondary }}>
                 {fromBoothIntake
-                  ? "We pre-filled your profile from booth intake. Review and update anything before creating your account."
+                  ? "We pre-filled your profile from booth intake. Your name and birthdate are locked to the result slip; review the remaining details before creating your account."
                   : "Add your profile details so your result account matches what appears on your Profile screen."}
               </Text>
 
@@ -411,8 +463,9 @@ export default function PatientAccessScreen() {
                 placeholder="First name"
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="words"
+                editable={!fromBoothIntake}
                 className="mb-3 rounded-xl border px-3 py-3 text-base"
-                style={inputStyle}
+                style={fromBoothIntake ? lockedNameInputStyle : inputStyle}
               />
               <FieldLabel colors={colors}>Last name</FieldLabel>
               <TextInput
@@ -421,8 +474,9 @@ export default function PatientAccessScreen() {
                 placeholder="Last name"
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="words"
+                editable={!fromBoothIntake}
                 className="mb-3 rounded-xl border px-3 py-3 text-base"
-                style={inputStyle}
+                style={fromBoothIntake ? lockedNameInputStyle : inputStyle}
               />
               <FieldLabel colors={colors}>Date of birth</FieldLabel>
               <TextInput
@@ -431,8 +485,9 @@ export default function PatientAccessScreen() {
                 placeholder="MM / DD / YYYY"
                 placeholderTextColor={colors.textMuted}
                 keyboardType="number-pad"
+                editable={!fromBoothIntake}
                 className="mb-3 rounded-xl border px-3 py-3 text-base"
-                style={inputStyle}
+                style={fromBoothIntake ? lockedNameInputStyle : inputStyle}
               />
               <FieldLabel colors={colors}>Sex</FieldLabel>
               <GenderChips value={gender} onChange={setGender} colors={colors} />
@@ -503,6 +558,7 @@ export default function PatientAccessScreen() {
                 className="mb-3 rounded-xl border px-3 py-3 text-base"
                 style={inputStyle}
               />
+              <PasswordRequirements password={password} colors={colors} />
               <FieldLabel colors={colors}>Confirm password</FieldLabel>
               <TextInput
                 value={confirmPassword}
@@ -614,3 +670,33 @@ export default function PatientAccessScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  passwordHintsContainer: {
+    marginBottom: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  passwordHintLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.7,
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  passwordHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  passwordHintIcon: {
+    fontSize: 14,
+    fontWeight: "700",
+    marginRight: 6,
+  },
+  passwordHintText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+});

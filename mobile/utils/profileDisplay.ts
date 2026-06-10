@@ -137,33 +137,16 @@ export function displayFullName(user: ApiUserPayload): string {
 
 export function buildPersonalInfoRows(user: ApiUserPayload): PersonalGridRows {
   const p = user.profile;
-  const fullName =
-    p && (p.firstName?.trim() || p.lastName?.trim())
-      ? `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim()
-      : "—";
-  const birthIso = p?.birthdate ?? "";
-  const age = birthIso ? ageFromIsoBirthdate(birthIso) : null;
-  const ageStr = age !== null ? `${age} years old` : "—";
-  const dobStr = birthIso ? formatIsoBirthdateLong(birthIso) : "—";
-  const genderStr = p?.gender ? capitalizeWord(p.gender) : "—";
   const phoneStr = user.phoneNumber?.trim() || "—";
   const emailStr = user.email?.trim() || "—";
   const locStr = p ? formatProfileLocation(p.street, p.barangay, p.city) : "—";
 
   return [
+    [{ label: "Address", value: locStr }],
     [
-      { label: "Full name", value: fullName || "—", truncateValue: true },
-      { label: "Age", value: ageStr },
-    ],
-    [
-      { label: "Date of birth", value: dobStr },
-      { label: "Sex", value: genderStr },
-    ],
-    [
-      { label: "Phone number", value: phoneStr },
       { label: "Email address", value: emailStr, truncateValue: true },
+      { label: "Phone number", value: phoneStr },
     ],
-    [{ label: "Location", value: locStr }],
   ];
 }
 
