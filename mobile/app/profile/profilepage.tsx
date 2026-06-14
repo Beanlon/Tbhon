@@ -23,8 +23,6 @@ import { notifyProfileUpdated } from '../../services/accountActivityNotification
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resetToLanding } from '../../utils/authNavigation';
 import { Ionicons } from '@expo/vector-icons';
-import { StatusBar } from "expo-status-bar";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { ApiError, getMe, patchMe, postLogout, putMyProfile, type ApiUserPayload } from "../../services/backendApi";
 import { clearAuthToken, getAuthToken } from "../../utils/authStorage";
 import {
@@ -34,7 +32,6 @@ import {
   setCachedProfile,
 } from "../../utils/profileCache";
 import { clearScreeningCache } from "../../utils/screeningHistoryCache";
-import { signupEmailValidationError } from "../../utils/signupHelpers";
 import {
   buildPersonalInfoRows,
   displayFullName,
@@ -43,6 +40,7 @@ import {
   profileSubtitleLine,
   type PersonalGridRows,
 } from "../../utils/profileDisplay";
+import { GOVERNMENT_ID_LABELS } from "../../utils/clientDisplay";
 import { useTheme } from "../../contexts/ThemeContext";
 import { FACILITY_ACCOUNT_LABEL, FACILITY_DETAILS_CARD_TITLE, FACILITY_PROFILE_SECTION, FACILITY_PROFILE_SUBTITLE, ADMIN_ACCOUNT_LABEL, ADMIN_DETAILS_CARD_TITLE, ADMIN_PROFILE_SECTION, ADMIN_PROFILE_SUBTITLE, ADMIN_PROFILE_TAGLINE, PATIENT_ACCOUNT_LABEL, PATIENT_DETAILS_CARD_TITLE, PATIENT_PROFILE_SECTION, PATIENT_PROFILE_SUBTITLE, PATIENT_PROFILE_TAGLINE, STAFF_PROFILE_TAGLINE } from "../../constants/accountModel";
 import {
@@ -56,19 +54,11 @@ import { isProgramAdmin, isPatientRole, parseUserRole } from "../../constants/us
 import { refreshPatientProfileIfNeeded } from "../../utils/syncPatientProfileFromScreening";
 
 const EMPTY_PERSONAL_ROWS: PersonalGridRows = [
+  [{ label: "Address", value: "—" }],
   [
-    { label: "Full name", value: "—", truncateValue: true },
-    { label: "Age", value: "—" },
-  ],
-  [
-    { label: "Date of birth", value: "—" },
-    { label: "Sex", value: "—" },
-  ],
-  [
-    { label: "Phone number", value: "—" },
     { label: "Email address", value: "—", truncateValue: true },
+    { label: "Phone number", value: "—" },
   ],
-  [{ label: "Location", value: "—" }],
 ];
 
 const profileCardShadow = {
@@ -79,7 +69,13 @@ const profileCardShadow = {
   elevation: 4,
 };
 
-const EDIT_GENDER_OPTIONS = ["male", "female", "other"] as const;
+const GOVERNMENT_ID_OPTIONS = [
+  { key: "national_id", label: "National ID" },
+  { key: "passport", label: "Passport" },
+  { key: "drivers_license", label: "Driver's license" },
+  { key: "other", label: "Other" },
+] as const;
+
 type EditCountry = {
   name: string;
   code: string;
@@ -183,30 +179,6 @@ const EDIT_COUNTRIES: readonly EditCountry[] = [
   },
 ];
 
-function dateToIsoLocal(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function isoToLocalDate(iso: string): Date | null {
-  const m = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-  const parsed = new Date(y, mo - 1, d);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function formatBirthdateDisplay(iso: string): string {
-  const dt = isoToLocalDate(iso);
-  if (!dt) return "Select birthdate";
-  return dt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
-}
-
 function parsePhoneForCountry(rawPhone: string | null | undefined): {
   country: EditCountry;
   localDigits: string;
@@ -223,6 +195,11 @@ function parsePhoneForCountry(rawPhone: string | null | undefined): {
   if (digits.startsWith("84")) return { country: EDIT_COUNTRIES[8], localDigits: digits.slice(2) };
   if (digits.startsWith("62")) return { country: EDIT_COUNTRIES[9], localDigits: digits.slice(2) };
   return { country: EDIT_COUNTRIES[0], localDigits: digits };
+}
+
+function formatGovernmentIdType(type: string | null | undefined): string {
+  const key = type?.trim() ?? "";
+  return key ? (GOVERNMENT_ID_LABELS[key] ?? key) : "—";
 }
 
 function SectionLabel({ children }: { children: string }) {
@@ -454,7 +431,13 @@ function initialUserFromCache(): ApiUserPayload | null {
   return peekProfile();
 }
 
-export function ProfilePage() {
+type ProfilePageProps = {
+  onNotificationChange?: () => void;
+};
+
+type PatientDetailsEditMode = "emergency" | "government";
+
+export function ProfilePage({ onNotificationChange }: ProfilePageProps = {}) {
   const navigation = useNavigation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -467,22 +450,27 @@ export function ProfilePage() {
   const [editModalMounted, setEditModalMounted] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const [showGenderPicker, setShowGenderPicker] = useState(false);
-  const [showBirthdatePicker, setShowBirthdatePicker] = useState(false);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [selectedEditCountry, setSelectedEditCountry] = useState<EditCountry>(EDIT_COUNTRIES[0]);
-  const [editBirthdateDraft, setEditBirthdateDraft] = useState<Date>(new Date(1995, 0, 1));
+  const [showPatientDetailsModal, setShowPatientDetailsModal] = useState(false);
+  const [patientDetailsModalMounted, setPatientDetailsModalMounted] = useState(false);
+  const [patientDetailsEditMode, setPatientDetailsEditMode] = useState<PatientDetailsEditMode>("emergency");
+  const [isSavingPatientDetails, setIsSavingPatientDetails] = useState(false);
+  const [patientDetailsError, setPatientDetailsError] = useState<string | null>(null);
   const editSheetAnim = useRef(new Animated.Value(0)).current;
+  const patientDetailsSheetAnim = useRef(new Animated.Value(0)).current;
   const [editForm, setEditForm] = useState({
-    firstName: "",
-    lastName: "",
-    birthdate: "",
-    gender: "",
+    phoneNumber: "",
     street: "",
     barangay: "",
     city: "",
-    email: "",
-    phoneNumber: "",
+  });
+  const [patientDetailsForm, setPatientDetailsForm] = useState({
+    emergencyContactName: "",
+    emergencyContactRelation: "",
+    emergencyContactPhone: "",
+    governmentIdType: "",
+    governmentIdNumber: "",
   });
 
   const skeletonPulse = useRef(new Animated.Value(0.65)).current;
@@ -656,20 +644,15 @@ export function ProfilePage() {
   };
 
   const handleEditProfile = () => {
-    const p = user?.profile;
     const parsedPhone = parsePhoneForCountry(user?.phoneNumber ?? "");
+    const p = user?.profile;
     setEditError(null);
     setSelectedEditCountry(parsedPhone.country);
     setEditForm({
-      firstName: p?.firstName ?? "",
-      lastName: p?.lastName ?? "",
-      birthdate: p?.birthdate ? p.birthdate.slice(0, 10) : "",
-      gender: p?.gender ?? "",
+      phoneNumber: parsedPhone.localDigits,
       street: p?.street ?? "",
       barangay: p?.barangay ?? "",
       city: p?.city ?? "",
-      email: user?.email ?? "",
-      phoneNumber: parsedPhone.localDigits,
     });
     setEditModalMounted(true);
     setShowEditModal(true);
@@ -679,17 +662,32 @@ export function ProfilePage() {
     setEditForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const openBirthdatePicker = () => {
-    const initial = isoToLocalDate(editForm.birthdate) ?? new Date(1995, 0, 1);
-    setEditBirthdateDraft(initial);
-    setShowBirthdatePicker(true);
+  const updatePatientDetailsField = (key: keyof typeof patientDetailsForm, value: string) => {
+    setPatientDetailsForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleEditPatientDetails = (mode: PatientDetailsEditMode) => {
+    const p = user?.profile;
+    setPatientDetailsError(null);
+    setPatientDetailsEditMode(mode);
+    setPatientDetailsForm({
+      emergencyContactName: p?.emergencyContactName ?? "",
+      emergencyContactRelation: p?.emergencyContactRelation ?? "",
+      emergencyContactPhone: p?.emergencyContactPhone ?? "",
+      governmentIdType: p?.governmentIdType ?? "",
+      governmentIdNumber: p?.governmentIdNumber ?? "",
+    });
+    setPatientDetailsModalMounted(true);
+    setShowPatientDetailsModal(true);
   };
 
   const closeEditModal = () => {
     setShowEditModal(false);
-    setShowGenderPicker(false);
-    setShowBirthdatePicker(false);
     setShowCountryPicker(false);
+  };
+
+  const closePatientDetailsModal = () => {
+    setShowPatientDetailsModal(false);
   };
 
   useEffect(() => {
@@ -714,39 +712,36 @@ export function ProfilePage() {
     });
   }, [showEditModal, editModalMounted, editSheetAnim]);
 
-  const onAndroidBirthdateChange = (event: DateTimePickerEvent, date?: Date) => {
-    setShowBirthdatePicker(false);
-    if (event.type === "set" && date) {
-      updateEditField("birthdate", dateToIsoLocal(date));
+  useEffect(() => {
+    if (showPatientDetailsModal) {
+      patientDetailsSheetAnim.setValue(0);
+      Animated.timing(patientDetailsSheetAnim, {
+        toValue: 1,
+        duration: 230,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+      return;
     }
-  };
+    if (!patientDetailsModalMounted) return;
+    Animated.timing(patientDetailsSheetAnim, {
+      toValue: 0,
+      duration: 180,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setPatientDetailsModalMounted(false);
+    });
+  }, [showPatientDetailsModal, patientDetailsModalMounted, patientDetailsSheetAnim]);
 
   const saveProfileEdits = async () => {
     if (!user) return;
     setEditError(null);
-    const firstName = editForm.firstName.trim();
-    const lastName = editForm.lastName.trim();
-    const birthdate = editForm.birthdate.trim();
-    const gender = editForm.gender.trim().toLowerCase();
+    const phoneDigits = editForm.phoneNumber.replace(/\D/g, "");
     const street = editForm.street.trim();
     const barangay = editForm.barangay.trim();
     const city = editForm.city.trim();
-    const email = editForm.email.trim();
-    const phoneDigits = editForm.phoneNumber.replace(/\D/g, "");
 
-    if (!firstName || !lastName || !birthdate || !gender) {
-      setEditError("First name, last name, birthdate, and sex are required.");
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdate)) {
-      setEditError("Birthdate must be in YYYY-MM-DD format.");
-      return;
-    }
-    const emailError = signupEmailValidationError(email);
-    if (emailError) {
-      setEditError(emailError);
-      return;
-    }
     if (phoneDigits && !selectedEditCountry.validate(phoneDigits)) {
       setEditError(`Invalid phone number. ${selectedEditCountry.invalidMessage}`);
       return;
@@ -755,32 +750,38 @@ export function ProfilePage() {
 
     setIsSavingEdit(true);
     try {
-      const contactChanged = email !== (user.email ?? "") || phoneNumber !== (user.phoneNumber ?? "");
-      if (contactChanged) {
+      if (phoneNumber !== (user.phoneNumber ?? "")) {
         await patchMe({
-          email: email || null,
           phoneNumber: phoneNumber || null,
         });
       }
 
+      if (!user.profile) {
+        throw new Error("Profile details are not available yet. Try reopening Profile after your screening result syncs.");
+      }
+      const p = user.profile;
       await putMyProfile({
-        firstName,
-        lastName,
-        birthdate,
-        gender,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        birthdate: p.birthdate?.slice(0, 10),
+        gender: p.gender,
         street: street || null,
         barangay: barangay || null,
         city: city || null,
+        emergencyContactName: p.emergencyContactName ?? null,
+        emergencyContactRelation: p.emergencyContactRelation ?? null,
+        emergencyContactPhone: p.emergencyContactPhone ?? null,
+        governmentIdType: p.governmentIdType ?? null,
+        governmentIdNumber: p.governmentIdNumber ?? null,
       });
 
       const { user: refreshedUser } = await getMe();
       setCachedProfile(refreshedUser);
       setUser(refreshedUser);
       closeEditModal();
-      setShowGenderPicker(false);
-      setShowBirthdatePicker(false);
       await notifyProfileUpdated();
-      Alert.alert("Profile updated", "Your profile information has been saved.");
+      onNotificationChange?.();
+      Alert.alert("Profile updated", "Your phone number and address have been saved.");
     } catch (error) {
       const message =
         error instanceof ApiError
@@ -791,6 +792,76 @@ export function ProfilePage() {
       setEditError(message);
     } finally {
       setIsSavingEdit(false);
+    }
+  };
+
+  const savePatientDetails = async () => {
+    if (!user?.profile) {
+      setPatientDetailsError("Profile details are not available yet. Try reopening Profile after your screening result syncs.");
+      return;
+    }
+    setPatientDetailsError(null);
+    const p = user.profile;
+    const governmentIdNumber = patientDetailsForm.governmentIdNumber.trim();
+    const governmentIdType = patientDetailsForm.governmentIdType.trim();
+
+    if (patientDetailsEditMode === "government" && governmentIdNumber && !governmentIdType) {
+      setPatientDetailsError("Select an ID type when entering a government ID.");
+      return;
+    }
+
+    setIsSavingPatientDetails(true);
+    try {
+      await putMyProfile({
+        firstName: p.firstName,
+        lastName: p.lastName,
+        birthdate: p.birthdate?.slice(0, 10),
+        gender: p.gender,
+        street: p.street,
+        barangay: p.barangay,
+        city: p.city,
+        emergencyContactName:
+          patientDetailsEditMode === "emergency"
+            ? patientDetailsForm.emergencyContactName.trim() || null
+            : p.emergencyContactName ?? null,
+        emergencyContactRelation: p.emergencyContactRelation ?? null,
+        emergencyContactPhone:
+          patientDetailsEditMode === "emergency"
+            ? patientDetailsForm.emergencyContactPhone.trim() || null
+            : p.emergencyContactPhone ?? null,
+        governmentIdType:
+          patientDetailsEditMode === "government"
+            ? governmentIdNumber
+              ? governmentIdType
+              : null
+            : p.governmentIdType ?? null,
+        governmentIdNumber:
+          patientDetailsEditMode === "government"
+            ? governmentIdNumber || null
+            : p.governmentIdNumber ?? null,
+      });
+      const { user: refreshedUser } = await getMe();
+      setCachedProfile(refreshedUser);
+      setUser(refreshedUser);
+      closePatientDetailsModal();
+      await notifyProfileUpdated();
+      onNotificationChange?.();
+      Alert.alert(
+        "Patient details updated",
+        patientDetailsEditMode === "emergency"
+          ? "Your emergency contact has been saved."
+          : "Your government ID has been saved.",
+      );
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Could not update patient details.";
+      setPatientDetailsError(message);
+    } finally {
+      setIsSavingPatientDetails(false);
     }
   };
 
@@ -873,6 +944,22 @@ export function ProfilePage() {
             style: { backgroundColor: "#FFF1F2", color: "#BE123C" },
           }
       : null;
+  const emergencyContactRows: PersonalGridRows = user?.profile
+    ? [
+        [
+          { label: "Name", value: user.profile.emergencyContactName?.trim() || "—", truncateValue: true },
+          { label: "Number", value: user.profile.emergencyContactPhone?.trim() || "—" },
+        ],
+      ]
+    : [[{ label: "Name", value: "—" }, { label: "Number", value: "—" }]];
+  const governmentIdRows: PersonalGridRows = user?.profile
+    ? [
+        [
+          { label: "ID type", value: formatGovernmentIdType(user.profile.governmentIdType) },
+          { label: "ID number", value: user.profile.governmentIdNumber?.trim() || "—", truncateValue: true },
+        ],
+      ]
+    : [[{ label: "ID type", value: "—" }, { label: "ID number", value: "—" }]];
 
   return (
     <View style={{ flex: 1, minHeight: 0, width: "100%", backgroundColor: colors.background }}>
@@ -1038,6 +1125,68 @@ export function ProfilePage() {
               <InfoGrid rows={personalRows ?? EMPTY_PERSONAL_ROWS} />
             )}
           </ProfileCard>
+
+          {isPatient ? (
+            <>
+              <SectionLabel>Patient details</SectionLabel>
+              <ProfileCardHeaderOnly
+                title="Emergency Contact"
+                subtitle="Person and phone number to contact in an emergency"
+              >
+                <InfoGrid rows={emergencyContactRows} />
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  className="mt-4 flex-row items-center justify-center gap-2 rounded-xl border py-3"
+                  style={{ borderColor: colors.primary, backgroundColor: colors.primaryLight }}
+                  onPress={() => handleEditPatientDetails("emergency")}
+                >
+                  <Ionicons name="create-outline" size={17} color={colors.primary} />
+                  <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+                    Edit emergency contact
+                  </Text>
+                </TouchableOpacity>
+              </ProfileCardHeaderOnly>
+
+              <ProfileCardHeaderOnly
+                title="Government ID"
+                subtitle="Private ID type and number saved from intake or entered here"
+              >
+                <InfoGrid rows={governmentIdRows} />
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  className="mt-4 flex-row items-center justify-center gap-2 rounded-xl border py-3"
+                  style={{ borderColor: colors.primary, backgroundColor: colors.primaryLight }}
+                  onPress={() => handleEditPatientDetails("government")}
+                >
+                  <Ionicons name="card-outline" size={17} color={colors.primary} />
+                  <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+                    Edit government ID
+                  </Text>
+                </TouchableOpacity>
+              </ProfileCardHeaderOnly>
+
+              <SectionLabel>TBhon ID</SectionLabel>
+              <ProfileCardHeaderOnly
+                title="My TBhon QR"
+                subtitle="Show this at the booth to link future visits to your account"
+              >
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => router.push("/patient/my-qr" as never)}
+                >
+                  <SettingRow
+                    icon="qr-code-outline"
+                    iconBg="#F3EEFF"
+                    iconColor="#5B5BFF"
+                    title="Show my QR"
+                    subtitle="Tap to view and share your permanent TBhon ID"
+                    isLast
+                    right={<Ionicons name="chevron-forward" size={16} color="#8FA3B1" />}
+                  />
+                </TouchableOpacity>
+              </ProfileCardHeaderOnly>
+            </>
+          ) : null}
 
           {user && isProgramAdmin(parseUserRole(user.role)) ? (
             <>
@@ -1259,80 +1408,6 @@ export function ProfilePage() {
               >
                 <View className="gap-3">
                   <View>
-                    <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>First Name</Text>
-                    <TextInput
-                      value={editForm.firstName}
-                      onChangeText={(text) => updateEditField("firstName", text)}
-                      placeholder="First name"
-                      className="rounded-xl border px-3.5 py-3 text-base"
-                      style={{ borderColor: colors.inputBorder, backgroundColor: colors.inputBg, color: colors.text }}
-                      placeholderTextColor={colors.textMuted}
-                    />
-                  </View>
-                  <View>
-                    <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>Last Name</Text>
-                    <TextInput
-                      value={editForm.lastName}
-                      onChangeText={(text) => updateEditField("lastName", text)}
-                      placeholder="Last name"
-                      className="rounded-xl border px-3.5 py-3 text-base"
-                      style={{ borderColor: colors.inputBorder, backgroundColor: colors.inputBg, color: colors.text }}
-                      placeholderTextColor={colors.textMuted}
-                    />
-                  </View>
-                  <View>
-                    <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>Birthdate</Text>
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      onPress={openBirthdatePicker}
-                      className="flex-row items-center justify-between rounded-xl border px-3.5 py-3"
-                      style={{ borderColor: colors.inputBorder, backgroundColor: colors.inputBg }}
-                    >
-                      <Text className="text-base" style={{ color: editForm.birthdate ? colors.text : colors.textMuted }}>
-                        {formatBirthdateDisplay(editForm.birthdate)}
-                      </Text>
-                      <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  </View>
-                  <View>
-                    <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>Sex</Text>
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      onPress={() => setShowGenderPicker(true)}
-                      className="flex-row items-center justify-between rounded-xl border px-3.5 py-3"
-                      style={{ borderColor: colors.inputBorder, backgroundColor: colors.inputBg }}
-                    >
-                      <Text className="text-base" style={{ color: editForm.gender ? colors.text : colors.textMuted }}>
-                        {editForm.gender ? `${editForm.gender[0].toUpperCase()}${editForm.gender.slice(1)}` : "Select sex"}
-                      </Text>
-                      <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-                    </TouchableOpacity>
-                    {showGenderPicker ? (
-                      <View className="mt-2 rounded-xl border p-2" style={{ borderColor: colors.inputBorder, backgroundColor: colors.card }}>
-                        {EDIT_GENDER_OPTIONS.map((option) => {
-                          const active = editForm.gender.trim().toLowerCase() === option;
-                          return (
-                            <TouchableOpacity
-                              key={option}
-                              activeOpacity={0.8}
-                              onPress={() => {
-                                updateEditField("gender", option);
-                                setShowGenderPicker(false);
-                              }}
-                              className="mb-1.5 flex-row items-center justify-between rounded-lg px-3 py-2.5"
-                              style={{ backgroundColor: active ? colors.primaryLight : colors.surfaceAlt }}
-                            >
-                              <Text className="text-base font-semibold" style={{ color: colors.text }}>
-                                {`${option[0].toUpperCase()}${option.slice(1)}`}
-                              </Text>
-                              {active ? <Ionicons name="checkmark" size={18} color={colors.primary} /> : null}
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    ) : null}
-                  </View>
-                  <View>
                     <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>Street</Text>
                     <TextInput
                       value={editForm.street}
@@ -1360,19 +1435,6 @@ export function ProfilePage() {
                       value={editForm.city}
                       onChangeText={(text) => updateEditField("city", text)}
                       placeholder="City"
-                      className="rounded-xl border px-3.5 py-3 text-base"
-                      style={{ borderColor: colors.inputBorder, backgroundColor: colors.inputBg, color: colors.text }}
-                      placeholderTextColor={colors.textMuted}
-                    />
-                  </View>
-                  <View>
-                    <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>Email</Text>
-                    <TextInput
-                      value={editForm.email}
-                      onChangeText={(text) => updateEditField("email", text)}
-                      placeholder="you@email.com"
-                      keyboardType="email-address"
-                      autoCapitalize="none"
                       className="rounded-xl border px-3.5 py-3 text-base"
                       style={{ borderColor: colors.inputBorder, backgroundColor: colors.inputBg, color: colors.text }}
                       placeholderTextColor={colors.textMuted}
@@ -1457,54 +1519,200 @@ export function ProfilePage() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {showBirthdatePicker && Platform.OS === "android" ? (
-        <DateTimePicker
-          value={editBirthdateDraft}
-          mode="date"
-          display="default"
-          maximumDate={new Date()}
-          onChange={onAndroidBirthdateChange}
-        />
-      ) : null}
-
       <Modal
-        visible={showBirthdatePicker && Platform.OS === "ios"}
+        visible={patientDetailsModalMounted}
         transparent
-        animationType="slide"
-        onRequestClose={() => setShowBirthdatePicker(false)}
+        animationType="none"
+        onRequestClose={closePatientDetailsModal}
       >
-        <View className="flex-1 justify-end bg-black/30">
-          <View
-            className="rounded-t-3xl px-5 pb-6 pt-4"
-            style={{ paddingBottom: Math.max(insets.bottom, 14), backgroundColor: colors.card }}
-          >
-            <View className="mb-3 flex-row items-center justify-between">
-              <TouchableOpacity activeOpacity={0.8} onPress={() => setShowBirthdatePicker(false)}>
-                <Text className="text-base" style={{ color: colors.textMuted }}>Cancel</Text>
-              </TouchableOpacity>
-              <Text className="text-base font-bold" style={{ color: colors.text }}>Birthdate</Text>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => {
-                  updateEditField("birthdate", dateToIsoLocal(editBirthdateDraft));
-                  setShowBirthdatePicker(false);
-                }}
-              >
-                <Text className="text-base font-bold" style={{ color: colors.primary }}>Done</Text>
-              </TouchableOpacity>
-            </View>
-            <DateTimePicker
-              value={editBirthdateDraft}
-              mode="date"
-              display="spinner"
-              maximumDate={new Date()}
-              themeVariant="light"
-              onChange={(_, date) => {
-                if (date) setEditBirthdateDraft(date);
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+          <View style={{ flex: 1, justifyContent: "flex-end" }}>
+            <Animated.View
+              pointerEvents="box-none"
+              style={[
+                StyleSheet.absoluteFillObject,
+                {
+                  backgroundColor: "rgba(2, 6, 23, 0.24)",
+                  opacity: patientDetailsSheetAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 1],
+                  }),
+                },
+              ]}
+            >
+              <Pressable style={StyleSheet.absoluteFillObject} onPress={closePatientDetailsModal} />
+            </Animated.View>
+
+            <Animated.View
+              style={{
+                width: "100%",
+                maxHeight: "92%",
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                paddingHorizontal: 20,
+                paddingTop: 14,
+                paddingBottom: Math.max(insets.bottom, 14),
+                backgroundColor: colors.card,
+                zIndex: 10,
+                elevation: 10,
+                opacity: patientDetailsSheetAnim,
+                transform: [
+                  {
+                    translateY: patientDetailsSheetAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [34, 0],
+                    }),
+                  },
+                ],
               }}
-            />
+            >
+              <View className="mb-3 flex-row items-center justify-between">
+                <View className="flex-1 pr-3">
+                  <Text className="text-[22px] font-extrabold" style={{ color: colors.text }}>
+                    {patientDetailsEditMode === "emergency" ? "Edit Emergency Contact" : "Edit Government ID"}
+                  </Text>
+                  <Text className="mt-1 text-sm" style={{ color: colors.textMuted }}>
+                    {patientDetailsEditMode === "emergency"
+                      ? "Update the emergency contact name and number"
+                      : "Update the ID type and ID number"}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  className="h-10 w-10 items-center justify-center rounded-full"
+                  style={{ backgroundColor: colors.surfaceAlt }}
+                  onPress={closePatientDetailsModal}
+                >
+                  <Ionicons name="close" size={20} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              {patientDetailsError ? (
+                <Text className="mb-3 rounded-xl px-3 py-2 text-sm" style={{ backgroundColor: colors.errorBg, color: colors.error }}>
+                  {patientDetailsError}
+                </Text>
+              ) : null}
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 8 }}
+              >
+                <View className="gap-3">
+                  {patientDetailsEditMode === "emergency" ? (
+                    <>
+                      <View>
+                        <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>
+                          Emergency contact name
+                        </Text>
+                        <TextInput
+                          value={patientDetailsForm.emergencyContactName}
+                          onChangeText={(text) => updatePatientDetailsField("emergencyContactName", text)}
+                          placeholder="Full name"
+                          autoCapitalize="words"
+                          className="rounded-xl border px-3.5 py-3 text-base"
+                          style={{ borderColor: colors.inputBorder, backgroundColor: colors.inputBg, color: colors.text }}
+                          placeholderTextColor={colors.textMuted}
+                        />
+                      </View>
+
+                      <View>
+                        <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>
+                          Emergency contact number
+                        </Text>
+                        <TextInput
+                          value={patientDetailsForm.emergencyContactPhone}
+                          onChangeText={(text) => updatePatientDetailsField("emergencyContactPhone", text)}
+                          placeholder="+63 9XX XXX XXXX"
+                          keyboardType="phone-pad"
+                          className="rounded-xl border px-3.5 py-3 text-base"
+                          style={{ borderColor: colors.inputBorder, backgroundColor: colors.inputBg, color: colors.text }}
+                          placeholderTextColor={colors.textMuted}
+                        />
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <View>
+                        <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>
+                          Government ID type
+                        </Text>
+                        <View className="rounded-xl border p-2" style={{ borderColor: colors.inputBorder, backgroundColor: colors.card }}>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => updatePatientDetailsField("governmentIdType", "")}
+                            className="mb-1.5 flex-row items-center justify-between rounded-lg px-3 py-2.5"
+                            style={{ backgroundColor: colors.surfaceAlt }}
+                          >
+                            <Text className="text-sm font-semibold" style={{ color: colors.text }}>
+                              No ID type selected
+                            </Text>
+                            {!patientDetailsForm.governmentIdType ? (
+                              <Ionicons name="checkmark" size={17} color={colors.primary} />
+                            ) : null}
+                          </TouchableOpacity>
+                          {GOVERNMENT_ID_OPTIONS.map((option) => {
+                            const active = patientDetailsForm.governmentIdType === option.key;
+                            return (
+                              <TouchableOpacity
+                                key={option.key}
+                                activeOpacity={0.85}
+                                onPress={() => updatePatientDetailsField("governmentIdType", option.key)}
+                                className="mb-1.5 flex-row items-center justify-between rounded-lg px-3 py-2.5"
+                                style={{ backgroundColor: active ? colors.primaryLight : colors.surfaceAlt }}
+                              >
+                                <Text className="text-sm font-semibold" style={{ color: colors.text }}>
+                                  {option.label}
+                                </Text>
+                                {active ? <Ionicons name="checkmark" size={17} color={colors.primary} /> : null}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      <View>
+                        <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>
+                          Government ID number
+                        </Text>
+                        <TextInput
+                          value={patientDetailsForm.governmentIdNumber}
+                          onChangeText={(text) => updatePatientDetailsField("governmentIdNumber", text)}
+                          placeholder="ID or passport number"
+                          autoCapitalize="characters"
+                          className="rounded-xl border px-3.5 py-3 text-base"
+                          style={{ borderColor: colors.inputBorder, backgroundColor: colors.inputBg, color: colors.text }}
+                          placeholderTextColor={colors.textMuted}
+                        />
+                        <Text className="mt-1 text-xs" style={{ color: colors.textMuted }}>
+                          Government ID is only visible in your profile and is not shown to staff during QR lookup.
+                        </Text>
+                      </View>
+                    </>
+                  )}
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    className="mt-3 items-center rounded-2xl py-3.5"
+                    style={{ backgroundColor: isSavingPatientDetails ? "#A7B0C0" : "#5B4FC4" }}
+                    onPress={() => {
+                      void savePatientDetails();
+                    }}
+                    disabled={isSavingPatientDetails}
+                  >
+                    <Text className="text-base font-extrabold text-white">
+                      {isSavingPatientDetails
+                        ? "Saving..."
+                        : patientDetailsEditMode === "emergency"
+                          ? "Save Emergency Contact"
+                          : "Save Government ID"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </Animated.View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

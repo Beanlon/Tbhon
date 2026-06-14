@@ -27,7 +27,7 @@ export async function getRefreshToken(): Promise<string | null> {
 
 export async function clearAuthToken(options?: { clearInbox?: boolean }): Promise<void> {
   await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY]);
-  if (options?.clearInbox !== false) {
+  if (options?.clearInbox === true) {
     await clearNotificationInbox();
   }
   await clearUnverifiedEngagementState();

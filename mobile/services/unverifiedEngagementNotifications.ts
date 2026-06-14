@@ -170,16 +170,24 @@ export async function syncUnverifiedEngagementNotifications(
   await scheduleOccasionalReminders(isPatient);
 }
 
-/** Every completed screening while email is unverified. */
-export async function onUnverifiedScreeningCompleted(args?: {
+/** Every completed screening writes an inbox success entry; unverified users also get verify nudges. */
+export async function onScreeningCompleted(args?: {
   sessionId?: string;
   riskLabel?: string;
   user?: ApiUserPayload | null;
 }): Promise<void> {
-  const isPatient = isPatientRole(parseUserRole(args?.user?.role ?? peekProfile()?.role));
+  const user = args?.user ?? peekProfile();
+  const isPatient = isPatientRole(parseUserRole(user?.role));
+  const userIsUnverified = user?.emailVerified !== true;
   const title = isPatient ? "Result saved" : "Screening saved";
   const risk = args?.riskLabel ? ` (${args.riskLabel})` : "";
-  const body = isPatient ? PATIENT_SCREENING_SAVED_NUDGE : STAFF_SCREENING_SAVED_NUDGE;
+  const body = userIsUnverified
+    ? isPatient
+      ? PATIENT_SCREENING_SAVED_NUDGE
+      : STAFF_SCREENING_SAVED_NUDGE
+    : isPatient
+      ? "Your visit result is saved and available in History."
+      : "This screening session is saved and available in History.";
 
   await addInboxNotification({
     id: args?.sessionId ? `screening-${args.sessionId}` : undefined,
@@ -187,6 +195,8 @@ export async function onUnverifiedScreeningCompleted(args?: {
     title,
     body,
   });
+
+  if (!userIsUnverified) return;
 
   const scheduled = await scheduleNativeNotification({
     identifier: args?.sessionId
@@ -203,6 +213,8 @@ export async function onUnverifiedScreeningCompleted(args?: {
     await incrementNativeAppBadge();
   }
 }
+
+export const onUnverifiedScreeningCompleted = onScreeningCompleted;
 
 export async function handleNotificationResponse(response: NotificationResponsePayload): Promise<void> {
   const data = response.notification.request.content.data as UnverifiedNotificationData | undefined;

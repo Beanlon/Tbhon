@@ -10,6 +10,7 @@ export type BottomNavMode = 'operator' | 'patient';
 type BottomNavProps = {
   activeTab: BottomNavTab;
   onTabPress: (tab: BottomNavTab) => void;
+  badgeCounts?: Partial<Record<BottomNavTab, number>>;
   /** Patient portal — no booth screening tab. */
   mode?: BottomNavMode;
 };
@@ -29,7 +30,7 @@ const patientTabs: Array<{ tab: BottomNavTab; label: string; icon: string }> = [
   { tab: 'profile', label: 'Profile', icon: 'person' },
 ];
 
-export default function BottomNav({ activeTab, onTabPress, mode = 'operator' }: BottomNavProps) {
+export default function BottomNav({ activeTab, onTabPress, badgeCounts = {}, mode = 'operator' }: BottomNavProps) {
   const { isDark, colors } = useTheme();
   const tabs = mode === 'patient' ? patientTabs : operatorTabs;
 
@@ -49,6 +50,7 @@ export default function BottomNav({ activeTab, onTabPress, mode = 'operator' }: 
       {tabs.map((item) => {
         const isActive = item.tab === activeTab;
         const isScreeningFab = mode === 'operator' && item.tab === 'screening';
+        const badgeCount = badgeCounts[item.tab] ?? 0;
 
         return (
           <TouchableOpacity
@@ -72,12 +74,33 @@ export default function BottomNav({ activeTab, onTabPress, mode = 'operator' }: 
                 <MaterialCommunityIcons name="qrcode-scan" size={28} color="#fff" />
               </View>
             ) : (
-              <Ionicons
-                name={item.icon as any}
-                size={28}
-                color={isActive ? colors.navActive : colors.navInactive}
-                style={{ marginBottom: 4 }}
-              />
+              <View style={{ position: 'relative', marginBottom: 4 }}>
+                <Ionicons
+                  name={item.icon as any}
+                  size={28}
+                  color={isActive ? colors.navActive : colors.navInactive}
+                />
+                {badgeCount > 0 ? (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      top: -6,
+                      right: -10,
+                      minWidth: 17,
+                      height: 17,
+                      borderRadius: 9,
+                      backgroundColor: '#EF4444',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingHorizontal: 4,
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800' }}>
+                      {badgeCount > 9 ? '9+' : String(badgeCount)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
             )}
 
             <Text

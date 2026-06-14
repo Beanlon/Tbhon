@@ -32,7 +32,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import type { FusionModalityBreakdown } from "../../utils/tbRiskFusion";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
 import { canRunScreenings, resolveUserRole } from "../../constants/userRole";
-import { onUnverifiedScreeningCompleted } from "../../services/unverifiedEngagementNotifications";
+import { onScreeningCompleted } from "../../services/unverifiedEngagementNotifications";
 import {
   isEmailVerified,
   promptEmailVerification,
@@ -298,6 +298,39 @@ export default function ResultScreen() {
   const [patientClaimUrl, setPatientClaimUrl] = useState<string | null>(null);
   const [displayImageUri, setDisplayImageUri] = useState("");
 
+  const refreshServerSputumImage = useCallback(async (sessionId: string): Promise<boolean> => {
+    const preview = await fetchSessionSputumPreview(sessionId);
+    const serverUrl = buildServerSputumImageUrl(
+      sessionId,
+      preview
+        ? {
+            hasRawData: true,
+            sessionId: preview.sessionId,
+            byteSize: preview.byteSize,
+            capturedAt: preview.capturedAt,
+          }
+        : null,
+    );
+    if (serverUrl) {
+      setDisplayImageUri(serverUrl);
+      return true;
+    }
+    return false;
+  }, []);
+
+  useEffect(() => {
+    if (!reviewGateReady || !savedSessionId) return;
+    let cancelled = false;
+    void refreshServerSputumImage(savedSessionId).catch(() => {
+      if (!cancelled && __DEV__) {
+        console.warn("[Screening] Could not load server sputum image yet");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshServerSputumImage, reviewGateReady, savedSessionId]);
+
   const handleDownloadPdf = useCallback(async () => {
     let profile = peekProfile();
     if (!isEmailVerified(profile)) {
@@ -424,10 +457,20 @@ export default function ResultScreen() {
         const isLocalImage =
           imageUriParam.startsWith("file://") || imageUriParam.startsWith("content://");
 
-        const serverHasSputumBefore =
-          draftSessionId && (params.deviceSputum === "1" || isLocalImage)
-            ? await sessionHasStoredSputumBytes(draftSessionId)
-            : false;
+        let serverHasSputumBefore = false;
+        if (draftSessionId && (params.deviceSputum === "1" || isLocalImage)) {
+          try {
+            serverHasSputumBefore =
+              (await refreshServerSputumImage(draftSessionId)) ||
+              (await sessionHasStoredSputumBytes(draftSessionId));
+          } catch (e) {
+            if (__DEV__) {
+              const msg =
+                e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+              console.warn("[Screening] Server sputum pre-check failed; continuing save:", msg);
+            }
+          }
+        }
 
         const includeLocalImageUriInComplete =
           imageUriParam.length > 0 && (!isLocalImage || !serverHasSputumBefore);
@@ -472,13 +515,11 @@ export default function ResultScreen() {
         clearScreeningCache();
 
         const profile = peekProfile();
-        if (profile && profile.emailVerified !== true) {
-          void onUnverifiedScreeningCompleted({
-            sessionId: response?.session?.sessionId,
-            riskLabel: cfg.label,
-            user: profile,
-          });
-        }
+        await onScreeningCompleted({
+          sessionId: response?.session?.sessionId,
+          riskLabel: cfg.label,
+          user: profile,
+        });
 
         // Upload the raw audio + image bytes so any device on this account
         // can replay/view the originals — not just this phone. Failures here
@@ -525,15 +566,28 @@ export default function ResultScreen() {
             }
           }
 
-          const serverHasSputumAfter = await sessionHasStoredSputumBytes(sessionId);
+          let serverHasSputumAfter = false;
+          try {
+            serverHasSputumAfter = await refreshServerSputumImage(sessionId);
+            if (!serverHasSputumAfter) {
+              serverHasSputumAfter = await sessionHasStoredSputumBytes(sessionId);
+            }
+          } catch (e) {
+            if (__DEV__) {
+              const msg =
+                e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+              console.warn("[Screening] Server sputum post-check failed; using local fallback:", msg);
+            }
+          }
           const skipStaleLocalSputumUpload =
             isLocalImage &&
             imageUriParam.length > 0 &&
-            (serverHasSputumBefore || serverHasSputumAfter || params.deviceSputum === "1");
+            (serverHasSputumBefore || serverHasSputumAfter);
 
           if (imageUriParam.length > 0 && isLocalImage && !skipStaleLocalSputumUpload) {
             try {
               await uploadSputumImageRaw({ sessionId, localUri: imageUriParam });
+              await refreshServerSputumImage(sessionId);
             } catch (e) {
               if (__DEV__) {
                 const msg =
@@ -549,19 +603,7 @@ export default function ResultScreen() {
           }
 
           try {
-            const preview = await fetchSessionSputumPreview(sessionId);
-            const serverUrl = buildServerSputumImageUrl(
-              sessionId,
-              preview
-                ? {
-                    hasRawData: true,
-                    sessionId: preview.sessionId,
-                    byteSize: preview.byteSize,
-                    capturedAt: preview.capturedAt,
-                  }
-                : null,
-            );
-            if (serverUrl) setDisplayImageUri(serverUrl);
+            await refreshServerSputumImage(sessionId);
           } catch {
             /* details screen refetches from API */
           }
@@ -716,8 +758,8 @@ export default function ResultScreen() {
 
           <View className="mb-6">
             <SputumSamplePhoto
-              key={savedSessionId ?? "no-session"}
-              sessionId={savedSessionId}
+              key={`${savedSessionId ?? "no-session"}:${displayImageUri}`}
+              sessionId={savedSessionId ?? undefined}
               uri={displayImageUri}
               height={220}
               label={displayImageUri.length > 0 ? "Sputum sample (from server)" : undefined}

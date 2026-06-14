@@ -27,7 +27,6 @@ import {
   fetchIotDeviceStatus,
   pollForNewCoughRecording,
   queueIotDeviceAudioStartCommand,
-  queueIotDeviceStopAudioCommand,
   waitForIotDeviceIdle,
   waitForIotDeviceReady,
   type IotHardwareState,
@@ -1181,8 +1180,7 @@ export default function IotCoughScreen() {
       setActiveIndex(stepIndex("uploading"));
       setIsUploading(true);
       setUploadSlowPrompt(false);
-      setStatusText("Waiting for server to confirm upload…");
-      void queueIotDeviceStopAudioCommand({ userId, sessionId }).catch(() => {});
+      setStatusText("Waiting for device to upload audio…");
 
       const preview = await runUploadPoll(sessionId);
       if (gen !== recordingGenRef.current) return;
@@ -1574,7 +1572,7 @@ export default function IotCoughScreen() {
 
   const isWaitingForUpload = running && completedThrough >= stepIndex("ended");
   const showRecordButton = !running && !isRecording && !captured && !uploadSlowPrompt;
-  const showStopButton = isRecording && !running;
+  const showStopButton = false;
   const showCancelUpload = isWaitingForUpload && !uploadSlowPrompt;
   const showUploadSlowPrompt = uploadSlowPrompt && isUploading;
   const showReviewActions = captured && !running && !isRecording;

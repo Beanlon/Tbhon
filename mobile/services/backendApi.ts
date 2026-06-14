@@ -48,6 +48,8 @@ export type ApiUserPayload = {
   facility?: ApiFacilitySummary | null;
   emailVerified?: boolean;
   emailVerifiedAt?: string | null;
+  /** Stable public code for PATIENT accounts — used in permanent "My TBhon QR". */
+  patientPublicCode?: string | null;
   createdAt: string;
   updatedAt: string;
   profile?: {
@@ -60,6 +62,11 @@ export type ApiUserPayload = {
     street: string | null;
     barangay: string | null;
     city: string | null;
+    emergencyContactName?: string | null;
+    emergencyContactPhone?: string | null;
+    emergencyContactRelation?: string | null;
+    governmentIdType?: string | null;
+    governmentIdNumber?: string | null;
     /** ISO-style or display code (e.g. PH, US, KOR); optional until backend persists it */
     countryCode?: string | null;
   } | null;
@@ -320,6 +327,13 @@ export async function postRegister(args: {
 
 export async function getMe() {
   return apiRequest<{ user: ApiUserPayload }>("/users/me", { method: "GET" });
+}
+
+export async function postEnsureMyPatientCode() {
+  return apiRequest<{ patientPublicCode: string }>("/users/me/patient-code", {
+    method: "POST",
+    json: {},
+  });
 }
 
 export async function postSendEmailVerification() {
@@ -1167,6 +1181,11 @@ export type UpsertMyProfilePayload = {
   street?: string | null;
   barangay?: string | null;
   city?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelation?: string | null;
+  governmentIdType?: string | null;
+  governmentIdNumber?: string | null;
 };
 
 export async function putMyProfile(payload: UpsertMyProfilePayload) {
@@ -1264,6 +1283,11 @@ export type PatientClaimProfilePrefill = {
   barangay: string | null;
   city: string | null;
   phoneNumber: string;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelation?: string | null;
+  governmentIdType?: string | null;
+  governmentIdNumber?: string | null;
 };
 
 export type PatientClaimPreviewResponse = {
@@ -1316,6 +1340,46 @@ export async function postPatientClaim(payload: {
     method: "POST",
     json: payload as JsonBody,
   });
+}
+
+export type PatientLookupResponse =
+  | {
+      found: true;
+      patientPublicCode: string | null;
+      name: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      birthdate: string | null;
+      gender: string | null;
+      street: string | null;
+      barangay: string | null;
+      city: string | null;
+      phoneNumber: string | null;
+      email: string | null;
+      maskedEmail: string | null;
+      emergencyContactName: string | null;
+      emergencyContactPhone: string | null;
+      emergencyContactRelation: string | null;
+    }
+  | { found: false };
+
+/** Staff-only: find a PATIENT account by QR code or email. */
+export async function getPatientLookup(params: { code?: string; email?: string }) {
+  const query = params.code
+    ? `code=${encodeURIComponent(params.code)}`
+    : `email=${encodeURIComponent(params.email ?? "")}`;
+  return apiRequest<PatientLookupResponse>(`/patient/lookup?${query}`, { method: "GET" });
+}
+
+/** Staff-only: link an existing PATIENT account to the current session. */
+export async function postLinkPatientToSession(
+  sessionId: string,
+  body: { patientPublicCode?: string; email?: string },
+) {
+  return apiRequest<{ ok: boolean; sessionId: string; patientUserId: string; name: string | null }>(
+    `/screenings/${encodeURIComponent(sessionId)}/link-patient`,
+    { method: "POST", json: body as Record<string, unknown> },
+  );
 }
 
 /* ------------------------------------------------------------------------

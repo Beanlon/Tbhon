@@ -95,9 +95,10 @@ export const IOT_HARDWARE_CHECKS = [
   },
   {
     id: "health",
-    title: "Service connection",
-    detail: "Verifies the device can reach TBhon servers over your Wi‑Fi network.",
-    actionLabel: "Check connection",
+    title: "IoT device response",
+    detail:
+      "Sends a setup command to the booth device and waits for the device to acknowledge it is turned on.",
+    actionLabel: "Check device",
   },
 ] as const satisfies ReadonlyArray<{
   id: string;

@@ -44,6 +44,7 @@ import {
 import { useTheme } from "../../contexts/ThemeContext";
 import { isPatientRole, parseUserRole } from "../../constants/userRole";
 import { peekProfile } from "../../utils/profileCache";
+import { reconcileScreeningHistoryNotifications } from "../../utils/screeningNotificationSync";
 
 const SCREENING_LIST_LIMIT = 100;
 
@@ -185,6 +186,10 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
       const fresh = peekScreenings();
       if (fresh) {
         setRows(fresh);
+        void reconcileScreeningHistoryNotifications(fresh, {
+          isPatientPortal,
+          markPatientScreeningsRead: true,
+        });
         setLoading(false);
         setRefreshing(false);
         return;
@@ -200,6 +205,10 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
           const { screenings } = await listMyScreenings(SCREENING_LIST_LIMIT);
           setRows(screenings);
           setCachedScreenings(screenings);
+          void reconcileScreeningHistoryNotifications(screenings, {
+            isPatientPortal,
+            markPatientScreeningsRead: true,
+          });
         } catch (e) {
           const message =
             e instanceof ApiError
@@ -219,6 +228,10 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
       const { screenings } = await listMyScreenings(SCREENING_LIST_LIMIT);
       setRows(screenings);
       setCachedScreenings(screenings);
+      void reconcileScreeningHistoryNotifications(screenings, {
+        isPatientPortal,
+        markPatientScreeningsRead: true,
+      });
     } catch (e) {
       const message =
         e instanceof ApiError
@@ -234,7 +247,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [isPatientPortal]);
 
   useEffect(() => {
     void load("initial");
@@ -458,30 +471,42 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
                         {meta.label}
                       </Text>
                     </View>
-                    <Text className="mb-1 text-base font-bold" style={{ color: colors.text }}>{record.clientName}</Text>
-                    {record.clientMeta ? (
+                    {!isPatientPortal ? (
                       <>
-                        <Text className="mb-1 text-sm" style={{ color: colors.textMuted }}>
-                          {record.clientMeta.demographics}
-                        </Text>
-                        <View className="mb-1 flex-row items-start gap-1.5">
-                          <Ionicons name="location-outline" size={14} color={colors.textMuted} style={{ marginTop: 2 }} />
-                          <Text className="flex-1 text-sm leading-5" style={{ color: colors.textSecondary }}>
-                            {record.clientMeta.address}
+                        <Text className="mb-1 text-base font-bold" style={{ color: colors.text }}>{record.clientName}</Text>
+                        {record.clientMeta ? (
+                          <>
+                            <Text className="mb-1 text-sm" style={{ color: colors.textMuted }}>
+                              {record.clientMeta.demographics}
+                            </Text>
+                            <View className="mb-1 flex-row items-start gap-1.5">
+                              <Ionicons name="location-outline" size={14} color={colors.textMuted} style={{ marginTop: 2 }} />
+                              <Text className="flex-1 text-sm leading-5" style={{ color: colors.textSecondary }}>
+                                {record.clientMeta.address}
+                              </Text>
+                            </View>
+                            <View className="mb-1 flex-row items-center gap-1.5">
+                              <Ionicons name="call-outline" size={14} color={colors.textMuted} />
+                              <Text className="flex-1 text-sm" style={{ color: colors.textSecondary }}>
+                                {record.clientMeta.contactNumber}
+                              </Text>
+                            </View>
+                            {record.clientMeta.emergencyContact ? (
+                              <View className="mb-1 flex-row items-center gap-1.5">
+                                <Ionicons name="medical-outline" size={14} color={colors.textMuted} />
+                                <Text className="flex-1 text-sm" style={{ color: colors.textSecondary }}>
+                                  {record.clientMeta.emergencyContact}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </>
+                        ) : (
+                          <Text className="mb-1 text-sm" style={{ color: colors.textMuted }}>
+                            {NO_PATIENT_ON_FILE}
                           </Text>
-                        </View>
-                        <View className="mb-1 flex-row items-center gap-1.5">
-                          <Ionicons name="call-outline" size={14} color={colors.textMuted} />
-                          <Text className="flex-1 text-sm" style={{ color: colors.textSecondary }}>
-                            {record.clientMeta.contactNumber}
-                          </Text>
-                        </View>
+                        )}
                       </>
-                    ) : (
-                      <Text className="mb-1 text-sm" style={{ color: colors.textMuted }}>
-                        {NO_PATIENT_ON_FILE}
-                      </Text>
-                    )}
+                    ) : null}
                     <Text className="mb-1 text-sm font-semibold" style={{ color: colors.textSecondary }}>{record.tagline}</Text>
                     <Text className="text-base" style={{ color: colors.textMuted }}>
                       {record.date} · {record.time}
