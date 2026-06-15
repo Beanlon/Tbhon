@@ -18,7 +18,7 @@
 #define SAMPLE_RATE 16000
 #define WAV_HEADER_SIZE 44
 /** INMP441 32-bit I2S slot — use 14-bit shift (not 16) or audio sounds wrong/fast. */
-#define I2S_MIC_SHIFT 14
+#define I2S_MIC_SHIFT 16
 
 #define CAMERA_MODEL_ESP32S3_EYE
 #include "camera_pins.h"
@@ -95,6 +95,8 @@ String apiKey = "tbhon-iot-dev-7f3a2c9d4e8b1a0f5c6d7e2b9a3c8d4e";
 String userId = "";
 String sessionId = "";
 int coughAttempt = 0;
+String setupCheckId = "";
+String setupCheckMessage = "";
 
 // ================= JSON HELPERS =================
 
@@ -121,6 +123,25 @@ int extractJsonInt(const String& json, const char* key) {
     return value.toInt();
 }
 
+String escapeJsonString(const String& raw) {
+    String escaped = "";
+    escaped.reserve(raw.length() + 8);
+    for (size_t i = 0; i < raw.length(); i++) {
+        char c = raw.charAt(i);
+        if (c == '"' || c == '\\') {
+            escaped += '\\';
+            escaped += c;
+        } else if (c == '\n') {
+            escaped += "\\n";
+        } else if (c == '\r') {
+            escaped += "\\r";
+        } else {
+            escaped += c;
+        }
+    }
+    return escaped;
+}
+
 bool parseDeviceCommand(const String& raw, String& outCommand) {
     String body = raw;
     body.trim();
@@ -130,7 +151,13 @@ bool parseDeviceCommand(const String& raw, String& outCommand) {
         return false;
     }
 
-    if (body == "image" || body == "audio" || body == "audio upload" || body == "stop audio") {
+    if (
+        body == "image" ||
+        body == "audio" ||
+        body == "audio upload" ||
+        body == "stop audio" ||
+        body == "setup check"
+    ) {
         outCommand = body;
         return true;
     }
@@ -141,21 +168,31 @@ bool parseDeviceCommand(const String& raw, String& outCommand) {
 
         String uid = extractJsonString(body, "userId");
         String sid = extractJsonString(body, "sessionId");
+        String checkId = extractJsonString(body, "setupCheckId");
+        String setupMsg = extractJsonString(body, "message");
         int attempt = extractJsonInt(body, "coughAttempt");
 
         if (uid.length() > 0) userId = uid;
         if (sid.length() > 0) sessionId = sid;
+        if (checkId.length() > 0) setupCheckId = checkId;
+        if (setupMsg.length() > 0) setupCheckMessage = setupMsg;
         if (attempt > 0) coughAttempt = attempt;
 
         Serial.println("Parsed command: " + outCommand);
         Serial.println("Parsed userId: " + userId);
         Serial.println("Parsed sessionId: " + sessionId);
         Serial.println("Parsed coughAttempt: " + String(coughAttempt));
+        if (outCommand == "setup check") {
+            Serial.println("Parsed setupCheckId: " + setupCheckId);
+            Serial.println("Setup message:");
+            Serial.println(setupCheckMessage);
+        }
 
         return outCommand == "image"
             || outCommand == "audio"
             || outCommand == "audio upload"
-            || outCommand == "stop audio";
+            || outCommand == "stop audio"
+            || outCommand == "setup check";
     }
 
     outCommand = "";
@@ -346,6 +383,49 @@ void reportPresence(const char* state) {
         while (client.available()) client.read();
     }
     client.stop();
+    lastPresenceMs = millis();
+}
+
+void acknowledgeSetupCheck() {
+    if (setupCheckId.length() == 0) {
+        Serial.println("Setup check missing setupCheckId — cannot acknowledge");
+        return;
+    }
+
+    Serial.println("=== SETUP CHECK RECEIVED ===");
+    Serial.println("setupCheckId: " + setupCheckId);
+    if (setupCheckMessage.length() > 0) {
+        Serial.println("message:");
+        Serial.println(setupCheckMessage);
+    }
+
+    WiFiClient client;
+    if (!connectHttp(client, "Setup ack")) {
+        Serial.println("Setup ack connect failed");
+        return;
+    }
+
+    String body =
+        String("{\"setupCheckId\":\"") + escapeJsonString(setupCheckId) +
+        "\",\"state\":\"idle\",\"message\":\"Device is turned on and connected.\"}";
+
+    client.println("POST /iot/setup-check/ack HTTP/1.1");
+    client.println("Host: " + String(host));
+    client.println("X-IoT-Key: " + apiKey);
+    client.println("Content-Type: application/json");
+    client.println("Content-Length: " + String(body.length()));
+    client.println("Connection: close");
+    client.println();
+    client.print(body);
+
+    String response = readHttpResponseBody(client);
+    client.stop();
+
+    Serial.println("Setup ack sent");
+    if (response.length() > 0) {
+        Serial.println("Setup ack response:");
+        Serial.println(response);
+    }
     lastPresenceMs = millis();
 }
 
@@ -835,7 +915,9 @@ void loop() {
     String command = "";
 
     if (parseDeviceCommand(raw, command)) {
-        if (command == "image") {
+        if (command == "setup check") {
+            acknowledgeSetupCheck();
+        } else if (command == "image") {
             uploadImage();
         } else if (command == "audio") {
             startAudioRecording();

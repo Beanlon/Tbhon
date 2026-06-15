@@ -62,6 +62,7 @@ export const PATIENT_SCREENING_SAVED_NUDGE =
 export const STAFF_SCREENING_SAVED_NUDGE =
   "This session is saved. Verify your email to export a PDF report. Not a medical diagnosis.";
 export const PATIENT_VERIFY_INBOX_NUDGE = "Verify your email to secure your result account.";
+export const STAFF_VERIFY_INBOX_NUDGE = "Verify your email to unlock screening PDF export.";
 export const STAFF_VERIFY_INBOX_INITIAL_PUSH =
   "Verify your email when you have a moment — it helps secure booth PDF export.";
 export const STAFF_VERIFY_INBOX_REPEAT = "Verify your email to export screening reports as PDF.";
@@ -72,6 +73,20 @@ export const PATIENT_LEARN_HERO_SUBTITLE =
   "A curable bacterial infection. This section is organized to make key facts easier to scan.";
 export const STAFF_LEARN_COUNSELING_BANNER =
   "Booth counseling — share plain-language facts with the person screened and refer to a clinician for diagnosis.";
+
+/** Deep link scheme for permanent patient identity QR (shown in Profile). */
+export const PATIENT_ID_SCHEME = "tbhon://patient/id";
+
+/** Build the permanent patient identity QR payload from patientPublicCode. */
+export function buildPatientIdUrl(code: string): string {
+  return `${PATIENT_ID_SCHEME}?code=${encodeURIComponent(code)}`;
+}
+
+/** Build a QR image URL for the permanent patient identity QR. */
+export function buildPatientIdQrImageUrl(code: string, size = 220): string {
+  const payload = buildPatientIdUrl(code);
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(payload)}`;
+}
 
 /** Deep link / QR payload for patient result access. */
 export const PATIENT_CLAIM_SCHEME = "tbhon://patient/claim";

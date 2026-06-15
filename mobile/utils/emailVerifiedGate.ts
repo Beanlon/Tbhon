@@ -1,3 +1,4 @@
+import type { Router } from "expo-router";
 import { Alert } from "react-native";
 import type { ApiUserPayload } from "../services/backendApi";
 import {
@@ -18,17 +19,15 @@ export function isEmailVerified(user: ApiUserPayload | null | undefined): boolea
   return Boolean(user?.emailVerified);
 }
 
-type RouterLike = { push: (href: string) => void };
-
 export function promptEmailVerification(
-  router: RouterLike,
+  router: Pick<Router, "push">,
   user?: ApiUserPayload | null,
 ): void {
   Alert.alert("Email verification required", emailVerifyBenefits(user), [
     { text: "Maybe later", style: "cancel" },
     {
       text: "Verify now",
-      onPress: () => router.push("/verifyEmail/verifyEmail" as never),
+      onPress: () => router.push("/verifyEmail/verifyEmail"),
     },
   ]);
 }

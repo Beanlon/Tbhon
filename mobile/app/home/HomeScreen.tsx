@@ -11,7 +11,7 @@ import {
   Animated,
   Easing,
   useWindowDimensions,
-  type EmitterSubscription,
+  type NativeEventSubscription,
 } from "react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -55,6 +55,7 @@ import {
   loadNotificationInbox,
   markAllInboxRead,
   markInboxNotificationRead,
+  subscribeNotificationInbox,
   unreadInboxCount,
   type InboxNotification,
 } from "../../utils/notificationInbox";
@@ -66,6 +67,7 @@ import {
 import { setNativeAppBadgeCount } from "../../utils/nativeNotifications";
 import { palette } from "../../constants/palette";
 import { useTheme } from "../../contexts/ThemeContext";
+import { syncPatientScreeningNotificationsFromServer } from "../../utils/screeningNotificationSync";
 
 const NAVY = "#0B1530";
 const PURPLE = palette.violet;
@@ -73,6 +75,7 @@ const TEXT_NAVY = palette.deepNavy;
 const MUTED = "#6B7280";
 /** Body height of bottom nav row (excluding safe-area inset). */
 const BOTTOM_NAV_HEIGHT = 84;
+const PATIENT_SCREENING_NOTIFICATION_POLL_MS = 30_000;
 
 const cardShadow = {
   shadowColor: "#000",
@@ -112,6 +115,7 @@ export default function HomeScreen() {
   const { height: screenHeight } = useWindowDimensions();
   const { isDark, colors } = useTheme();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationModalMounted, setNotificationModalMounted] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState<BottomNavTab>("home");
@@ -124,6 +128,7 @@ export default function HomeScreen() {
   const [screeningModalVisible, setScreeningModalVisible] = useState(false);
   const [screeningModalMounted, setScreeningModalMounted] = useState(false);
   const screeningSlideAnim = useRef(new Animated.Value(0)).current;
+  const notificationSheetAnim = useRef(new Animated.Value(0)).current;
 
   const openScreening = useCallback(() => {
     const profile = peekProfile();
@@ -227,15 +232,72 @@ export default function HomeScreen() {
     await setNativeAppBadgeCount(unread);
   }, []);
 
+  const syncPatientScreeningNotifications = useCallback(async () => {
+    if (!isPatientPortal) return;
+    try {
+      await syncPatientScreeningNotificationsFromServer();
+      await refreshInbox();
+    } catch {
+      // Best effort: patient history still loads normally if this background sync fails.
+    }
+  }, [isPatientPortal, refreshInbox]);
+
+  useEffect(() => {
+    const sub = subscribeNotificationInbox(() => {
+      void refreshInbox();
+    });
+    return () => sub.remove();
+  }, [refreshInbox]);
+
+  useEffect(() => {
+    if (activeTab === "home") {
+      void refreshInbox();
+      void syncPatientScreeningNotifications();
+    }
+  }, [activeTab, refreshInbox, syncPatientScreeningNotifications]);
+
+  useEffect(() => {
+    if (!isPatientPortal || activeTab !== "home") return;
+    const interval = setInterval(() => {
+      void syncPatientScreeningNotifications();
+    }, PATIENT_SCREENING_NOTIFICATION_POLL_MS);
+    return () => clearInterval(interval);
+  }, [activeTab, isPatientPortal, syncPatientScreeningNotifications]);
+
   const openNotifications = useCallback(() => {
+    setNotificationModalMounted(true);
     setShowNotifications(true);
-    void refreshInbox();
+    setUnreadCount(0);
+    setInboxItems((items) => items.map((item) => ({ ...item, read: true })));
+    void setNativeAppBadgeCount(0);
+    void markAllInboxRead().then(() => refreshInbox());
   }, [refreshInbox]);
 
   const closeNotifications = useCallback(() => {
     setShowNotifications(false);
-    void markAllInboxRead().then(() => refreshInbox());
-  }, [refreshInbox]);
+  }, []);
+
+  useEffect(() => {
+    if (showNotifications) {
+      notificationSheetAnim.setValue(0);
+      Animated.timing(notificationSheetAnim, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+    if (!notificationModalMounted) return;
+    Animated.timing(notificationSheetAnim, {
+      toValue: 0,
+      duration: 200,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setNotificationModalMounted(false);
+    });
+  }, [showNotifications, notificationModalMounted, notificationSheetAnim]);
 
   const handleClearAllNotifications = useCallback(() => {
     if (inboxItems.length === 0) return;
@@ -259,6 +321,7 @@ export default function HomeScreen() {
     useCallback(() => {
       applyHomeSystemChrome();
       void refreshInbox();
+      void syncPatientScreeningNotifications();
       let active = true;
       void (async () => {
         const token = await getAuthToken();
@@ -274,11 +337,11 @@ export default function HomeScreen() {
       return () => {
         active = false;
       };
-    }, [navigation, applyHomeSystemChrome, refreshInbox]),
+    }, [navigation, applyHomeSystemChrome, refreshInbox, syncPatientScreeningNotifications]),
   );
 
   useEffect(() => {
-    const sub: EmitterSubscription = BackHandler.addEventListener("hardwareBackPress", () => {
+    const sub: NativeEventSubscription = BackHandler.addEventListener("hardwareBackPress", () => {
       // Close screening overlay first if open
       if (screeningModalVisible) {
         closeScreening();
@@ -563,7 +626,7 @@ export default function HomeScreen() {
     }
 
     if (tab === "profile") {
-      return <ProfilePage />;
+      return <ProfilePage onNotificationChange={refreshInbox} />;
     }
 
     return null;
@@ -600,20 +663,41 @@ export default function HomeScreen() {
       </View>
 
       <Modal
-        visible={showNotifications}
-        animationType="fade"
+        visible={notificationModalMounted}
+        animationType="none"
         transparent
         onRequestClose={closeNotifications}
       >
-        <View style={[styles.notificationBackdrop, { backgroundColor: colors.modalOverlay }]}>
+        <View style={styles.notificationBackdrop}>
           <Pressable style={styles.notificationBackdropTap} onPress={closeNotifications} />
-          <View
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFillObject,
+              {
+                backgroundColor: colors.modalOverlay,
+                opacity: notificationSheetAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 1],
+                }),
+              },
+            ]}
+          />
+          <Animated.View
             style={[
               styles.notificationSheet,
               {
                 paddingTop: insets.top + 12,
                 backgroundColor: colors.card,
                 borderTopColor: colors.cardBorder,
+                transform: [
+                  {
+                    translateY: notificationSheetAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [screenHeight, 0],
+                    }),
+                  },
+                ],
               },
             ]}
           >
@@ -706,7 +790,7 @@ export default function HomeScreen() {
                 ))
               )}
             </ScrollView>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 

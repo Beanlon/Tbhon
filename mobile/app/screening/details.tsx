@@ -19,6 +19,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Audio } from "expo-av";
+import type { AVPlaybackStatus } from "expo-av/build/AV.types";
 import {
   ApiError,
   buildServerSputumImageUrl,
@@ -375,18 +376,15 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
       : fusion.probTb;
 
   // Only server-persisted media (hasRawData + fileUrl). Never use phone-local file:// paths.
-  const audioClips: CoughPlaybackClip[] = s.coughRecordings
-    .map((r) => {
-      if (!r.hasRawData || typeof r.fileUrl !== "string" || r.fileUrl.length === 0) return null;
-      const uri = resolveMediaUrl(r.fileUrl) ?? "";
-      if (uri.length === 0) return null;
-      return {
-        uri,
-        recordingId: typeof r.recordingId === "string" ? r.recordingId : undefined,
-        mimeType: r.mimeType ?? null,
-      };
-    })
-    .filter((c): c is CoughPlaybackClip => c !== null);
+  const audioClips: CoughPlaybackClip[] = s.coughRecordings.flatMap((r) => {
+    if (!r.hasRawData || typeof r.fileUrl !== "string" || r.fileUrl.length === 0) return [];
+    const uri = resolveMediaUrl(r.fileUrl) ?? "";
+    if (uri.length === 0) return [];
+    const clip: CoughPlaybackClip = { uri };
+    if (typeof r.recordingId === "string") clip.recordingId = r.recordingId;
+    if (r.mimeType != null) clip.mimeType = r.mimeType;
+    return [clip];
+  });
 
   const imageUri = buildServerSputumImageUrl(s.sessionId, img) ?? "";
   const imageAnalyzed = Boolean(pp);
@@ -573,9 +571,10 @@ export default function ScreeningDetailsScreen() {
   const [imageViewerVisible, setImageViewerVisible] = useState(false);
   const [viewerHeaders, setViewerHeaders] = useState<Record<string, string> | null>(null);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const [loadingAudioIndex, setLoadingAudioIndex] = useState<number | null>(null);
   const playingIndexRef = useRef<number | null>(null);
   const [audioHint, setAudioHint] = useState<string | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<InstanceType<typeof Audio.Sound> | null>(null);
   const checklistHeightAnim = useRef(new Animated.Value(0)).current;
 
   // Unload audio on unmount to prevent leaks
@@ -592,6 +591,7 @@ export default function ScreeningDetailsScreen() {
     checklistHeightAnim.setValue(0);
     setImageViewerVisible(false);
     setPlayingIndex(null);
+    setLoadingAudioIndex(null);
     playingIndexRef.current = null;
     setAudioHint(null);
     const sound = soundRef.current;
@@ -660,7 +660,7 @@ export default function ScreeningDetailsScreen() {
     const risk: RiskLevel =
       params.risk === "moderate" || params.risk === "high" ? params.risk : "low";
     const probTbRaw = typeof params.probTb === "string" ? Number(params.probTb) : NaN;
-    const probTb = Number.isFinite(probTbRaw) ? probTbRaw : null;
+    let probTb = Number.isFinite(probTbRaw) ? probTbRaw : null;
 
     const audioClips: CoughPlaybackClip[] = parseAudioUris(params.audioUris)
       .filter(
@@ -791,6 +791,32 @@ export default function ScreeningDetailsScreen() {
 
   const vm = remoteVm ?? paramVm;
 
+  useEffect(() => {
+    if (!sessionId || remoteLoading || remoteVm?.imageUri) return;
+
+    let cancelled = false;
+    const pollForServerImage = async () => {
+      for (let attempt = 0; attempt < 6 && !cancelled; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 1000 : 2500));
+        if (cancelled) return;
+        try {
+          const { session } = await getScreening(sessionId);
+          if (cancelled || session.sessionId !== sessionId) return;
+          const nextVm = mapSessionToViewModel(session);
+          setRemoteVm(nextVm);
+          if (nextVm.imageUri) return;
+        } catch {
+          // The regular detail loader owns visible errors; this is only a media refresh.
+        }
+      }
+    };
+
+    void pollForServerImage();
+    return () => {
+      cancelled = true;
+    };
+  }, [remoteLoading, remoteVm?.imageUri, sessionId]);
+
   const risk = vm?.risk ?? "low";
   const probTb = vm?.probTb ?? null;
   const hasProb = probTb !== null && Number.isFinite(probTb);
@@ -909,6 +935,13 @@ export default function ScreeningDetailsScreen() {
   );
 
   const hasPatientDetails = clientName !== PATIENT_NOT_RECORDED;
+  const canShowPatientDetails = isStaffBooth && hasPatientDetails;
+  const patientHeaderSubtitle = useMemo(() => {
+    if (!vm?.completedAt) return "Screening result";
+    const completed = new Date(vm.completedAt);
+    return Number.isFinite(completed.getTime()) ? completed.toLocaleString() : "Screening result";
+  }, [vm?.completedAt]);
+  const visibleHeaderSubtitle = isStaffBooth ? headerSubtitle : patientHeaderSubtitle;
 
   const checklistCollapsedSubtitle = useMemo(() => {
     if (checklistRows.length === 0) {
@@ -1003,8 +1036,8 @@ export default function ScreeningDetailsScreen() {
           phlegmLoad,
           phlegmConf: Number.isFinite(phlegmConf) ? phlegmConf : null,
           phlegmFailed,
-          patientName: hasPatientDetails ? clientName : null,
-          patientDetailRows: hasPatientDetails ? clientDetailRows : [],
+          patientName: canShowPatientDetails ? clientName : null,
+          patientDetailRows: canShowPatientDetails ? clientDetailRows : [],
           patientClaimUrl,
         });
         await shareScreeningPdf(pdfData);
@@ -1029,7 +1062,7 @@ export default function ScreeningDetailsScreen() {
       detailsSessionId,
       fusionFactors,
       fusionModalities,
-      hasPatientDetails,
+      canShowPatientDetails,
       hasProb,
       imageAnalyzed,
       imageProvided,
@@ -1064,6 +1097,7 @@ export default function ScreeningDetailsScreen() {
     soundRef.current = null;
     playingIndexRef.current = null;
     setPlayingIndex(null);
+    setLoadingAudioIndex(null);
     if (s) {
       await s.stopAsync().catch(() => {});
       await s.unloadAsync().catch(() => {});
@@ -1105,12 +1139,8 @@ export default function ScreeningDetailsScreen() {
 
     playingIndexRef.current = index;
     setPlayingIndex(index);
+    setLoadingAudioIndex(index);
     try {
-      const needsDownload = /^https?:\/\//i.test(clip.uri) && Boolean(sessionId);
-      if (needsDownload) {
-        setAudioHint("Downloading audio…");
-      }
-
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
@@ -1124,6 +1154,9 @@ export default function ScreeningDetailsScreen() {
       const sound = new Audio.Sound();
       soundRef.current = sound;
       await sound.loadAsync({ uri: playUri }, { shouldPlay: true });
+      if (playingIndexRef.current === index) {
+        setLoadingAudioIndex(null);
+      }
 
       // Cancelled while loading (user tapped stop during network fetch)
       if (soundRef.current !== sound) {
@@ -1132,7 +1165,7 @@ export default function ScreeningDetailsScreen() {
         return;
       }
 
-      sound.setOnPlaybackStatusUpdate((status) => {
+      sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
         if (status.isLoaded && status.didJustFinish) {
           sound.setOnPlaybackStatusUpdate(null);
           if (soundRef.current === sound) {
@@ -1140,6 +1173,7 @@ export default function ScreeningDetailsScreen() {
             playingIndexRef.current = null;
           }
           setPlayingIndex((current) => (current === index ? null : current));
+          setLoadingAudioIndex((current) => (current === index ? null : current));
           void sound.unloadAsync().catch(() => {});
         }
       });
@@ -1150,6 +1184,7 @@ export default function ScreeningDetailsScreen() {
       }
       soundRef.current = null;
       playingIndexRef.current = null;
+      setLoadingAudioIndex(null);
       setAudioHint(
         `Could not play this recording: ${e instanceof Error ? e.message : String(e)}`,
       );
@@ -1186,7 +1221,7 @@ export default function ScreeningDetailsScreen() {
               {isStaffBooth ? STAFF_DETAILS_SCREEN_TITLE : PATIENT_DETAILS_SCREEN_TITLE}
             </Text>
             <Text className="mt-1 text-center text-sm font-semibold sm:text-base" style={{ color: colors.textMuted }} numberOfLines={2}>
-              {headerSubtitle}
+              {visibleHeaderSubtitle}
             </Text>
           </View>
 
@@ -1250,42 +1285,44 @@ export default function ScreeningDetailsScreen() {
                   </View>
                 )}
 
-                <DetailsCard
-                  title={CLIENT_RECORD_TITLE}
-                  cardBorder={colors.cardBorder}
-                  cardBg={colors.card}
-                  textColor={colors.text}
-                >
-                  <Text className="text-base font-bold" style={{ color: colors.text }}>{clientName}</Text>
-                  <Text className="mt-1 text-sm leading-5" style={{ color: colors.textMuted }}>{clientSubtitle}</Text>
-                  {clientDetailRows.map((row) => (
-                    <View key={row.label} className="mt-3">
-                      <Text className="text-xs font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
-                        {row.label}
-                      </Text>
-                      <Text className="mt-1 text-sm leading-5" style={{ color: colors.textSecondary }}>
-                        {row.value}
-                      </Text>
-                    </View>
-                  ))}
-                  {!hasPatientDetails && detailsSessionId.length > 0 && isStaffBooth ? (
-                    <Pressable
-                      onPress={() =>
-                        router.push({
-                          pathname: "/screening/client-intake",
-                          params: { sessionId: detailsSessionId, from: "details" },
-                        } as any)
-                      }
-                      className="mt-4 flex-row items-center justify-center gap-2 rounded-xl border py-3"
-                      style={{ borderColor: colors.primary, backgroundColor: colors.primaryLight }}
-                    >
-                      <Ionicons name="person-add-outline" size={18} color={colors.primary} />
-                      <Text className="text-sm font-bold" style={{ color: colors.primary }}>
-                        {ADD_PATIENT_DETAILS}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </DetailsCard>
+                {isStaffBooth ? (
+                  <DetailsCard
+                    title={CLIENT_RECORD_TITLE}
+                    cardBorder={colors.cardBorder}
+                    cardBg={colors.card}
+                    textColor={colors.text}
+                  >
+                    <Text className="text-base font-bold" style={{ color: colors.text }}>{clientName}</Text>
+                    <Text className="mt-1 text-sm leading-5" style={{ color: colors.textMuted }}>{clientSubtitle}</Text>
+                    {clientDetailRows.map((row) => (
+                      <View key={row.label} className="mt-3">
+                        <Text className="text-xs font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
+                          {row.label}
+                        </Text>
+                        <Text className="mt-1 text-sm leading-5" style={{ color: colors.textSecondary }}>
+                          {row.value}
+                        </Text>
+                      </View>
+                    ))}
+                    {!hasPatientDetails && detailsSessionId.length > 0 ? (
+                      <Pressable
+                        onPress={() =>
+                          router.push({
+                            pathname: "/screening/client-intake",
+                            params: { sessionId: detailsSessionId, from: "details" },
+                          } as any)
+                        }
+                        className="mt-4 flex-row items-center justify-center gap-2 rounded-xl border py-3"
+                        style={{ borderColor: colors.primary, backgroundColor: colors.primaryLight }}
+                      >
+                        <Ionicons name="person-add-outline" size={18} color={colors.primary} />
+                        <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+                          {ADD_PATIENT_DETAILS}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </DetailsCard>
+                ) : null}
 
                 {detailsSessionId && isStaffBooth ? (
                   <PatientSlipPanel sessionId={detailsSessionId} onSharePdf={handleShareSlipPdf} />
@@ -1482,11 +1519,15 @@ export default function ScreeningDetailsScreen() {
                           <Text className="text-sm font-semibold" style={{ color: colors.text }}>
                             Cough clip {i + 1}
                           </Text>
-                          <Ionicons
-                            name={playingIndex === i ? "pause-circle" : "play-circle"}
-                            size={20}
-                            color={colors.primary}
-                          />
+                          {loadingAudioIndex === i ? (
+                            <ActivityIndicator size="small" color={colors.primary} />
+                          ) : (
+                            <Ionicons
+                              name={playingIndex === i ? "pause-circle" : "play-circle"}
+                              size={20}
+                              color={colors.primary}
+                            />
+                          )}
                         </Pressable>
                       ))}
                     </View>
@@ -1504,7 +1545,7 @@ export default function ScreeningDetailsScreen() {
 
                 <SputumSampleCard
                   sessionId={sessionId}
-                  imageUri={imageUri}
+                  imageUri={resolvedImageUri || imageUri}
                   imageProvided={imageProvided}
                   onOpenViewer={handleOpenImageViewer}
                   cardBorder={colors.cardBorder}
@@ -1679,46 +1720,35 @@ export default function ScreeningDetailsScreen() {
                 <Ionicons name="close" size={22} color="#FFFFFF" />
               </Pressable>
             </View>
-            <View style={{ flex: 1, paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 18) }}>
-              <View
-                style={{
-                  flex: 1,
-                  borderRadius: 18,
-                  overflow: "hidden",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.18)",
-                  backgroundColor: "rgba(255,255,255,0.06)",
-                }}
-              >
-                {resolvedImageUri ? (
-                  viewerNeedsAuth && !viewerHeaders ? (
-                    <View className="flex-1 items-center justify-center px-6">
-                      <ActivityIndicator color="#C7D2FE" />
-                      <Text className="mt-3 text-center text-sm font-semibold text-[#C7D2FE]">
-                        Loading image…
-                      </Text>
-                    </View>
-                  ) : (
-                    <Image
-                      source={
-                        viewerNeedsAuth && viewerHeaders
-                          ? { uri: resolvedImageUri, headers: viewerHeaders }
-                          : { uri: resolvedImageUri }
-                      }
-                      style={{ width: "100%", height: "100%" }}
-                      contentFit="contain"
-                      cachePolicy="none"
-                    />
-                  )
-                ) : (
+            <View style={{ flex: 1, paddingHorizontal: 8, paddingBottom: Math.max(insets.bottom, 18) }}>
+              {resolvedImageUri ? (
+                viewerNeedsAuth && !viewerHeaders ? (
                   <View className="flex-1 items-center justify-center px-6">
-                    <Ionicons name="image-outline" size={28} color="#C7D2FE" />
+                    <ActivityIndicator color="#C7D2FE" />
                     <Text className="mt-3 text-center text-sm font-semibold text-[#C7D2FE]">
-                      Image preview unavailable.
+                      Loading image…
                     </Text>
                   </View>
-                )}
-              </View>
+                ) : (
+                  <Image
+                    source={
+                      viewerNeedsAuth && viewerHeaders
+                        ? { uri: resolvedImageUri, headers: viewerHeaders }
+                        : { uri: resolvedImageUri }
+                    }
+                    style={{ width: "100%", height: "100%" }}
+                    contentFit="contain"
+                    cachePolicy="none"
+                  />
+                )
+              ) : (
+                <View className="flex-1 items-center justify-center px-6">
+                  <Ionicons name="image-outline" size={28} color="#C7D2FE" />
+                  <Text className="mt-3 text-center text-sm font-semibold text-[#C7D2FE]">
+                    Image preview unavailable.
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         </Modal>
