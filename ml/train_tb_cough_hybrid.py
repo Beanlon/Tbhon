@@ -61,6 +61,10 @@ class HybridConfig:
     gbm_n_estimators: int = 600
     val_fraction: float = 0.12
     legacy_arch: bool = True
+    spec_time_masks: int = 2
+    spec_freq_masks: int = 2
+    codec_aug_prob: float = 0.35
+    reverb_aug_prob: float = 0.20
 
 
 def extract_gbm_features(path: Path, cfg: HybridConfig) -> np.ndarray:
@@ -128,9 +132,11 @@ def train_cnn_branch(
         lr=cfg.cnn_lr,
         augment=True,
         time_shift_max=0.15,
-        noise_std=0.005,
-        spec_time_masks=0,
-        spec_freq_masks=0,
+        noise_std=0.008,
+        spec_time_masks=cfg.spec_time_masks,
+        spec_freq_masks=cfg.spec_freq_masks,
+        codec_aug_prob=cfg.codec_aug_prob,
+        reverb_aug_prob=cfg.reverb_aug_prob,
         legacy_arch=cfg.legacy_arch,
         val_fraction=0.0,
         early_stop_patience=999,
@@ -278,14 +284,19 @@ def fit_hybrid(cfg: HybridConfig) -> Path:
     val_gbm_p = gbm.predict_proba(X_val)[:, 1]
 
     best_w = 0.5
+    best_f1 = -1.0
     best_acc = -1.0
     best_t = 0.5
+    y_val_true = [y for _, y in val_split]
     for w in np.linspace(0.0, 1.0, 21):
         blend = w * val_cnn_p + (1.0 - w) * val_gbm_p
         for t in np.linspace(0.2, 0.8, 121):
             pred = (blend >= t).astype(int)
-            acc = accuracy_score([y for _, y in val_split], pred)
-            if acc > best_acc:
+            f1 = float(f1_score(y_val_true, pred, average="macro", zero_division=0))
+            acc = accuracy_score(y_val_true, pred)
+            # Primary objective: macro-F1. Secondary tie-breaker: accuracy.
+            if f1 > best_f1 or (np.isclose(f1, best_f1) and acc > best_acc):
+                best_f1 = f1
                 best_acc = acc
                 best_w = float(w)
                 best_t = float(t)
@@ -309,6 +320,7 @@ def fit_hybrid(cfg: HybridConfig) -> Path:
         "test_accuracy": test_acc,
         "test_f1_macro": test_f1,
         "best_f1_macro": test_f1,
+        "threshold_selection_metric": "val_macro_f1",
     }
     bundle_path = run_dir / "hybrid_bundle.pkl"
     with bundle_path.open("wb") as fh:
@@ -324,6 +336,7 @@ def fit_hybrid(cfg: HybridConfig) -> Path:
             "model_type": "hybrid_cnn",
             "hybrid_bundle": str(bundle_path),
             "blend_cnn_weight": best_w,
+            "threshold_selection_metric": "val_macro_f1",
         },
         run_dir / "model.pt",
     )
@@ -331,8 +344,11 @@ def fit_hybrid(cfg: HybridConfig) -> Path:
     metrics = {
         "test_accuracy": test_acc,
         "best_f1_macro": test_f1,
+        "val_best_f1_macro": best_f1,
+        "val_best_accuracy": float(best_acc),
         "blend_cnn_weight": best_w,
         "decision_threshold": best_t,
+        "threshold_selection_metric": "val_macro_f1",
         "confusion_matrix": cm,
         "classification_report": report,
     }

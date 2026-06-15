@@ -29,7 +29,7 @@ import torch
 import torch.nn as nn
 from PIL import Image
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms
 from torchvision.models import ResNet18_Weights, resnet18
 
@@ -43,6 +43,10 @@ LOAD_BINS: list[tuple[str, int, int | None]] = [
 LOAD_LABELS: list[str] = [name for name, _, _ in LOAD_BINS]
 
 BINARY_LABELS: list[str] = ["afb_negative", "afb_positive"]
+
+DEFAULT_MIN_SENSITIVITY = 0.95
+DEFAULT_TARGET_NEG_FRAC = 0.10
+SPLIT_RATIOS = (0.70, 0.15, 0.15)
 
 
 def afb_binary_label(count: int) -> str:
@@ -118,6 +122,100 @@ def items_to_xy(
 ) -> list[tuple[Path, int, int]]:
     label_fn = afb_binary_label if task == "binary" else afb_load_label
     return [(p, c, label_to_idx[label_fn(c)]) for p, c in items]
+
+
+def pool_stratified_split(
+    splits: dict[str, list[tuple[Path, int]]],
+    label_to_idx: dict[str, int],
+    *,
+    task: str,
+    seed: int,
+    ratios: tuple[float, float, float] = SPLIT_RATIOS,
+) -> tuple[list[tuple[Path, int, int]], list[tuple[Path, int, int]], list[tuple[Path, int, int]]]:
+    """Merge folder splits and reassign in-memory with per-class stratification."""
+    pooled = [item for xs in splits.values() for item in xs]
+    xy = items_to_xy(pooled, label_to_idx, task=task)
+    by_class: dict[int, list[tuple[Path, int, int]]] = {}
+    for item in xy:
+        by_class.setdefault(item[2], []).append(item)
+
+    train_ratio, val_ratio, _test_ratio = ratios
+    train_items: list[tuple[Path, int, int]] = []
+    val_items: list[tuple[Path, int, int]] = []
+    test_items: list[tuple[Path, int, int]] = []
+
+    rng = random.Random(seed)
+    for _cls, cls_items in by_class.items():
+        shuffled = list(cls_items)
+        rng.shuffle(shuffled)
+        n = len(shuffled)
+        if n == 1:
+            train_items.extend(shuffled)
+            continue
+        n_val = max(1, int(round(n * val_ratio)))
+        n_test = max(1, int(round(n * (1.0 - train_ratio - val_ratio))))
+        if n_val + n_test >= n:
+            n_test = max(1, min(n - 1, n_test))
+            n_val = max(1, min(n - n_test - 1, n_val))
+        n_train = n - n_val - n_test
+        if n_train < 1:
+            n_train = max(1, n - n_val - n_test)
+        train_items.extend(shuffled[:n_train])
+        val_items.extend(shuffled[n_train : n_train + n_val])
+        test_items.extend(shuffled[n_train + n_val :])
+
+    return train_items, val_items, test_items
+
+
+def load_dataset_items(
+    dataset: Path,
+    *,
+    task: str,
+    stratified_resplit: bool,
+    seed: int,
+) -> tuple[list[tuple[Path, int, int]], list[tuple[Path, int, int]], list[tuple[Path, int, int]], list[str], dict[str, int]]:
+    images_root = dataset / "images"
+    labels_root = dataset / "labels"
+    splits: dict[str, list[tuple[Path, int]]] = {}
+    for split_name in ("train", "val", "test"):
+        idir = images_root / split_name
+        ldir = labels_root / split_name
+        if not idir.exists() or not ldir.exists():
+            raise FileNotFoundError(f"Missing split folder: {idir} or {ldir}")
+        splits[split_name] = collect_split(idir, ldir)
+
+    class_names = BINARY_LABELS if task == "binary" else LOAD_LABELS
+    label_to_idx = {name: i for i, name in enumerate(class_names)}
+    if stratified_resplit and task == "binary":
+        train_items, val_items, test_items = pool_stratified_split(
+            splits, label_to_idx, task=task, seed=seed
+        )
+    else:
+        train_items = items_to_xy(splits["train"], label_to_idx, task=task)
+        val_items = items_to_xy(splits["val"], label_to_idx, task=task)
+        test_items = items_to_xy(splits["test"], label_to_idx, task=task)
+    return train_items, val_items, test_items, class_names, label_to_idx
+
+
+def train_sample_weights(
+    items: list[tuple[Path, int, int]],
+    *,
+    num_classes: int,
+    target_neg_frac: float = DEFAULT_TARGET_NEG_FRAC,
+    negative_idx: int = 0,
+) -> torch.Tensor:
+    """Per-sample weights so negatives appear ~target_neg_frac of each epoch."""
+    counts = np.zeros(num_classes, dtype=np.float64)
+    for _, _, y in items:
+        counts[y] += 1.0
+    counts = np.maximum(counts, 1.0)
+    n_pos = float(np.sum(counts) - counts[negative_idx])
+    n_neg = float(counts[negative_idx])
+    neg_mult = (target_neg_frac / max(1e-6, 1.0 - target_neg_frac)) * (n_pos / n_neg)
+    class_scale = np.ones(num_classes, dtype=np.float64)
+    class_scale[negative_idx] = neg_mult
+    weights = [float(class_scale[y] / counts[y]) for _, _, y in items]
+    return torch.tensor(weights, dtype=torch.float64)
 
 
 class PhlegmAFBDataset(Dataset):
@@ -222,22 +320,61 @@ def collect_probs(
     return np.array(ys), np.array(probs)
 
 
-def tune_decision_threshold(
+def binary_metrics_at_threshold(
     y_true: np.ndarray,
     probs: np.ndarray,
     positive_idx: int,
-) -> tuple[float, float]:
-    """Pick threshold on positive-class probability maximizing val macro-F1."""
+    threshold: float,
+) -> dict[str, float]:
     pos_p = probs[:, positive_idx]
-    best_thr = 0.5
-    best_f1 = -1.0
-    for thr in np.linspace(0.05, 0.95, 19):
-        pred = (pos_p >= thr).astype(int)
-        f1 = float(f1_score(y_true, pred, average="macro", zero_division=0))
-        if f1 > best_f1:
-            best_f1 = f1
-            best_thr = float(thr)
-    return best_thr, best_f1
+    pred = (pos_p >= threshold).astype(int)
+    neg_idx = 1 - positive_idx if positive_idx in (0, 1) else 0
+    tp = float(np.sum((pred == positive_idx) & (y_true == positive_idx)))
+    fn = float(np.sum((pred != positive_idx) & (y_true == positive_idx)))
+    tn = float(np.sum((pred == neg_idx) & (y_true == neg_idx)))
+    fp = float(np.sum((pred == positive_idx) & (y_true == neg_idx)))
+    sensitivity = tp / (tp + fn + 1e-12)
+    specificity = tn / (tn + fp + 1e-12)
+    balanced_acc = 0.5 * (sensitivity + specificity)
+    return {
+        "threshold": float(threshold),
+        "sensitivity": float(sensitivity),
+        "specificity": float(specificity),
+        "balanced_accuracy": float(balanced_acc),
+        "tp": tp,
+        "fn": fn,
+        "tn": tn,
+        "fp": fp,
+    }
+
+
+def tune_decision_threshold_constrained(
+    y_true: np.ndarray,
+    probs: np.ndarray,
+    positive_idx: int,
+    *,
+    min_sensitivity: float = DEFAULT_MIN_SENSITIVITY,
+) -> tuple[float, dict[str, float], str]:
+    """Pick threshold with max specificity among those meeting min sensitivity."""
+    thresholds = np.linspace(0.05, 0.95, 91)
+    rows = [binary_metrics_at_threshold(y_true, probs, positive_idx, float(thr)) for thr in thresholds]
+    feasible = [r for r in rows if r["sensitivity"] >= min_sensitivity]
+    policy = "max_specificity_min_sensitivity"
+    if feasible:
+        best = max(
+            feasible,
+            key=lambda r: (r["specificity"], r["threshold"], r["balanced_accuracy"]),
+        )
+        return float(best["threshold"]), best, policy
+
+    policy = "fallback_max_sensitivity"
+    best = max(rows, key=lambda r: (r["sensitivity"], r["specificity"], r["threshold"]))
+    print(
+        f"WARNING: no threshold met min_sensitivity={min_sensitivity:.2f}; "
+        f"using max-sensitivity fallback (sens={best['sensitivity']:.3f}, spec={best['specificity']:.3f})",
+        flush=True,
+    )
+    return float(best["threshold"]), best, policy
 
 
 def predict_with_threshold(y_probs: np.ndarray, positive_idx: int, threshold: float) -> np.ndarray:
@@ -294,6 +431,17 @@ def main() -> None:
     p.add_argument("--task", choices=("binary", "load4"), default=None, help="binary AFB detected vs 4-class load")
     p.add_argument("--no-augment", action="store_true")
     p.add_argument("--no-class-weight", action="store_true")
+    p.add_argument(
+        "--no-stratified-resplit",
+        action="store_true",
+        help="Use folder train/val/test splits as-is (default for binary: stratified in-memory resplit)",
+    )
+    p.add_argument(
+        "--min-sensitivity",
+        type=float,
+        default=DEFAULT_MIN_SENSITIVITY,
+        help="Minimum AFB+ sensitivity when tuning the binary decision threshold",
+    )
     args = p.parse_args()
 
     cfg = Config()
@@ -317,22 +465,14 @@ def main() -> None:
     set_seed(cfg.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    images_root = args.dataset / "images"
-    labels_root = args.dataset / "labels"
-    splits: dict[str, list[tuple[Path, int]]] = {}
-    for s in ("train", "val", "test"):
-        idir = images_root / s
-        ldir = labels_root / s
-        if not idir.exists() or not ldir.exists():
-            raise FileNotFoundError(f"Missing split folder: {idir} or {ldir}")
-        splits[s] = collect_split(idir, ldir)
-
     task = cfg.task
-    class_names = BINARY_LABELS if task == "binary" else LOAD_LABELS
-    label_to_idx = {name: i for i, name in enumerate(class_names)}
-    train_items = items_to_xy(splits["train"], label_to_idx, task=task)
-    val_items = items_to_xy(splits["val"], label_to_idx, task=task)
-    test_items = items_to_xy(splits["test"], label_to_idx, task=task)
+    stratified_resplit = task == "binary" and not args.no_stratified_resplit
+    train_items, val_items, test_items, class_names, label_to_idx = load_dataset_items(
+        args.dataset,
+        task=task,
+        stratified_resplit=stratified_resplit,
+        seed=cfg.seed,
+    )
 
     norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     base_tf = transforms.Compose(
@@ -355,7 +495,32 @@ def main() -> None:
     test_ds = PhlegmAFBDataset(test_items, base_tf, None, train=False)
 
     pin = device.type == "cuda"
-    train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, pin_memory=pin)
+    if task == "binary" and len(train_items) > 0:
+        sample_weights = train_sample_weights(
+            train_items,
+            num_classes=len(class_names),
+            negative_idx=int(label_to_idx["afb_negative"]),
+        )
+        train_sampler = WeightedRandomSampler(
+            sample_weights,
+            num_samples=len(train_items),
+            replacement=True,
+        )
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=cfg.batch_size,
+            sampler=train_sampler,
+            num_workers=cfg.num_workers,
+            pin_memory=pin,
+        )
+    else:
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=cfg.batch_size,
+            shuffle=True,
+            num_workers=cfg.num_workers,
+            pin_memory=pin,
+        )
     val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, pin_memory=pin)
     test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, pin_memory=pin)
 
@@ -390,6 +555,8 @@ def main() -> None:
         "dataset": str(args.dataset),
         "labels": class_names,
         "distribution": distribution,
+        "stratified_resplit": stratified_resplit,
+        "min_sensitivity_constraint": args.min_sensitivity if task == "binary" else None,
         "device": str(device),
     }
     if task == "load4":
@@ -397,9 +564,12 @@ def main() -> None:
     (out_dir / "config.json").write_text(json.dumps(cfg_dump, indent=2), encoding="utf-8")
     (out_dir / "label_map.json").write_text(json.dumps(label_to_idx, indent=2), encoding="utf-8")
 
+    best_val_score = -1.0
     best_val_f1 = -1.0
     best_path = out_dir / "model_best.pt"
     positive_idx = label_to_idx.get("afb_positive", label_to_idx.get("high", num_classes - 1))
+    threshold_policy = "fixed_0.5"
+    threshold_metrics: dict[str, float] = {}
     for epoch in range(1, cfg.epochs + 1):
         model.train()
         losses: list[float] = []
@@ -416,13 +586,28 @@ def main() -> None:
 
         val_acc, y_val, p_val = evaluate(model, val_loader, device)
         val_f1 = float(f1_score(y_val, p_val, average="macro", zero_division=0))
-        if val_f1 > best_val_f1:
+        if task == "binary":
+            y_val_probs, val_probs = collect_probs(model, val_loader, device)
+            decision_threshold, threshold_metrics, threshold_policy = tune_decision_threshold_constrained(
+                y_val_probs,
+                val_probs,
+                positive_idx,
+                min_sensitivity=float(args.min_sensitivity),
+            )
+            val_score = float(threshold_metrics["specificity"])
+            if threshold_metrics["sensitivity"] < float(args.min_sensitivity):
+                val_score = float(threshold_metrics["sensitivity"]) * 0.25 + val_score * 0.75
+        else:
+            decision_threshold = 0.5
+            threshold_policy = "fixed_0.5"
+            val_score = val_f1
+
+        if val_score > best_val_score:
+            best_val_score = val_score
             best_val_f1 = val_f1
-            if task == "binary":
-                y_val_probs, val_probs = collect_probs(model, val_loader, device)
-                decision_threshold, _ = tune_decision_threshold(y_val_probs, val_probs, positive_idx)
-            else:
+            if task != "binary":
                 decision_threshold = 0.5
+                threshold_policy = "fixed_0.5"
             torch.save(
                 checkpoint_payload(
                     model,
@@ -436,7 +621,8 @@ def main() -> None:
             )
         print(
             f"epoch {epoch:03d}/{cfg.epochs}  train_loss={float(np.mean(losses)):.4f}  "
-            f"val_acc={val_acc:.4f}  val_macro_f1={val_f1:.4f}  best_val_macro_f1={best_val_f1:.4f}",
+            f"val_acc={val_acc:.4f}  val_macro_f1={val_f1:.4f}  "
+            f"val_score={val_score:.4f}  best_val_score={best_val_score:.4f}",
             flush=True,
         )
 
@@ -457,7 +643,11 @@ def main() -> None:
     metrics: dict[str, Any] = {
         "task": task,
         "best_val_macro_f1": best_val_f1,
+        "best_val_score": best_val_score,
         "decision_threshold": decision_threshold,
+        "threshold_policy": threshold_policy,
+        "min_sensitivity_constraint": float(args.min_sensitivity) if task == "binary" else None,
+        "val_threshold_metrics": threshold_metrics if task == "binary" else None,
         "test_acc": test_acc,
         "test_macro_f1": macro_f1,
         "confusion_matrix": cm.tolist(),
@@ -469,6 +659,9 @@ def main() -> None:
         tn, fp, fn, tp = cm.ravel()
         metrics["sensitivity"] = float(tp / (tp + fn)) if (tp + fn) else 0.0
         metrics["specificity"] = float(tn / (tn + fp)) if (tn + fp) else 0.0
+    elif task == "binary":
+        metrics["sensitivity"] = 0.0
+        metrics["specificity"] = 0.0
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     torch.save(
         checkpoint_payload(
@@ -484,7 +677,8 @@ def main() -> None:
 
     print(
         f"\nDone. best_val_macro_f1={best_val_f1:.4f}  test_acc={test_acc:.4f}  "
-        f"test_macro_f1={macro_f1:.4f}  threshold={decision_threshold:.3f}"
+        f"test_macro_f1={macro_f1:.4f}  threshold={decision_threshold:.3f}  "
+        f"sens={metrics.get('sensitivity', 0.0):.3f}  spec={metrics.get('specificity', 0.0):.3f}"
     )
     print(f"Artifacts: {out_dir}")
 

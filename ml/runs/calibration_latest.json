@@ -1,0 +1,36 @@
+{
+  "model_path": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml\\runs\\20260531_014419\\model.pt",
+  "model_type": "hybrid_cnn",
+  "windowing": {
+    "top_k": 3,
+    "agg": "mean",
+    "stride_seconds": 0.5
+  },
+  "dataset": {
+    "manifest": null,
+    "kaggle_fold": 0,
+    "sample_size": 600,
+    "hard_neg_dir": "samples/synthetic",
+    "num_clips": 604
+  },
+  "constraints": {
+    "min_recall": 0.8,
+    "max_fpr": 0.25,
+    "min_hard_block": 0.75
+  },
+  "best": {
+    "tb_threshold": 0.31,
+    "recall_tb": 0.876470588235289,
+    "fpr_non_tb": 0.06221198156682013,
+    "hard_negative_block_rate": 1.0,
+    "tp": 149.0,
+    "fn": 21.0,
+    "fp": 27.0,
+    "tn": 407.0,
+    "quality_thresholds": {
+      "min_rms": 0.0025,
+      "voiced_frac_threshold": 0.4,
+      "min_dynamic_range": 2.0
+    }
+  }
+}
