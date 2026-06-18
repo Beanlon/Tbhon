@@ -2,8 +2,9 @@ import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
+import AudioWaveIcon from './AudioWaveIcon';
 
-export type BottomNavTab = 'home' | 'history' | 'screening' | 'learn' | 'profile';
+export type BottomNavTab = 'home' | 'history' | 'screening' | 'qr' | 'learn' | 'profile';
 
 export type BottomNavMode = 'operator' | 'patient';
 
@@ -18,7 +19,7 @@ type BottomNavProps = {
 const operatorTabs: Array<{ tab: BottomNavTab; label: string; icon: string }> = [
   { tab: 'home', label: 'Home', icon: 'home' },
   { tab: 'history', label: 'Sessions', icon: 'time' },
-  { tab: 'screening', label: 'Screening', icon: 'qrcode' },
+  { tab: 'screening', label: 'Screening', icon: 'waveform' },
   { tab: 'learn', label: 'Learn', icon: 'document' },
   { tab: 'profile', label: 'Profile', icon: 'person' },
 ];
@@ -26,6 +27,7 @@ const operatorTabs: Array<{ tab: BottomNavTab; label: string; icon: string }> = 
 const patientTabs: Array<{ tab: BottomNavTab; label: string; icon: string }> = [
   { tab: 'home', label: 'Home', icon: 'home' },
   { tab: 'history', label: 'Results', icon: 'time' },
+  { tab: 'qr', label: 'QR Code', icon: 'qrcode-scan' },
   { tab: 'learn', label: 'Learn', icon: 'document' },
   { tab: 'profile', label: 'Profile', icon: 'person' },
 ];
@@ -49,7 +51,9 @@ export default function BottomNav({ activeTab, onTabPress, badgeCounts = {}, mod
     >
       {tabs.map((item) => {
         const isActive = item.tab === activeTab;
-        const isScreeningFab = mode === 'operator' && item.tab === 'screening';
+        const isCenterFab =
+          (mode === 'operator' && item.tab === 'screening') ||
+          (mode === 'patient' && item.tab === 'qr');
         const badgeCount = badgeCounts[item.tab] ?? 0;
 
         return (
@@ -59,19 +63,23 @@ export default function BottomNav({ activeTab, onTabPress, badgeCounts = {}, mod
             activeOpacity={0.75}
             style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
           >
-            {isScreeningFab ? (
+            {isCenterFab ? (
               <View
                 style={{
                   width: 60,
                   height: 60,
-                  backgroundColor: isDark ? colors.accent : '#0a1428',
+                  backgroundColor: isDark ? colors.surfaceAlt : '#081430',
                   borderRadius: 30,
                   justifyContent: 'center',
                   alignItems: 'center',
                   marginBottom: 4,
                 }}
               >
-                <MaterialCommunityIcons name="qrcode-scan" size={28} color="#fff" />
+                {mode === 'operator' && item.tab === 'screening' ? (
+                  <AudioWaveIcon size={28} color="#FFFFFF" />
+                ) : (
+                  <MaterialCommunityIcons name={item.icon as any} size={28} color="#fff" />
+                )}
               </View>
             ) : (
               <View style={{ position: 'relative', marginBottom: 4 }}>

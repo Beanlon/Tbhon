@@ -26,21 +26,66 @@ export const SPUTUM_DETAILS_MISSING_LABEL = "No sample available";
 export const SPUTUM_DETAILS_MISSING_SUB =
   "Patient did not produce a sample — results use cough audio and checklist only.";
 
-/** Staff must pick a reason before continuing without a smear image. */
-export const SPUTUM_SKIP_BUTTON_LABEL = "No sample available — document reason";
+/** Capture screen: skip first, document the reason on review. */
+export const SPUTUM_SKIP_CAPTURE_BUTTON_LABEL = "Skip sputum smear";
+
+/** Review screen: staff must enter a reason before continuing without a smear image. */
+export const SPUTUM_SKIP_BUTTON_LABEL = "Skip sputum smear — document reason";
 
 export const SPUTUM_SKIP_MODAL_TITLE = "Document no smear";
 export const SPUTUM_SKIP_MODAL_MESSAGE =
-  "Smear capture is protocol when a sample is available. Select why you are continuing without a smear image.";
+  "Smear capture is protocol when a sample is available. Enter why you are continuing without a smear image.";
 
-export const SPUTUM_SKIP_REASONS = [
+export const SPUTUM_SKIP_REASON_PLACEHOLDER =
+  "e.g. No sample provided, or booth device unavailable";
+
+/** Matches backend `sputum_skip_reason` VARCHAR(255). */
+export const SPUTUM_SKIP_REASON_MAX_LENGTH = 255;
+
+/** Optional chips — staff can tap to fill the text field or type their own reason. */
+export const SPUTUM_SKIP_REASON_SUGGESTIONS = [
   "No sample provided",
   "Sample unsuitable for smear",
   "Patient declined sputum collection",
   "Booth capture unavailable",
 ] as const;
 
-export type SputumSkipReason = (typeof SPUTUM_SKIP_REASONS)[number];
+/** Two-phase screening: staff documents why the smear is analyzed later (preliminary save). */
+export const SPUTUM_DEFER_BUTTON_LABEL = "Smear later — document reason";
+
+export const SPUTUM_CAPTURE_NOW_LABEL = "Capture smear now";
+
+export const SPUTUM_DEFER_MODAL_TITLE = "Analyze smear later";
+export const SPUTUM_DEFER_MODAL_MESSAGE =
+  "Save the cough and checklist now as a preliminary result. The sputum smear can be added to this same session later. Enter why the smear is being analyzed later.";
+
+export const SPUTUM_DEFER_REASON_PLACEHOLDER =
+  "e.g. Sample collected — staining in progress at lab station";
+
+/** Matches backend `sputum_defer_reason` VARCHAR(255). */
+export const SPUTUM_DEFER_REASON_MAX_LENGTH = 255;
+
+/** Optional chips — staff can tap to fill the text field or type their own reason. */
+export const SPUTUM_DEFER_REASON_SUGGESTIONS = [
+  "Sample collected — smear preparation in progress",
+  "Smear preparation at lab station",
+  "Staining / microscopy pending",
+  "Patient will return for smear capture",
+  "Booth capture temporarily unavailable",
+] as const;
+
+export const SPUTUM_PENDING_BADGE = "Smear pending";
+export const SPUTUM_PRELIMINARY_LABEL = "Preliminary result";
+export const SPUTUM_PRELIMINARY_BANNER =
+  "Preliminary triage from cough and symptoms. The sputum smear will be added later and the score may change.";
+
+export function formatSputumDeferDetail(deferReason?: string | null): string {
+  const reason = typeof deferReason === "string" ? deferReason.trim() : "";
+  if (reason.length > 0) {
+    return `Smear pending — staff noted: ${reason}. Cough and checklist results are saved.`;
+  }
+  return "Smear pending — cough and checklist results are saved and the smear will follow.";
+}
 
 export function formatSputumMissingDetail(skipReason?: string | null): string {
   const reason = typeof skipReason === "string" ? skipReason.trim() : "";

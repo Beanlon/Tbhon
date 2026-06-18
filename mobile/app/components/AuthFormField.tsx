@@ -31,6 +31,7 @@ export type AuthFormFieldProps = {
   autoCorrect?: boolean;
   autoComplete?: React.ComponentProps<typeof TextInput>["autoComplete"];
   textContentType?: React.ComponentProps<typeof TextInput>["textContentType"];
+  passwordRules?: React.ComponentProps<typeof TextInput>["passwordRules"];
   spellCheck?: boolean;
 };
 
@@ -54,6 +55,7 @@ export function AuthFormField({
   autoCorrect,
   autoComplete,
   textContentType,
+  passwordRules,
   spellCheck,
 }: AuthFormFieldProps) {
   const [focused, setFocused] = useState(false);
@@ -107,7 +109,9 @@ export function AuthFormField({
           autoCorrect={autoCorrect}
           autoComplete={autoComplete}
           textContentType={textContentType}
+          passwordRules={passwordRules}
           spellCheck={spellCheck}
+          underlineColorAndroid="transparent"
           onFocus={() => setFocused(true)}
           onBlur={() => {
             setFocused(false);
@@ -116,7 +120,7 @@ export function AuthFormField({
           onChangeText={onChange}
           style={[
             authFormFieldStyles.fieldInput,
-            { color: tk.textPrimary },
+            { color: tk.textPrimary, backgroundColor: "transparent" },
             icon ? { paddingLeft: 6 } : undefined,
             suffix || isValid ? { paddingRight: 6 } : undefined,
           ]}

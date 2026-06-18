@@ -92,6 +92,14 @@ export default function StaffReviewScreen() {
               No smear: {params.sputumSkipReason}
             </Text>
           ) : null}
+          {params.resultStage === "preliminary" ? (
+            <Text className="mt-2 text-sm font-semibold leading-5" style={{ color: cfg.color }}>
+              Preliminary — sputum smear pending
+              {typeof params.sputumDeferReason === "string" && params.sputumDeferReason.length > 0
+                ? `: ${params.sputumDeferReason}`
+                : ""}
+            </Text>
+          ) : null}
         </View>
 
         {(risk === "moderate" || risk === "high") && (
@@ -132,7 +140,7 @@ export default function StaffReviewScreen() {
             } as any)
           }
           className="items-center rounded-2xl py-4 active:opacity-90"
-          style={{ backgroundColor: isDark ? "#2E3A6F" : "#243D82" }}
+          style={{ backgroundColor: isDark ? colors.heroButtonBg : "#243D82" }}
         >
           <Text className="text-base font-bold text-white">Confirm & show result</Text>
         </Pressable>

@@ -426,8 +426,8 @@ export function PasswordResetForm({
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
-                    autoComplete="email"
-                    textContentType="emailAddress"
+                    autoComplete="username"
+                    textContentType="username"
                     editable={!codeSent}
                     icon={<Ionicons name="mail-outline" size={17} color={tk.icon} />}
                   />

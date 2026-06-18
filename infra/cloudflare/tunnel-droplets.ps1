@@ -103,8 +103,8 @@ try {
                 $knownApiUrl = $freshApi
                 $knownTbUrl = $freshTb
                 Update-EnvFile $freshApi $freshTb
-                Write-Host "Tunnel URL rotated — updated mobile/.env" -ForegroundColor Yellow
-                Write-Host "  Restart Expo: cd mobile && npx expo start -c" -ForegroundColor DarkGray
+                Write-Host "Tunnel URL rotated - updated mobile/.env" -ForegroundColor Yellow
+                Write-Host "  Restart Expo: cd mobile; npx expo start -c" -ForegroundColor DarkGray
             }
         }
         Start-Sleep -Seconds 2

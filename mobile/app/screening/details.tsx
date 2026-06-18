@@ -35,7 +35,6 @@ import {
 import SputumSamplePhoto from "../components/SputumSamplePhoto";
 import PatientRecoveryPanel from "./PatientRecoveryPanel";
 import PatientSlipPanel from "./PatientSlipPanel";
-import { getAuthToken } from "../../utils/authStorage";
 import { SCREENING_CHECKLIST_QUESTIONS } from "../../constants/screeningChecklist";
 import { SPUTUM_DETAILS_MISSING_LABEL, formatSputumDetailsMissingSub } from "../../constants/iotScreening";
 import { DETAILS_CHECKLIST_EMPTY_HINT } from "../../constants/screeningBoothCopy";
@@ -43,6 +42,7 @@ import { REFERRAL_STATUS_LABELS, canRunScreenings, resolveUserRole, type Referra
 import { useTheme } from "../../contexts/ThemeContext";
 import { fuseTbRisk, type FusionModalityBreakdown } from "../../utils/tbRiskFusion";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
+import { ensureNotificationInboxUser, markSessionScreeningNotificationsRead } from "../../utils/notificationInbox";
 import {
   isEmailVerified,
   promptEmailVerification,
@@ -336,6 +336,12 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
   staffNotes: string | null;
   referralStatus: ReferralStatus;
   referralNotes: string | null;
+  awaitingSputum: boolean;
+  sputumDeferReason: string | null;
+  sputumFinalizedAt: string | null;
+  preliminaryRiskLevel: string | null;
+  coughProbForFinalize: number | null;
+  wasDeviceSession: boolean;
 } {
   const risk = coerceRisk(s.finalRiskLevel ?? s.result?.riskLevel);
 
@@ -430,6 +436,14 @@ function mapSessionToViewModel(s: ScreeningSessionDetail): {
     staffNotes: s.staffNotes ?? null,
     referralStatus: (s.result?.referralStatus as ReferralStatus | undefined) ?? "none",
     referralNotes: s.result?.referralNotes ?? null,
+    awaitingSputum: s.awaitingSputum === true,
+    sputumDeferReason: s.sputumDeferReason ?? null,
+    sputumFinalizedAt: s.sputumFinalizedAt ?? null,
+    preliminaryRiskLevel: s.preliminaryRiskLevel ?? null,
+    // Re-fusion at finalize needs the pure cough probability (mean of audio
+    // predictions), not the stored fused average which already folds in checklist.
+    coughProbForFinalize: coughProb,
+    wasDeviceSession: s.coughRecordings.some((r) => r.source === "iot"),
   };
 }
 
@@ -536,7 +550,7 @@ export default function ScreeningDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const headerPadTop = Math.max(insets.top, 16) + 10;
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const params = useLocalSearchParams<{
     sessionId?: string;
     from?: string;
@@ -556,6 +570,9 @@ export default function ScreeningDetailsScreen() {
     phlegmErrorDetail?: string;
     fusionBreakdown?: string;
     sputumSkipReason?: string;
+    resultStage?: string;
+    sputumDeferReason?: string;
+    deviceSputum?: string;
   }>();
 
   const fromScreeningFlow = params.from === "result";
@@ -668,7 +685,6 @@ export default function ScreeningDetailsScreen() {
       )
       .map((uri) => ({ uri }));
     const imageUri = "";
-    const imageProvided = false;
     const imageAnalyzed = params.phlegmAnalyzed === "1";
     const phlegmLoad = typeof params.phlegmLoad === "string" ? params.phlegmLoad : "";
     const phlegmConfStr =
@@ -786,6 +802,15 @@ export default function ScreeningDetailsScreen() {
       staffNotes: null,
       referralStatus: "none" as ReferralStatus,
       referralNotes: null,
+      awaitingSputum: params.resultStage === "preliminary",
+      sputumDeferReason:
+        typeof params.sputumDeferReason === "string" && params.sputumDeferReason.length > 0
+          ? params.sputumDeferReason
+          : null,
+      sputumFinalizedAt: null,
+      preliminaryRiskLevel: null,
+      coughProbForFinalize: probTb,
+      wasDeviceSession: params.deviceSputum === "1",
     };
   }, [sessionId, params]);
 
@@ -882,6 +907,11 @@ export default function ScreeningDetailsScreen() {
       : null);
   const staffNotesDisplay = vm?.staffNotes ?? null;
   const referralStatus = vm?.referralStatus ?? "none";
+  const awaitingSputum = vm?.awaitingSputum ?? false;
+  const sputumDeferReasonDisplay = vm?.sputumDeferReason ?? null;
+  const sputumFinalizedAt = vm?.sputumFinalizedAt ?? null;
+  const coughProbForFinalize = vm?.coughProbForFinalize ?? null;
+  const wasDeviceSession = vm?.wasDeviceSession ?? false;
   const detailsSessionId =
     typeof sessionId === "string" && sessionId.trim().length > 0 ? sessionId.trim() : "";
   const [referralNotesDraft, setReferralNotesDraft] = useState("");
@@ -906,6 +936,22 @@ export default function ScreeningDetailsScreen() {
       setIsStaffBooth(role ? canRunScreenings(role) : false);
     })();
   }, []);
+
+  const markDetailsScreeningNotificationsRead = useCallback(() => {
+    if (!detailsSessionId) return;
+    ensureNotificationInboxUser(peekProfile()?.userId);
+    void markSessionScreeningNotificationsRead(detailsSessionId);
+  }, [detailsSessionId]);
+
+  useEffect(() => {
+    markDetailsScreeningNotificationsRead();
+  }, [markDetailsScreeningNotificationsRead]);
+
+  useFocusEffect(
+    useCallback(() => {
+      markDetailsScreeningNotificationsRead();
+    }, [markDetailsScreeningNotificationsRead]),
+  );
 
   useEffect(() => {
     setReferralNotesDraft(vm?.referralNotes ?? "");
@@ -1089,6 +1135,25 @@ export default function ScreeningDetailsScreen() {
     setImageViewerVisible(true);
   }, []);
 
+  const handleAddSmear = useCallback(() => {
+    if (!detailsSessionId) return;
+    const checklistJson = checklistJsonFromRows(checklistRows);
+    router.push({
+      pathname: wasDeviceSession ? "/screening/iot-sputum" : "/screening/phlegm",
+      params: {
+        sessionId: detailsSessionId,
+        finalizeMode: "1",
+        returnToSession: "1",
+        audioDone: "1",
+        ...(coughProbForFinalize !== null && Number.isFinite(coughProbForFinalize)
+          ? { coughProbTb: String(coughProbForFinalize) }
+          : {}),
+        ...(checklistJson && checklistJson !== "{}" ? { checklist: checklistJson } : {}),
+        ...(wasDeviceSession ? { iotMode: "1", deviceSputum: "1" } : {}),
+      },
+    } as never);
+  }, [detailsSessionId, wasDeviceSession, coughProbForFinalize, checklistRows, router]);
+
   const showRemoteSpinner = Boolean(sessionId) && remoteLoading;
   const showRemoteError = Boolean(sessionId) && !remoteLoading && remoteError;
 
@@ -1203,7 +1268,7 @@ export default function ScreeningDetailsScreen() {
           <Pressable
             onPress={() => {
               if (fromScreeningFlow) {
-                router.dismissAll();
+                router.replace("/home/HomeScreen" as any);
               } else {
                 router.back();
               }
@@ -1284,6 +1349,59 @@ export default function ScreeningDetailsScreen() {
                     )}
                   </View>
                 )}
+
+                {awaitingSputum ? (
+                  <View
+                    className="mb-3 rounded-3xl border p-5"
+                    style={{ borderColor: "#D97706", backgroundColor: isDark ? "rgba(217,119,6,0.12)" : "#FFFBEB" }}
+                  >
+                    <View className="mb-1.5 flex-row items-center gap-2">
+                      <Ionicons name="hourglass-outline" size={18} color="#D97706" />
+                      <Text className="text-base font-extrabold" style={{ color: "#D97706" }}>
+                        Sputum smear pending
+                      </Text>
+                    </View>
+                    <Text className="text-sm leading-6" style={{ color: colors.textSecondary }}>
+                      This is a preliminary result from cough and symptoms. Add the sputum smear to finalize the triage score — it may change after the smear is analyzed.
+                    </Text>
+                    {sputumDeferReasonDisplay ? (
+                      <Text className="mt-2 text-xs leading-5" style={{ color: colors.textMuted }}>
+                        Staff noted: {sputumDeferReasonDisplay}
+                      </Text>
+                    ) : null}
+                    {isStaffBooth && detailsSessionId.length > 0 ? (
+                      <Pressable
+                        onPress={handleAddSmear}
+                        className="mt-4 flex-row items-center justify-center gap-2 rounded-xl py-3.5 active:opacity-90"
+                        style={{ backgroundColor: "#D97706" }}
+                        accessibilityRole="button"
+                      >
+                        <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                        <Text className="text-sm font-bold text-white">Add sputum smear</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ) : null}
+
+                {sputumFinalizedAt && !awaitingSputum ? (
+                  <View
+                    className="mb-3 rounded-3xl border p-4"
+                    style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}
+                  >
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="checkmark-done-circle-outline" size={18} color="#16A34A" />
+                      <Text className="text-sm font-bold" style={{ color: colors.text }}>
+                        Result updated after sputum smear
+                      </Text>
+                    </View>
+                    <Text className="mt-1 text-xs leading-5" style={{ color: colors.textMuted }}>
+                      Smear added {new Date(sputumFinalizedAt).toLocaleString()}.
+                      {vm?.preliminaryRiskLevel
+                        ? ` Preliminary was ${vm.preliminaryRiskLevel}.`
+                        : ""}
+                    </Text>
+                  </View>
+                ) : null}
 
                 {isStaffBooth ? (
                   <DetailsCard

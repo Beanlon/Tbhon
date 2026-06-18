@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useTheme } from "../../contexts/ThemeContext";
+import { useTheme, darkComponent, type ThemeColors } from "../../contexts/ThemeContext";
 import {
   PATIENT_LEARN_HERO_SUBTITLE,
   STAFF_LEARN_COUNSELING_BANNER,
@@ -105,7 +105,7 @@ const steps: Step[] = [
     number: "4",
     title: "Isolate while contagious",
     description: "Stay home, use masks, and avoid crowded places in the early weeks of treatment.",
-    backgroundColor: "#0a1428",
+    backgroundColor: darkComponent.accent,
   },
   {
     number: "5",
@@ -178,24 +178,24 @@ function TagPill({ label, backgroundColor, color }: Tag) {
   );
 }
 
-function BulletStat({ value, label, isDark }: Stat & { isDark: boolean }) {
+function BulletStat({ value, label, isDark, colors }: Stat & { isDark: boolean; colors: ThemeColors }) {
   return (
-    <View className="flex-1 items-center rounded-xl px-2.5 py-3.5" style={{ backgroundColor: isDark ? "#1A3478" : "#EAE8FA" }}>
-      <Text className="text-2xl font-extrabold" style={{ color: isDark ? "#FFFFFF" : "#0C1E4A" }}>
+    <View className="flex-1 items-center rounded-xl px-2.5 py-3.5" style={{ backgroundColor: isDark ? colors.surfaceAlt : "#EAE8FA" }}>
+      <Text className="text-2xl font-extrabold" style={{ color: isDark ? colors.text : "#0C1E4A" }}>
         {value}
       </Text>
-      <Text className="mt-1 text-center text-xs leading-4" style={{ color: isDark ? "#EAE8FA" : "#3D4EA6" }}>
+      <Text className="mt-1 text-center text-xs leading-4" style={{ color: isDark ? colors.textSecondary : "#3D4EA6" }}>
         {label}
       </Text>
     </View>
   );
 }
 
-function StepRow({ number, title, description, backgroundColor, isDark }: Step & { isDark: boolean }) {
+function StepRow({ number, title, description, backgroundColor, isDark, colors }: Step & { isDark: boolean; colors: ThemeColors }) {
   return (
     <View
       className="flex-row items-start gap-3 rounded-xl border p-3.5"
-      style={{ borderColor: isDark ? "#3D4EA6" : "#EAE8FA", backgroundColor: isDark ? "#1A3478" : "#FFFFFF" }}
+      style={{ borderColor: isDark ? colors.border : "#EAE8FA", backgroundColor: isDark ? colors.surface : "#FFFFFF" }}
     >
       <View
         className="mt-0.5 size-6 shrink-0 items-center justify-center rounded-full"
@@ -204,8 +204,8 @@ function StepRow({ number, title, description, backgroundColor, isDark }: Step &
         <Text className="text-sm font-extrabold text-white">{number}</Text>
       </View>
       <View className="flex-1">
-        <Text className="text-base font-bold" style={{ color: isDark ? "#FFFFFF" : "#111111" }}>{title}</Text>
-        <Text className="mt-0.5 text-sm leading-5 text-justify" style={{ color: isDark ? "#EAE8FA" : "#5D6D7E" }}>{description}</Text>
+        <Text className="text-base font-bold" style={{ color: isDark ? colors.text : "#111111" }}>{title}</Text>
+        <Text className="mt-0.5 text-sm leading-5 text-justify" style={{ color: isDark ? colors.textSecondary : "#5D6D7E" }}>{description}</Text>
       </View>
     </View>
   );
@@ -229,7 +229,7 @@ function SectionCard({
       style={[learnCardShadow, { borderColor: colors.cardBorder, backgroundColor: colors.card }]}
     >
       <View className="mb-4 flex-row items-center gap-3">
-        <View className="h-9 w-9 items-center justify-center rounded-xl" style={{ backgroundColor: isDark ? "#1A3478" : "#EAE8FA" }}>
+        <View className="h-9 w-9 items-center justify-center rounded-xl" style={{ backgroundColor: isDark ? colors.surfaceAlt : "#EAE8FA" }}>
           <Ionicons name={icon} size={18} color={colors.primary} />
         </View>
         <View className="flex-1">
@@ -262,7 +262,7 @@ function TrustedSourcesBlock() {
       <View className="gap-2">
         {trustedSources.map((source) => (
           <TouchableOpacity key={source.url} onPress={() => openSource(source.url)} activeOpacity={0.75}>
-            <View className="flex-row items-center justify-between rounded-lg px-3.5 py-3" style={{ backgroundColor: isDark ? "#3D4EA6" : "#F8FAFF" }}>
+            <View className="flex-row items-center justify-between rounded-lg px-3.5 py-3" style={{ backgroundColor: isDark ? colors.surfaceAlt : "#F8FAFF" }}>
               <Text className="mr-3 flex-1 text-sm font-semibold leading-5" style={{ color: isDark ? colors.textSecondary : colors.primary }}>
                 {source.label}
               </Text>
@@ -354,7 +354,7 @@ export function LearnContent({ mode = "patient" }: LearnContentProps) {
             </Text>
             <View className="flex-row gap-2">
               {overviewStats.map((item) => (
-                <BulletStat key={item.label} {...item} isDark={isDark} />
+                <BulletStat key={item.label} {...item} isDark={isDark} colors={colors} />
               ))}
             </View>
           </SectionCard>
@@ -414,7 +414,7 @@ export function LearnContent({ mode = "patient" }: LearnContentProps) {
           >
             <View className="gap-3">
               {prevention.map((item) => (
-                <StepRow key={item.title} {...item} isDark={isDark} />
+                <StepRow key={item.title} {...item} isDark={isDark} colors={colors} />
               ))}
             </View>
           </SectionCard>
@@ -428,7 +428,7 @@ export function LearnContent({ mode = "patient" }: LearnContentProps) {
           <SectionCard icon="medkit-outline" title="Steps to Take" subtitle="If you suspect TB">
             <View className="gap-3">
               {steps.map((step) => (
-                <StepRow key={step.title} {...step} isDark={isDark} />
+                <StepRow key={step.title} {...step} isDark={isDark} colors={colors} />
               ))}
             </View>
           </SectionCard>
@@ -476,7 +476,7 @@ export function LearnContent({ mode = "patient" }: LearnContentProps) {
               <View className="flex-row items-center gap-2.5">
                 <View
                   className="h-8 w-8 items-center justify-center rounded-lg"
-                  style={{ backgroundColor: isOpen ? colors.primary : isDark ? "#1A3478" : "#EAE8FA" }}
+                  style={{ backgroundColor: isOpen ? colors.primary : isDark ? colors.surfaceAlt : "#EAE8FA" }}
                 >
                   <Ionicons name={item.icon} size={15} color={isOpen ? "#FFFFFF" : colors.primary} />
                 </View>
@@ -499,10 +499,10 @@ export function LearnContent({ mode = "patient" }: LearnContentProps) {
       contentContainerStyle={{ flexGrow: 1, paddingBottom: 28 }}
     >
       <View className="px-5" style={{ paddingTop: insets.top + 14 }}>
-        <View className="mb-5 rounded-3xl p-5" style={{ backgroundColor: isDark ? "#1A3478" : "#0C1E4A" }}>
-          <Text className="text-sm" style={{ color: "#C9D5FF" }}>Learn</Text>
+        <View className="mb-5 rounded-3xl p-5" style={{ backgroundColor: isDark ? colors.heroCard : "#0C1E4A" }}>
+          <Text className="text-sm" style={{ color: isDark ? colors.textMuted : "#C9D5FF" }}>Learn</Text>
           <Text className="mt-1 text-2xl font-extrabold text-white">Tuberculosis (TB)</Text>
-          <Text className="mt-2 text-sm leading-5" style={{ color: "#D8E1FF" }}>
+          <Text className="mt-2 text-sm leading-5" style={{ color: isDark ? colors.heroTextMuted : "#D8E1FF" }}>
             {isOperator ? STAFF_LEARN_HERO_SUBTITLE : PATIENT_LEARN_HERO_SUBTITLE}
           </Text>
         </View>
@@ -522,11 +522,11 @@ export function LearnContent({ mode = "patient" }: LearnContentProps) {
           <View className="mb-3 overflow-hidden rounded-2xl border px-4 py-4" style={{ borderColor: colors.cardBorder, backgroundColor: colors.card }}>
             <View
               className="absolute -right-6 -top-7 h-20 w-20 rounded-full"
-              style={{ backgroundColor: isDark ? "rgba(123,111,216,0.28)" : "#E4D7FF" }}
+              style={{ backgroundColor: isDark ? "rgba(107,95,196,0.28)" : "#E4D7FF" }}
             />
             <View
               className="absolute right-8 top-7 h-10 w-10 rounded-full"
-              style={{ backgroundColor: isDark ? "rgba(234,232,250,0.30)" : "#EFE6FF" }}
+              style={{ backgroundColor: isDark ? "rgba(149,136,216,0.18)" : "#EFE6FF" }}
             />
             <Text className="text-[22px] font-extrabold" style={{ color: colors.primary }}>Commonly Asked Questions</Text>
             <Text className="mt-1 text-sm" style={{ color: colors.textSecondary }}>
@@ -542,14 +542,14 @@ export function LearnContent({ mode = "patient" }: LearnContentProps) {
           activeOpacity={0.85}
           onPress={handleOpenTestingCenters}
           className="mb-4 mt-2 flex-row items-center justify-between rounded-[28px] px-6 py-5"
-          style={[learnCardShadow, { backgroundColor: isDark ? "#7B6FD8" : "#C9D5FF" }]}
+          style={[learnCardShadow, { backgroundColor: isDark ? colors.heroCard : "#C9D5FF" }]}
         >
           <View className="flex-1 pr-3">
-            <Text className="text-[18px] font-extrabold" style={{ color: "#0C1E4A" }}>Find a TB Testing Center</Text>
-            <Text className="mt-1 text-base" style={{ color: "#1A3478" }}>Locate the nearest health facility</Text>
+            <Text className="text-[18px] font-extrabold" style={{ color: isDark ? colors.text : "#0C1E4A" }}>Find a TB Testing Center</Text>
+            <Text className="mt-1 text-base" style={{ color: isDark ? colors.textSecondary : "#1A3478" }}>Locate the nearest health facility</Text>
           </View>
           <View className="h-14 w-14 items-center justify-center rounded-full bg-white/60">
-            <Ionicons name="arrow-forward" size={28} color="#0C1E4A" />
+            <Ionicons name="arrow-forward" size={28} color={isDark ? colors.text : "#0C1E4A"} />
           </View>
         </TouchableOpacity>
 

@@ -105,9 +105,9 @@ Push-Location $mobileDir
 try {
     Write-Host "Starting Expo (Cloudflare tunnel + Metro on port $Port)..." -ForegroundColor Yellow
     if ($Clear) {
-        npx expo start --lan --port $Port --clear
+        npx expo start --go --lan --port $Port --clear
     } else {
-        npx expo start --lan --port $Port
+        npx expo start --go --lan --port $Port
     }
 } finally {
     Pop-Location

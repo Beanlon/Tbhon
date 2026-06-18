@@ -231,6 +231,7 @@ interface FieldProps {
   autoCapitalize?: React.ComponentProps<typeof TextInput>["autoCapitalize"];
   autoCorrect?: boolean;
   autoComplete?: React.ComponentProps<typeof TextInput>["autoComplete"];
+  textContentType?: React.ComponentProps<typeof TextInput>["textContentType"];
 }
 
 function Field({
@@ -253,6 +254,7 @@ function Field({
   autoCapitalize,
   autoCorrect,
   autoComplete,
+  textContentType,
 }: FieldProps) {
   const [focused, setFocused] = useState(false);
   const hasError = touched && !!error;
@@ -305,6 +307,8 @@ function Field({
           autoCapitalize={autoCapitalize}
           autoCorrect={autoCorrect}
           autoComplete={autoComplete}
+          textContentType={textContentType}
+          underlineColorAndroid="transparent"
           onFocus={() => setFocused(true)}
           onBlur={() => {
             setFocused(false);
@@ -313,7 +317,7 @@ function Field({
           onChangeText={onChange}
           style={[
             styles.fieldInput,
-            { color: tk.textPrimary },
+            { color: tk.textPrimary, backgroundColor: "transparent" },
             icon ? { paddingLeft: 6 } : undefined,
             suffix || isValid ? { paddingRight: 6 } : undefined,
           ]}
@@ -492,6 +496,7 @@ export default function SignUp() {
   );
   const [submittingAccount, setSubmittingAccount] = useState(false);
   const [validatedFacilityName, setValidatedFacilityName] = useState<string | null>(null);
+  const [facilityInviteValidationError, setFacilityInviteValidationError] = useState<string | null>(null);
   const [validatingInvite, setValidatingInvite] = useState(false);
   const [genderAnchor, setGenderAnchor] = useState<WindowRect | null>(null);
   const [countryAnchor, setCountryAnchor] = useState<WindowRect | null>(null);
@@ -537,21 +542,27 @@ export default function SignUp() {
     setForm((p) => ({ ...p, [k]: v }));
     if (k === "facilityInviteCode") {
       setValidatedFacilityName(null);
+      setFacilityInviteValidationError(null);
     }
   };
 
-  const validateInviteCode = useCallback(async () => {
+  const validateInviteCode = useCallback(async (): Promise<boolean> => {
     const code = form.facilityInviteCode.trim().replace(/\s+/g, "");
     if (!code || !/^[A-Za-z0-9-]{6,64}$/.test(code)) {
       setValidatedFacilityName(null);
-      return;
+      setFacilityInviteValidationError(null);
+      return false;
     }
     setValidatingInvite(true);
     try {
       const { facility } = await postValidateFacilityInvite(code);
       setValidatedFacilityName(facility.name);
+      setFacilityInviteValidationError(null);
+      return true;
     } catch {
       setValidatedFacilityName(null);
+      setFacilityInviteValidationError("No facility found for this invite code.");
+      return false;
     } finally {
       setValidatingInvite(false);
     }
@@ -563,6 +574,7 @@ export default function SignUp() {
 
   const errors =
     step === 1 ? validateStep1(form) : validateStep2(form, selectedCountry);
+  const facilityInviteError = errors.facilityInviteCode ?? facilityInviteValidationError ?? undefined;
 
   const triggerShake = (keys: (keyof FormData)[]) => {
     const s: Partial<Record<keyof FormData, boolean>> = {};
@@ -777,6 +789,18 @@ export default function SignUp() {
         "Birthdate",
         "Use MM / DD / YYYY (e.g. 01 / 15 / 1995) or YYYY-MM-DD.",
       );
+      return;
+    }
+
+    const inviteValid = await validateInviteCode();
+    if (!inviteValid) {
+      triggerShake(["facilityInviteCode"]);
+      fieldRefsMap.facilityInviteCode?.measureInWindow((x, y) => {
+        scrollViewRef.current?.scrollTo({
+          y: Math.max(0, y - 80),
+          animated: true,
+        });
+      });
       return;
     }
 
@@ -1171,7 +1195,7 @@ export default function SignUp() {
                         name="business-outline"
                         size={17}
                         color={
-                          touched.facilityInviteCode && errors.facilityInviteCode
+                          touched.facilityInviteCode && facilityInviteError
                             ? tk.error
                             : tk.icon
                         }
@@ -1180,9 +1204,11 @@ export default function SignUp() {
                     suffix={
                       validatingInvite ? (
                         <ActivityIndicator size="small" color={tk.icon} />
+                      ) : touched.facilityInviteCode && facilityInviteError ? (
+                        <Ionicons name="close-circle" size={20} color={tk.error} />
                       ) : null
                     }
-                    error={errors.facilityInviteCode}
+                    error={facilityInviteError}
                     touched={touched.facilityInviteCode}
                   />
                   {validatedFacilityName ? (
@@ -1201,7 +1227,8 @@ export default function SignUp() {
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
-                    autoComplete="email"
+                    autoComplete="username"
+                    textContentType="username"
                     icon={
                       <Ionicons
                         name="mail-outline"
@@ -1271,6 +1298,8 @@ export default function SignUp() {
                     fieldRef={(el) => { fieldRefsMap.password = el; }}
                     secureTextEntry={!showPw}
                     inputRef={signupPasswordRef}
+                    autoComplete="new-password"
+                    textContentType="newPassword"
                     icon={
                       <Ionicons
                         name="lock-closed-outline"
@@ -1336,6 +1365,8 @@ export default function SignUp() {
                     fieldRef={(el) => { fieldRefsMap.confirm = el; }}
                     secureTextEntry={!showCPw}
                     inputRef={signupConfirmPasswordRef}
+                    autoComplete="new-password"
+                    textContentType="newPassword"
                     icon={
                       <Ionicons
                         name="lock-closed-outline"

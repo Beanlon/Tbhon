@@ -1,4 +1,5 @@
 import type { ApiUserPayload } from "../services/backendApi";
+import { setNotificationInboxUser } from "./notificationInbox";
 
 /** How long a cached profile avoids refetching when revisiting the Profile tab (same app session). */
 const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -9,6 +10,7 @@ let cachedAt = 0;
 export function setCachedProfile(user: ApiUserPayload): void {
   cachedUser = user;
   cachedAt = Date.now();
+  setNotificationInboxUser(user.userId);
 }
 
 /** Last cached user, or null if none (e.g. after logout). */
@@ -25,4 +27,5 @@ export function isProfileCacheFresh(): boolean {
 export function clearProfileCache(): void {
   cachedUser = null;
   cachedAt = 0;
+  setNotificationInboxUser(null);
 }

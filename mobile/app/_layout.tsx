@@ -1,6 +1,7 @@
 import "../global.css";
 import { Stack, useRouter } from "expo-router";
 import React, { useEffect } from 'react';
+import { AppState } from "react-native";
 import { Asset } from 'expo-asset';
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
@@ -10,15 +11,21 @@ import { TBHON_ICON, TBHON_LOGO } from "../constants/branding";
 import { ThemeProvider, useTheme } from "../contexts/ThemeContext";
 import { getMe } from "../services/backendApi";
 import { getAuthToken } from "../utils/authStorage";
+import { ensureNotificationInboxUser } from "../utils/notificationInbox";
 import { setCachedProfile, peekProfile } from "../utils/profileCache";
 import { consumePendingAppRoute } from "../utils/pendingAppRoute";
 import { parsePatientClaimToken } from "../constants/patientAccess";
 import {
   configureNotificationPresentation,
   handleNotificationResponse,
-  syncUnverifiedEngagementNotifications,
+  syncEngagementNotificationsOnAppActive,
 } from "../services/unverifiedEngagementNotifications";
-import { subscribeToNotificationResponses } from "../utils/nativeNotifications";
+import { mirrorEngagementNotificationToInbox } from "../utils/missedNotificationSync";
+import { syncScreeningNotificationsFromServer } from "../utils/screeningNotificationSync";
+import {
+  subscribeToNotificationResponses,
+  subscribeToNativeNotificationsReceived,
+} from "../utils/nativeNotifications";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -56,7 +63,7 @@ function RootNavigator() {
   useEffect(() => {
     configureNotificationPresentation();
 
-    const sub = subscribeToNotificationResponses((response) => {
+    const responseSub = subscribeToNotificationResponses((response) => {
       void (async () => {
         await handleNotificationResponse(response);
         const route = await consumePendingAppRoute();
@@ -66,25 +73,50 @@ function RootNavigator() {
       })();
     });
 
-    return () => sub.remove();
+    const receivedSub = subscribeToNativeNotificationsReceived((notification) => {
+      ensureNotificationInboxUser(peekProfile()?.userId);
+      void mirrorEngagementNotificationToInbox(notification);
+    });
+
+    return () => {
+      responseSub.remove();
+      receivedSub.remove();
+    };
   }, [router]);
 
   useEffect(() => {
-    void (async () => {
+    let active = true;
+
+    const syncNotifications = async () => {
       const token = await getAuthToken();
-      if (!token) return;
+      if (!token || !active) return;
       try {
         const cached = peekProfile();
         if (cached) {
-          await syncUnverifiedEngagementNotifications(cached);
+          await syncEngagementNotificationsOnAppActive(cached);
         }
         const { user } = await getMe();
+        if (!active) return;
         setCachedProfile(user);
-        await syncUnverifiedEngagementNotifications(user);
+        await syncEngagementNotificationsOnAppActive(user);
+        await syncScreeningNotificationsFromServer();
       } catch {
         // offline — skip sync
       }
-    })();
+    };
+
+    void syncNotifications();
+
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void syncNotifications();
+      }
+    });
+
+    return () => {
+      active = false;
+      appStateSub.remove();
+    };
   }, []);
 
   useEffect(() => {

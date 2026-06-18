@@ -22,12 +22,10 @@ import {
   SPUTUM_DEVICE_INITIAL_STATUS,
   SPUTUM_DEVICE_RECEIVED,
   SPUTUM_DEVICE_START_BUTTON,
-  SPUTUM_SKIP_BUTTON_LABEL,
+  SPUTUM_SKIP_CAPTURE_BUTTON_LABEL,
   SPUTUM_STAFF_SMEAR_BANNER,
 } from "../../constants/iotScreening";
-import type { SputumSkipReason } from "../../constants/iotScreening";
 import { SESSION_LINK_SIGN_IN_403 } from "../../constants/screeningBoothCopy";
-import { SputumSkipReasonModal } from "./SputumSkipReasonModal";
 
 const IOT_POLL_MS = 2500;
 
@@ -44,6 +42,9 @@ export default function PhlegmCaptureScreen() {
     audioUris?: string;
     checklist?: string;
     sessionId?: string;
+    finalizeMode?: string;
+    coughProbTb?: string;
+    returnToSession?: string;
   }>();
   const { width: windowWidth } = useWindowDimensions();
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -61,7 +62,8 @@ export default function PhlegmCaptureScreen() {
   const [iotPreviewUrl, setIotPreviewUrl] = useState<string | null>(null);
   const [hasReceivedPhoto, setHasReceivedPhoto] = useState(false);
   const [authMediaHeaders, setAuthMediaHeaders] = useState<Record<string, string> | null>(null);
-  const [skipModalVisible, setSkipModalVisible] = useState(false);
+  const returnToSession = params.returnToSession === "1";
+  const canSkipSmear = params.finalizeMode !== "1" && !returnToSession;
 
   /** Fingerprint of the image currently shown (or last accepted). */
   const acceptedFingerprintRef = useRef<string | null>(null);
@@ -141,14 +143,37 @@ export default function PhlegmCaptureScreen() {
       audioUris: params.audioUris ?? "[]",
       checklist: params.checklist ?? "",
       ...(screeningSessionId ? { sessionId: screeningSessionId } : {}),
+      ...(params.finalizeMode === "1" ? { finalizeMode: "1" } : {}),
+      ...(typeof params.coughProbTb === "string" && params.coughProbTb.length > 0
+        ? { coughProbTb: params.coughProbTb }
+        : {}),
+      ...(returnToSession ? { returnToSession: "1" as const } : {}),
     }),
-    [params.audioDone, params.audioUris, params.checklist, screeningSessionId],
+    [
+      params.audioDone,
+      params.audioUris,
+      params.checklist,
+      screeningSessionId,
+      params.finalizeMode,
+      params.coughProbTb,
+      returnToSession,
+    ],
   );
+
+  const handleBackPress = useCallback(() => {
+    if (returnToSession && screeningSessionId) {
+      router.replace({
+        pathname: "/screening/details",
+        params: { sessionId: screeningSessionId },
+      } as any);
+      return;
+    }
+    router.back();
+  }, [returnToSession, router, screeningSessionId]);
 
   const goToReview = (
     imageUri: string,
     serverPreview: NonNullable<SputumPreview>,
-    skipReason?: SputumSkipReason,
   ) => {
     setErrorText(null);
     router.replace({
@@ -159,17 +184,15 @@ export default function PhlegmCaptureScreen() {
         deviceSputum: "1",
         sputumByteSize: String(serverPreview.byteSize),
         sputumCapturedAt: serverPreview.capturedAt ?? "",
-        ...(skipReason ? { sputumSkipReason: skipReason } : {}),
       },
     } as any);
   };
 
-  const skipPhlegmToReview = (reason: SputumSkipReason) => {
-    setSkipModalVisible(false);
+  const skipToReview = () => {
     setErrorText(null);
     router.replace({
       pathname: "/screening/review",
-      params: { ...screeningParams, imageUri: "", sputumSkipReason: reason },
+      params: { ...screeningParams, imageUri: "", sputumSkipRequested: "1" },
     } as any);
   };
 
@@ -304,7 +327,7 @@ export default function PhlegmCaptureScreen() {
       <SafeAreaView className="flex-1 bg-navy" edges={["top", "right", "bottom", "left"]}>
         <View className="flex-row items-center justify-between px-4 pb-3.5 pt-2 sm:px-5 md:px-6">
           <Pressable
-            onPress={() => router.back()}
+            onPress={handleBackPress}
             className="size-11 items-center justify-center rounded-full bg-white/5 active:bg-white/10"
             accessibilityRole="button"
             accessibilityLabel="Go back"
@@ -406,14 +429,14 @@ export default function PhlegmCaptureScreen() {
               >
                 <Text className="text-sm font-bold text-white sm:text-base">{SPUTUM_DEVICE_START_BUTTON}</Text>
               </Pressable>
-              {!waitingForDevice ? (
+              {canSkipSmear && !waitingForDevice ? (
                 <Pressable
-                  onPress={() => setSkipModalVisible(true)}
+                  onPress={skipToReview}
                   className="items-center rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 active:bg-white/10"
                   accessibilityRole="button"
                 >
                   <Text className="text-center text-xs font-semibold leading-5 text-white/72 sm:text-sm">
-                    {SPUTUM_SKIP_BUTTON_LABEL}
+                    {SPUTUM_SKIP_CAPTURE_BUTTON_LABEL}
                   </Text>
                 </Pressable>
               ) : null}
@@ -444,11 +467,6 @@ export default function PhlegmCaptureScreen() {
           )}
         </View>
       </SafeAreaView>
-      <SputumSkipReasonModal
-        visible={skipModalVisible}
-        onCancel={() => setSkipModalVisible(false)}
-        onConfirm={skipPhlegmToReview}
-      />
     </>
   );
 }

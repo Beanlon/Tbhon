@@ -1,7 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { ApiUserPayload } from "./backendApi";
 import { celebrateFirstEmailVerification } from "./accountActivityNotifications";
-import { addInboxNotification } from "../utils/notificationInbox";
+import { addInboxNotification, ensureNotificationInboxUser, loadNotificationInbox, unreadInboxCount } from "../utils/notificationInbox";
+import { mirrorEngagementNotificationToInbox, syncPresentedNativeNotificationsToInbox } from "../utils/missedNotificationSync";
 import { setPendingHomeTab } from "../utils/pendingHomeTab";
 import { setPendingAppRoute } from "../utils/pendingAppRoute";
 import {
@@ -115,6 +116,17 @@ async function scheduleOccasionalReminders(isPatient: boolean): Promise<void> {
   });
 }
 
+async function ensureVerifyEmailInboxNudge(isPatient: boolean): Promise<void> {
+  const inbox = await loadNotificationInbox();
+  if (inbox.some((n) => n.id === "verify-email-nudge")) return;
+  await addInboxNotification({
+    id: "verify-email-nudge",
+    type: "verify_email",
+    title: "Verify your email",
+    body: isPatient ? PATIENT_VERIFY_INBOX_NUDGE : STAFF_VERIFY_INBOX_NUDGE,
+  });
+}
+
 /**
  * After register/login for an unverified user: initial verify nudge + occasional schedules.
  */
@@ -130,14 +142,7 @@ export async function onUnverifiedAccountSession(user: ApiUserPayload): Promise<
   const isPatient = isPatientRole(parseUserRole(user.role));
   const isFirst = await markAccountEngagementStarted();
 
-  if (isFirst) {
-    await addInboxNotification({
-      id: "verify-email-nudge",
-      type: "verify_email",
-      title: "Verify your email",
-      body: isPatient ? PATIENT_VERIFY_INBOX_NUDGE : STAFF_VERIFY_INBOX_NUDGE,
-    });
-  }
+  await ensureVerifyEmailInboxNudge(isPatient);
 
   if (granted && isFirst) {
     await scheduleOneShot({
@@ -156,18 +161,28 @@ export async function onUnverifiedAccountSession(user: ApiUserPayload): Promise<
 
 /**
  * Keeps occasional reminders scheduled; clears them when verified.
+ * Also mirrors any native notifications that arrived while the app was closed.
  */
 export async function syncUnverifiedEngagementNotifications(
   user: ApiUserPayload | null | undefined,
 ): Promise<void> {
+  await syncPresentedNativeNotificationsToInbox();
   if (!user) return;
   if (!isUnverified(user)) {
     await onUserBecameVerified();
     return;
   }
-  if (!(await ensureNativeNotificationPermission())) return;
   const isPatient = isPatientRole(parseUserRole(user.role));
+  await ensureVerifyEmailInboxNudge(isPatient);
+  if (!(await ensureNativeNotificationPermission())) return;
   await scheduleOccasionalReminders(isPatient);
+}
+
+/** Run on app open / foreground so inbox badge reflects notifications sent while away. */
+export async function syncEngagementNotificationsOnAppActive(
+  user: ApiUserPayload | null | undefined,
+): Promise<void> {
+  await syncUnverifiedEngagementNotifications(user);
 }
 
 /** Every completed screening writes an inbox success entry; unverified users also get verify nudges. */
@@ -175,28 +190,49 @@ export async function onScreeningCompleted(args?: {
   sessionId?: string;
   riskLabel?: string;
   user?: ApiUserPayload | null;
+  /** "preliminary" when only cough + checklist were saved and the smear will follow. */
+  stage?: "preliminary" | "final";
 }): Promise<void> {
   const user = args?.user ?? peekProfile();
+  if (user?.userId) {
+    ensureNotificationInboxUser(user.userId);
+  }
   const isPatient = isPatientRole(parseUserRole(user?.role));
   const userIsUnverified = user?.emailVerified !== true;
-  const title = isPatient ? "Result saved" : "Screening saved";
-  const risk = args?.riskLabel ? ` (${args.riskLabel})` : "";
-  const body = userIsUnverified
+  const isPreliminary = args?.stage === "preliminary";
+  const title = isPreliminary
     ? isPatient
-      ? PATIENT_SCREENING_SAVED_NUDGE
-      : STAFF_SCREENING_SAVED_NUDGE
+      ? "Preliminary result saved"
+      : "Preliminary screening saved"
     : isPatient
-      ? "Your visit result is saved and available in History."
-      : "This screening session is saved and available in History.";
+      ? "Result saved"
+      : "Screening saved";
+  const risk = args?.riskLabel ? ` (${args.riskLabel})` : "";
+  const preliminaryBody = isPatient
+    ? "Your preliminary result is saved. The sputum smear will be added later and your score may change."
+    : "Preliminary result saved — sputum smear pending. Add the smear later from History to finalize.";
+  const body = isPreliminary
+    ? preliminaryBody
+    : userIsUnverified
+      ? isPatient
+        ? PATIENT_SCREENING_SAVED_NUDGE
+        : STAFF_SCREENING_SAVED_NUDGE
+      : isPatient
+        ? "Your visit result is saved and available in History."
+        : "This screening session is saved and available in History.";
 
   await addInboxNotification({
     id: args?.sessionId ? `screening-${args.sessionId}` : undefined,
     type: "screening_complete",
     title,
     body,
+    read: false,
   });
 
-  if (!userIsUnverified) return;
+  if (!userIsUnverified) {
+    await setNativeAppBadgeCount(await unreadInboxCount());
+    return;
+  }
 
   const scheduled = await scheduleNativeNotification({
     identifier: args?.sessionId
@@ -204,7 +240,11 @@ export async function onScreeningCompleted(args?: {
       : `${PREFIX}screening-${Date.now()}`,
     title: `${title}${risk}`,
     body,
-    data: { type: "screening_complete", route: "verifyEmail" },
+    data: {
+      type: "screening_complete",
+      route: "verifyEmail",
+      ...(args?.sessionId ? { sessionId: args.sessionId } : {}),
+    },
     seconds: null,
     channelId: ANDROID_CHANNEL_ID,
   });
@@ -216,9 +256,85 @@ export async function onScreeningCompleted(args?: {
 
 export const onUnverifiedScreeningCompleted = onScreeningCompleted;
 
+/**
+ * Two-phase screening: the sputum smear was added later and the result was finalized.
+ * Writes a distinct inbox entry (and native nudge for unverified) so a claimed patient
+ * knows their score was updated.
+ */
+export async function onScreeningUpdated(args?: {
+  sessionId?: string;
+  riskLabel?: string;
+  user?: ApiUserPayload | null;
+}): Promise<void> {
+  const user = args?.user ?? peekProfile();
+  if (user?.userId) {
+    ensureNotificationInboxUser(user.userId);
+  }
+  const isPatient = isPatientRole(parseUserRole(user?.role));
+  const userIsUnverified = user?.emailVerified !== true;
+  const title = isPatient ? "Result updated" : "Screening finalized";
+  const risk = args?.riskLabel ? ` (${args.riskLabel})` : "";
+  const body = isPatient
+    ? "Your screening result was updated after sputum smear review. Open History to see your latest score."
+    : "Sputum smear added — screening finalized. The updated result is in History.";
+
+  await addInboxNotification({
+    id: args?.sessionId ? `screening-updated-${args.sessionId}` : undefined,
+    type: "screening_updated",
+    title,
+    body,
+    read: false,
+  });
+
+  if (!userIsUnverified) {
+    // Still notify on device for the smear update even when verified, so a
+    // released patient learns their result changed.
+    const scheduled = await scheduleNativeNotification({
+      identifier: args?.sessionId
+        ? `${PREFIX}screening-updated-${args.sessionId}`
+        : `${PREFIX}screening-updated-${Date.now()}`,
+      title: `${title}${risk}`,
+      body,
+      data: {
+        type: "screening_complete",
+        ...(args?.sessionId ? { sessionId: args.sessionId } : {}),
+      },
+      seconds: null,
+      channelId: ANDROID_CHANNEL_ID,
+    });
+    if (scheduled) await incrementNativeAppBadge();
+    await setNativeAppBadgeCount(await unreadInboxCount());
+    return;
+  }
+
+  const scheduled = await scheduleNativeNotification({
+    identifier: args?.sessionId
+      ? `${PREFIX}screening-updated-${args.sessionId}`
+      : `${PREFIX}screening-updated-${Date.now()}`,
+    title: `${title}${risk}`,
+    body,
+    data: {
+      type: "screening_complete",
+      route: "verifyEmail",
+      ...(args?.sessionId ? { sessionId: args.sessionId } : {}),
+    },
+    seconds: null,
+    channelId: ANDROID_CHANNEL_ID,
+  });
+  if (scheduled) await incrementNativeAppBadge();
+}
+
 export async function handleNotificationResponse(response: NotificationResponsePayload): Promise<void> {
-  const data = response.notification.request.content.data as UnverifiedNotificationData | undefined;
+  const content = response.notification.request.content;
+  const data = content.data as UnverifiedNotificationData | undefined;
   if (!data?.type) return;
+
+  await mirrorEngagementNotificationToInbox({
+    identifier: response.notification.request.identifier ?? `native-response-${Date.now()}`,
+    title: content.title ?? "",
+    body: content.body ?? "",
+    data: content.data,
+  });
 
   if (data.route === "learn" || data.type === "learn_tb") {
     await setPendingHomeTab("learn");
