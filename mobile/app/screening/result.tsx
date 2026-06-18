@@ -1053,7 +1053,7 @@ export default function ResultScreen() {
             <View className="mb-2.5 flex-row items-center gap-2">
               <Ionicons name="information-circle" size={20} color={cfg.color} />
               <Text className="text-sm font-bold" style={{ color: cfg.color }}>
-                {risk === "low" ? "Recommendation" : "Staff triage action"}
+                {risk === "low" ? "Recommendation" : "Referral guidance"}
               </Text>
             </View>
             {risk !== "low" ? (

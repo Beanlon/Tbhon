@@ -2,14 +2,14 @@
  * Multimodal TB screening risk fusion.
  *
  * Combines three independent signals via weighted log-odds fusion:
- *   1. Triage checklist (11 yes/no symptom + exposure questions)
+ *   1. Symptom checklist (11 yes/no symptom + exposure questions)
  *   2. Cough audio ML probability (hybrid CNN+GBM, mean of valid clips)
  *   3. Sputum smear image ML probability (AFB / load grade)
  *
  * Method: logit(p_fused) = Σ(w_i · logit(p_i)) / Σ(w_i) over available modalities.
  * Weights reflect held-out test reliability of each model/modality.
  *
- * This is a screening triage score — not a diagnosis.
+ * This is a screening risk score — not a diagnosis.
  */
 
 import { SCREENING_CHECKLIST_QUESTIONS } from "../constants/screeningChecklist";
@@ -71,7 +71,7 @@ const CHECKLIST_LOG_ODDS: Record<string, number> = {
 /** Population prior for symptomatic screening populations (log-odds intercept). */
 const CHECKLIST_INTERCEPT = -2.4;
 
-/** Risk bands on fused probability (calibrated for screening triage). */
+/** Risk bands on fused probability (calibrated for screening risk scoring). */
 const FUSED_LOW_MAX = 0.38;
 const FUSED_MODERATE_MAX = 0.62;
 

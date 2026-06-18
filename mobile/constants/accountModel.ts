@@ -30,7 +30,7 @@ export const PATIENT_PROFILE_TAGLINE = "Your result account and visit history";
 /** Staff booth home — operator runs screenings; not a personal health app. */
 export const STAFF_HOME_HERO_BADGE = "BOOTH OPERATIONS";
 export const STAFF_HOME_HERO =
-  "Run TB triage for the person being screened. This login is for booth staff — patient details are recorded per session.";
+  "Run TB screening for the person being screened. This login is for booth staff — patient details are recorded per session.";
 export const STAFF_HOME_CTA = "Start screening";
 export const STAFF_HOME_SECTION = "Booth tools";
 export const STAFF_HOME_GREETING_FALLBACK = "Booth team";
@@ -58,7 +58,7 @@ export const STAFF_HOME_TILE_HISTORY = {
 
 export const STAFF_QUICK_PREVIEW_TITLE = "Latest booth session";
 export const STAFF_QUICK_PREVIEW_EMPTY =
-  "Complete a screening to see the latest triage summary from your booth here.";
+  "Complete a screening to see the latest screening summary from your booth here.";
 export const STAFF_HISTORY_TITLE = "Booth session history";
 export const STAFF_HISTORY_LOADING = "Loading booth sessions…";
 export const STAFF_HISTORY_SIGN_IN_TITLE = "Sign in to view booth session history";

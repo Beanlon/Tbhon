@@ -1455,7 +1455,7 @@ export default function SignUp() {
                     Account Created!
                   </Text>
                   <Text style={[styles.successSubtitle, { color: tk.textSub }]}>
-                    Welcome to TBHON. Staff triage support is ready.
+                    Welcome to TBHON. Staff screening support is ready.
                   </Text>
                   <Pressable
                     style={styles.primaryButton}

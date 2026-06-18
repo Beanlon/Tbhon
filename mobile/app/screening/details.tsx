@@ -1362,7 +1362,7 @@ export default function ScreeningDetailsScreen() {
                       </Text>
                     </View>
                     <Text className="text-sm leading-6" style={{ color: colors.textSecondary }}>
-                      This is a preliminary result from cough and symptoms. Add the sputum smear to finalize the triage score — it may change after the smear is analyzed.
+                      This is a preliminary result from cough and symptoms. Add the sputum smear to finalize the screening risk score — it may change after the smear is analyzed.
                     </Text>
                     {sputumDeferReasonDisplay ? (
                       <Text className="mt-2 text-xs leading-5" style={{ color: colors.textMuted }}>

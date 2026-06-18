@@ -77,7 +77,7 @@ export const SPUTUM_DEFER_REASON_SUGGESTIONS = [
 export const SPUTUM_PENDING_BADGE = "Smear pending";
 export const SPUTUM_PRELIMINARY_LABEL = "Preliminary result";
 export const SPUTUM_PRELIMINARY_BANNER =
-  "Preliminary triage from cough and symptoms. The sputum smear will be added later and the score may change.";
+  "Preliminary screening result from cough and symptoms. The sputum smear will be added later and the score may change.";
 
 export function formatSputumDeferDetail(deferReason?: string | null): string {
   const reason = typeof deferReason === "string" ? deferReason.trim() : "";
