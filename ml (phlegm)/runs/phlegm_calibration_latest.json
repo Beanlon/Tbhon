@@ -1,0 +1,25 @@
+{
+  "checkpoint_path": "ml (phlegm)\\runs\\phlegm_afb_binary_20260531_133949\\model_best.pt",
+  "checkpoint_threshold": 0.63,
+  "constraints": {
+    "min_sensitivity": 0.95
+  },
+  "best": {
+    "threshold": 0.63,
+    "policy": "max_specificity_min_sensitivity",
+    "sensitivity": 0.9523809523809479,
+    "specificity": 0.33333333333327775,
+    "balanced_accuracy": 0.6428571428571128,
+    "tp": 200.0,
+    "fn": 10.0,
+    "tn": 2.0,
+    "fp": 4.0
+  },
+  "dataset": {
+    "path": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset",
+    "stratified_resplit": true,
+    "val_samples": 216,
+    "val_negatives": 6,
+    "val_positives": 210
+  }
+}

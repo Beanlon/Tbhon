@@ -1,0 +1,33 @@
+{
+  "task": "binary",
+  "best_val_macro_f1": 0.3769230769230769,
+  "best_val_score": 0.9249999999998741,
+  "decision_threshold": 0.05,
+  "threshold_policy": "max_specificity_min_sensitivity",
+  "min_sensitivity_constraint": 0.95,
+  "val_threshold_metrics": {
+    "threshold": 0.5399999999999999,
+    "sensitivity": 0.9523809523809479,
+    "specificity": 0.33333333333327775,
+    "balanced_accuracy": 0.6428571428571128,
+    "tp": 200.0,
+    "fn": 10.0,
+    "tn": 2.0,
+    "fp": 4.0
+  },
+  "test_acc": 0.6898148148148148,
+  "test_macro_f1": 0.45949579831932774,
+  "confusion_matrix": [
+    [
+      4,
+      2
+    ],
+    [
+      65,
+      145
+    ]
+  ],
+  "classification_report": "              precision    recall  f1-score   support\n\nafb_negative       0.06      0.67      0.11         6\nafb_positive       0.99      0.69      0.81       210\n\n    accuracy                           0.69       216\n   macro avg       0.52      0.68      0.46       216\nweighted avg       0.96      0.69      0.79       216\n",
+  "sensitivity": 0.6904761904761905,
+  "specificity": 0.6666666666666666
+}

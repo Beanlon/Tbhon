@@ -1,0 +1,128 @@
+﻿python : Traceback (most recent call last):
+At C:\Users\Mika\AppData\Local\Temp\ps-script-e14f0ac8-2a0b-4501-8e29-8fb17bc93bb6.ps1:91 char:1
++ python -c "
++ ~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 8, in <module>
+    print(t[:3500])
+    ~~~~~^^^^^^^^^^
+  File "C:\Python314\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2265' in position 862: character maps to <undefined>
+=== PAGE 80 ===
+CHAPTER 6 
+TESTING, EVALUATION, AND RESULTS 
+The following chapter presents the results and analysis of the studyÆs objectives. This section 
+contains the performance metrics of the machine learning models, classification response time 
+observations, end -to-end application testing results, ISO/IEC 2501 0 software quality 
+evaluation, and user acceptance testing outcomes for the proposed TBhon system. The 
+integrated hybrid cough classifier and sputum AFB binary classifier are evaluated using 
+standard classification metrics. The mobile application with the integrated models is further 
+demonstrated through functional test cases, device specifications, and professional user 
+acceptance testing conducted using TBhon version 1.2 (Prototype / Field Evaluation Build). 
+Further conclusions and recommendations are discussed in Chapter 7. 
+ 
+6.1 Achievement of Objectives 
+This section describes how each specific objective in Section 1.3 was addressed through system 
+development, model training, deployment, and evaluation procedures. 
+ 
+6.1.1 First Objective û IoT Acquisition Hardware 
+The first specific objective of the study was to develop the IoT acquisition hardware, including 
+the design of an ESP32-based module for respiratory audio capture and an integrated ESP32û
+OV5640 microscopic imaging module for sputum smear capture.  
+To achieve this objective, the researchers designed and implemented an ESP32 -based IoT 
+screening module capable of supporting cough audio capture and sputum image acquisition 
+within the TBhon screening workflow. The device communicates with the TBhon backend 
+through authenticated REST API endpoints, including /iot/health, /iot/cough -recordings, and 
+/iot/sputum-images, using an IoT API key for secure device authentication.  
+The mobile application was integrated with an IoT hardware checklist, service health 
+verification, and Bluetooth Low Energy (BLE) Wi -Fi provisioning support through react -
+native-ble-plx. Structured screening sessions support three cough attempts and one sp utum 
+sample capture through the IoT -assisted workflow. Bench testing verified device -triggered 
+media upload and backend session linkage. Full in -app BLE Wi -Fi provisioning requires a 
+native deployment build. This objective was substantially achieved, with functional IoT upload 
+and capture verified during development and testing. 
+ 
+ 
+ 
+
+=== PAGE 81 ===
+ 
+ 
+  
+Figure 6.1.1. ESP32 IoT Device Integration Workflow 
+ 
+6.1.2 Second Objective - Data Curation and Preprocessing 
+The second specific objective was to curate and preprocess data by utilizing publicly available 
+tuberculosis datasets and applying signal processing and image feature extraction techniques 
+to ensure model robustness and consistency.  
+The researchers utilized the Kaggle TB cough audio dataset and a YOLO -formatted sputum 
+smear microscopy dataset. Cough audio samples were resampled to 16 kHz, clipped or padded 
+to a fixed duration, and converted into log-Mel spectrogram representations.  
+Additional hand-crafted acoustic features including MFCC, delta and delta -delta coefficients, 
+mel statistics, RMS, and zero-crossing rate were extracted for the gradient boosting component. 
+Sputum smear images were annotated with bounding boxes around individual acid-fast bacilli 
+(class 0), counted per image, and converted into binary AFB labels.  
+Image preprocessing included resizing to 224╫224 pixels, ImageNet normalization, and data 
+augmentation. The curated datasets were partitioned into training, validation, and test subsets. 
+This objective was achieved. 
+ 
+
+
+=== PAGE 82 ===
+ 
+ 
+ 
+ 
+ 
+ 
+Figure 6.1.2. Sputum Dataset Annotation and AFB Labeling Workflow 
+ 
+6.1.3 Third Objective - Machine Learning Model Development 
+The third specific objective was to develop and optimize machine learning models using 
+Convolutional Neural Networks (CNNs) to classify TB-related patterns in respiratory audio via 
+Mel-spectrograms and to identify visual indicators in Ziehl ûNeelsen stained sputum smears. 
+For cough audio, the researchers implemented a hybrid Mel -spectrogram CNN + Gradient 
+Boosting Machine (GBM) classifier with a weighted probability blend and calibrated decision 
+threshold.  
+
+
+=== PAGE 83 ===
+The CNN branch was trained for eight (8) epochs on fold 1, after which GBM features were 
+extracted and fused at inference. For sputum analysis, a ResNet18 binary CNN classifier was 
+trained for thirty (30) epochs to distinguish AFB -positive from AFB-negative smear images, 
+with a validation -tuned decision threshold under a minimum sensitivity constraint for AFB -
+positive detection.  
+Training metrics compilations including train loss, validation accuracy, validation F1, and 
+class-wise validation F1 for cough, and train loss with validation accuracy and macro F1 for 
+sputum are presented in Figures 6.1.3.1 û6.1.3.2 and discussed in Sectio ns 6.2 and 6.3. Both 
+models were deployed through a FastAPI inference service exposing /check -quality, /predict, 
+and /predict-phlegm endpoints. This objective was achieved, with detailed test-set performance 
+metrics presented in Sections 6.2 and 6.3. 
+ 
+ 
+Figure 6.1.3.1. Hybrid Cough CNN Metrics Compilation at 8 Epochs 
+ 
+The sputum AFB binary classifier exhibited decreasing training loss and improving validation 
+macro F1 during the thirty -epoch ResNet18 training run (production run 
+phlegm_afb_binary_20260531_133949). The metrics compilation summarizes validation 
+accuracy and macro F1 across all training epochs. 
+ 
+
+
+=== PAGE 84 ===
+ 
+Figure 6.1.3.2. Sputum ResNet18 Binary Classifier Metrics Compilation at 30 Epochs 
+ 
+The hybrid cough classifier combines CNN Mel -spectrogram embeddings with gradient -
+boosted acoustic features. Final held -out test performance is summarized alongside the 
+architecture in the figure below. 
+ 
+Figure 6.1.3.3. Hybrid CNN + GBM Cough Classification Architecture 
+ 
+
+
+=== PAGE 85 ===

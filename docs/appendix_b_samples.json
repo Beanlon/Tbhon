@@ -1,0 +1,573 @@
+{
+  "sputum_dataset": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset",
+  "cough_dataset_slug": "ruchikashirsath/tb-audio",
+  "cough_fold_csv": "X_train_Fold_0.csv",
+  "negative_sputum_samples": [
+    {
+      "index": 1,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0039.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0039.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_01.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 2,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0066.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0066.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_02.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 3,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0175.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0175.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_03.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 4,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0223.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0223.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_04.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 5,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0259.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0259.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_05.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 6,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0317.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0317.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_06.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 7,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0350.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0350.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_07.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 8,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0403.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0403.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_08.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 9,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0504.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0504.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_09.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 10,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0549.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0549.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_10.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 11,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0620.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0620.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_11.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 12,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0638.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0638.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_12.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 13,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0671.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0671.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_13.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 14,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0727.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0727.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_14.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 15,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0801.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0801.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_15.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 16,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_1060.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_1060.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_16.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 17,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_1134.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_1134.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_17.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 18,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\val\\sputum_val_0089.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\val\\sputum_val_0089.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_18.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 19,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\test\\sputum_test_0041.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\test\\sputum_test_0041.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_19.jpg",
+      "afb_count": 0
+    },
+    {
+      "index": 20,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\test\\sputum_test_0112.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\test\\sputum_test_0112.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\no_afb\\images\\no_afb_sample_20.jpg",
+      "afb_count": 0
+    }
+  ],
+  "positive_sputum_samples": [
+    {
+      "index": 1,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0003.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0003.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_01.png",
+      "afb_count": 1
+    },
+    {
+      "index": 2,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0827.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0827.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_02.png",
+      "afb_count": 1
+    },
+    {
+      "index": 3,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0321.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0321.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_03.png",
+      "afb_count": 2
+    },
+    {
+      "index": 4,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0985.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0985.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_04.png",
+      "afb_count": 2
+    },
+    {
+      "index": 5,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0614.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0614.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_05.png",
+      "afb_count": 3
+    },
+    {
+      "index": 6,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\test\\sputum_test_0068.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\test\\sputum_test_0068.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_06.png",
+      "afb_count": 3
+    },
+    {
+      "index": 7,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0839.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0839.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_07.png",
+      "afb_count": 4
+    },
+    {
+      "index": 8,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0159.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0159.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_08.png",
+      "afb_count": 5
+    },
+    {
+      "index": 9,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_1094.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_1094.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_09.png",
+      "afb_count": 5
+    },
+    {
+      "index": 10,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0854.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0854.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_10.png",
+      "afb_count": 6
+    },
+    {
+      "index": 11,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0501.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0501.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_11.png",
+      "afb_count": 7
+    },
+    {
+      "index": 12,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0601.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0601.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_12.png",
+      "afb_count": 8
+    },
+    {
+      "index": 13,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0644.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0644.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_13.png",
+      "afb_count": 9
+    },
+    {
+      "index": 14,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0958.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0958.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_14.png",
+      "afb_count": 10
+    },
+    {
+      "index": 15,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0108.png",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0108.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_15.png",
+      "afb_count": 12
+    },
+    {
+      "index": 16,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0691.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0691.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_16.png",
+      "afb_count": 13
+    },
+    {
+      "index": 17,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0102.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0102.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_17.png",
+      "afb_count": 15
+    },
+    {
+      "index": 18,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0334.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0334.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_18.png",
+      "afb_count": 17
+    },
+    {
+      "index": 19,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_1125.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_1125.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_19.png",
+      "afb_count": 20
+    },
+    {
+      "index": 20,
+      "source_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\images\\train\\sputum_train_0301.jpg",
+      "source_label": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset\\labels\\train\\sputum_train_0301.txt",
+      "exported_image": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\sputum\\afb_positive\\images\\afb_positive_sample_20.png",
+      "afb_count": 45
+    }
+  ],
+  "no_tb_cough_samples": [
+    {
+      "index": 1,
+      "participant": "CODA_TB_1011",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1620627399144-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_01.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_01.png"
+    },
+    {
+      "index": 2,
+      "participant": "CODA_TB_0836",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1630488130432-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_02.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_02.png"
+    },
+    {
+      "index": 3,
+      "participant": "CODA_TB_0833",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1634023825486-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_03.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_03.png"
+    },
+    {
+      "index": 4,
+      "participant": "CODA_TB_0884",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1635770796084-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_04.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_04.png"
+    },
+    {
+      "index": 5,
+      "participant": "CODA_TB_0535",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1637656638085-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_05.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_05.png"
+    },
+    {
+      "index": 6,
+      "participant": "CODA_TB_1041",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1639384552953-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_06.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_06.png"
+    },
+    {
+      "index": 7,
+      "participant": "CODA_TB_0196",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1641523705635-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_07.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_07.png"
+    },
+    {
+      "index": 8,
+      "participant": "CODA_TB_0963",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1643268197467-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_08.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_08.png"
+    },
+    {
+      "index": 9,
+      "participant": "CODA_TB_0001",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1645088738844-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_09.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_09.png"
+    },
+    {
+      "index": 10,
+      "participant": "CODA_TB_1092",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1646642852651-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_10.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_10.png"
+    },
+    {
+      "index": 11,
+      "participant": "CODA_TB_0563",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1647321868436-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_11.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_11.png"
+    },
+    {
+      "index": 12,
+      "participant": "CODA_TB_0813",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1648086846631-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_12.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_12.png"
+    },
+    {
+      "index": 13,
+      "participant": "CODA_TB_0397",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1649235086164-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_13.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_13.png"
+    },
+    {
+      "index": 14,
+      "participant": "CODA_TB_0735",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1650458596572-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_14.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_14.png"
+    },
+    {
+      "index": 15,
+      "participant": "CODA_TB_0444",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1651728481311-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_15.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_15.png"
+    },
+    {
+      "index": 16,
+      "participant": "CODA_TB_0066",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1652853788330-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_16.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_16.png"
+    },
+    {
+      "index": 17,
+      "participant": "CODA_TB_0463",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1653554660157-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_17.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_17.png"
+    },
+    {
+      "index": 18,
+      "participant": "CODA_TB_0105",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1654752210669-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_18.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_18.png"
+    },
+    {
+      "index": 19,
+      "participant": "CODA_TB_0636",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1656379463336-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_19.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_19.png"
+    },
+    {
+      "index": 20,
+      "participant": "CODA_TB_0880",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1658909600999-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\wav\\no_tb_sample_20.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\no_tb\\waveforms\\no_tb_sample_20.png"
+    }
+  ],
+  "tb_cough_samples": [
+    {
+      "index": 1,
+      "participant": "CODA_TB_0552",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1621248469658-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_01.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_01.png"
+    },
+    {
+      "index": 2,
+      "participant": "CODA_TB_0662",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1629974548648-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_02.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_02.png"
+    },
+    {
+      "index": 3,
+      "participant": "CODA_TB_0063",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1633072563842-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_03.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_03.png"
+    },
+    {
+      "index": 4,
+      "participant": "CODA_TB_0756",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1634557991024-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_04.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_04.png"
+    },
+    {
+      "index": 5,
+      "participant": "CODA_TB_0311",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1637288698919-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_05.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_05.png"
+    },
+    {
+      "index": 6,
+      "participant": "CODA_TB_0784",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1639030281442-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_06.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_06.png"
+    },
+    {
+      "index": 7,
+      "participant": "CODA_TB_1106",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1640314173360-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_07.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_07.png"
+    },
+    {
+      "index": 8,
+      "participant": "CODA_TB_0167",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1642490920926-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_08.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_08.png"
+    },
+    {
+      "index": 9,
+      "participant": "CODA_TB_0544",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1644561504251-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_09.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_09.png"
+    },
+    {
+      "index": 10,
+      "participant": "CODA_TB_0822",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1645517248391-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_10.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_10.png"
+    },
+    {
+      "index": 11,
+      "participant": "CODA_TB_0456",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1646297738800-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_11.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_11.png"
+    },
+    {
+      "index": 12,
+      "participant": "CODA_TB_0837",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1647516182901-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_12.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_12.png"
+    },
+    {
+      "index": 13,
+      "participant": "CODA_TB_0734",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1648462561009-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_13.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_13.png"
+    },
+    {
+      "index": 14,
+      "participant": "CODA_TB_1102",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1649312768781-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_14.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_14.png"
+    },
+    {
+      "index": 15,
+      "participant": "CODA_TB_0883",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1650884782854-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_15.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_15.png"
+    },
+    {
+      "index": 16,
+      "participant": "CODA_TB_0362",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1652087487314-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_16.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_16.png"
+    },
+    {
+      "index": 17,
+      "participant": "CODA_TB_0973",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1653378810453-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_17.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_17.png"
+    },
+    {
+      "index": 18,
+      "participant": "CODA_TB_0160",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1655198131280-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_18.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_18.png"
+    },
+    {
+      "index": 19,
+      "participant": "CODA_TB_0911",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1657088845327-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_19.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_19.png"
+    },
+    {
+      "index": 20,
+      "participant": "CODA_TB_0646",
+      "source_wav": "C:\\Users\\Mika\\.cache\\kagglehub\\datasets\\ruchikashirsath\\tb-audio\\versions\\1\\Tuberculosis\\raw_data\\solicited_data\\1662093994122-recording-1.wav",
+      "exported_wav": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\wav\\tb_sample_20.wav",
+      "exported_waveform": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\docs\\appendix_b\\cough\\tb\\waveforms\\tb_sample_20.png"
+    }
+  ]
+}

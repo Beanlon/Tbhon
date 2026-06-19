@@ -1,0 +1,73 @@
+{
+  "version": "TBhon v1.2",
+  "evaluators": [
+    {
+      "id": "peresores",
+      "name": "Janichero Peresores",
+      "role": "IT Specialist / BS-IS Student",
+      "organization": "Mapúa Malayan Colleges Mindanao",
+      "date": "2026-06-15",
+      "overall_rating": "Excellent",
+      "scores": [5, 5, 5, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 4, 5, 5, 3, 5, 5, 5, 5],
+      "comments": "Improve dark-mode screen; fix Wi-Fi connectivity within range; overall color grading and connectivity."
+    },
+    {
+      "id": "basio",
+      "name": "Basio, Justyne Andrei C.",
+      "role": "Nursing – RCY Volunteer",
+      "organization": "SPC / MMCM",
+      "date": "2026-06-15",
+      "overall_rating": "Good",
+      "scores": [5, 5, 5, 4, 4, 4, 4, 4, 5, 5, 5, 4, 5, 5, 2, 4, 5, 5, 4, 5, 5, 5, 5, 5],
+      "comments": "Need stable Wi-Fi and proper isolated location for audio capture."
+    },
+    {
+      "id": "villiavelez",
+      "name": "Trina Elizea G. Villiavelez",
+      "role": "Nursing Student",
+      "organization": "San Pedro College",
+      "date": "2026-06-14",
+      "overall_rating": "Excellent",
+      "scores": [5, 5, 4, 5, 5, 5, 5, 5, 5, 5, 4, 5, 5, 5, 5, 5, 5, 5, 5, 4, 5, 5, 5, 5],
+      "comments": "Improve cough quality gate; ML inference occasionally exceeds 30s; stable Wi-Fi recommended."
+    },
+    {
+      "id": "ganas",
+      "name": "Lalaine B. Ganas, RN",
+      "role": "Nurse / Clinical Instructor",
+      "organization": "AMSAI-TESDA",
+      "date": "2026-06-17",
+      "overall_rating": "Fair",
+      "scores": [5, 4, 3, 4, 5, 4, 5, 3, 3, 5, 5, 4, 4, 5, 5, 5, 4, 5, 5, 3, 5, 5, 5, 4],
+      "comments": "Add onboarding tutorial; location-based TB DOTS referral; improve rural/offline network handling."
+    },
+    {
+      "id": "escabarte",
+      "name": "Cassandra Sofia M. Escabarte",
+      "role": "Student Nurse",
+      "organization": "San Pedro College",
+      "date": "2026-06-17",
+      "overall_rating": "Good",
+      "scores": [5, 4, 4, 4, 4, 5, 5, 3, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5],
+      "comments": "Improve female cough recognition; reduce processing time; offline mode for poor connectivity; clearer ML status indicators."
+    },
+    {
+      "id": "ledesma",
+      "name": "Kevyn Kerrine R. Ledesma",
+      "role": "BS Medical Laboratory Science Student",
+      "organization": "San Pedro College",
+      "date": "2026-06-17",
+      "overall_rating": "Good",
+      "scores": [5, 5, 3, 5, 5, 5, 5, 3, 3, 4, 2, 1, 5, 5, 5, 3, 2, 4, 4, 3, 5, 5, 4, 4],
+      "comments": "Ease of use for non-technical staff needs improvement; ML/cloud connectivity and reliability under load require refinement."
+    }
+  ],
+  "dimensions": {
+    "functional": {"items": [1, 2, 3, 4, 5, 6, 7], "label": "Functional Suitability (Items 1–7)"},
+    "performance": {"items": [8, 9, 10, 11], "label": "Performance Efficiency (Items 8–11)"},
+    "usability": {"items": [12, 13, 14, 15, 16], "label": "Usability (Items 12–16)"},
+    "reliability": {"items": [17, 18, 19, 20], "label": "Reliability (Items 17–20)"},
+    "security": {"items": [21, 22, 23], "label": "Security (Items 21–23)"},
+    "satisfaction": {"items": [24], "label": "Overall Satisfaction (Item 24)"}
+  }
+}

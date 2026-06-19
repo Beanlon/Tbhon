@@ -51,6 +51,17 @@ class Config:
     spec_freq_masks: int = 2
     spec_time_mask_param: int = 30   # max consecutive time steps masked
     spec_freq_mask_param: int = 16   # max consecutive mel bins masked
+    # Light domain-shift augmentation for mobile/IoT compression + room effects.
+    codec_aug_prob: float = 0.0
+    codec_min_bits: int = 8
+    codec_max_bits: int = 12
+    codec_lowpass_min_hz: int = 2800
+    codec_lowpass_max_hz: int = 4200
+    reverb_aug_prob: float = 0.0
+    reverb_min_delay_ms: float = 18.0
+    reverb_max_delay_ms: float = 45.0
+    reverb_min_decay: float = 0.15
+    reverb_max_decay: float = 0.35
 
     val_fraction: float = 0.12
     early_stop_patience: int = 5
@@ -171,6 +182,34 @@ class TbCoughDataset(torch.utils.data.Dataset):
         # additive Gaussian noise
         if self.cfg.noise_std > 0:
             x = x + torch.randn_like(x) * self.cfg.noise_std
+
+        # Simulate lossy mobile codecs: quantization + low-pass bandwidth limit.
+        if self.cfg.codec_aug_prob > 0 and float(torch.rand(1).item()) < self.cfg.codec_aug_prob:
+            min_bits = max(4, int(self.cfg.codec_min_bits))
+            max_bits = max(min_bits, int(self.cfg.codec_max_bits))
+            bits = int(torch.randint(min_bits, max_bits + 1, (1,)).item())
+            levels = float((1 << bits) - 1)
+            x = torch.clamp(x, -1.0, 1.0)
+            x = torch.round(((x + 1.0) * 0.5) * levels) / levels
+            x = x * 2.0 - 1.0
+            lo = max(400, int(self.cfg.codec_lowpass_min_hz))
+            hi = max(lo, int(self.cfg.codec_lowpass_max_hz))
+            cutoff = int(torch.randint(lo, hi + 1, (1,)).item())
+            x = torchaudio.functional.lowpass_biquad(x.unsqueeze(0), self.cfg.sample_rate, cutoff).squeeze(0)
+
+        # Simple single-tap echo to mimic room reverberation on far mics.
+        if self.cfg.reverb_aug_prob > 0 and float(torch.rand(1).item()) < self.cfg.reverb_aug_prob:
+            delay_lo = max(1e-3, float(self.cfg.reverb_min_delay_ms)) / 1000.0
+            delay_hi = max(delay_lo, float(self.cfg.reverb_max_delay_ms)) / 1000.0
+            delay_s = float(torch.empty(1).uniform_(delay_lo, delay_hi).item())
+            delay = int(max(1, round(delay_s * self.cfg.sample_rate)))
+            decay_lo = max(0.0, float(self.cfg.reverb_min_decay))
+            decay_hi = max(decay_lo, float(self.cfg.reverb_max_decay))
+            decay = float(torch.empty(1).uniform_(decay_lo, decay_hi).item())
+            if delay < x.numel():
+                y = x.clone()
+                y[delay:] = y[delay:] + decay * x[:-delay]
+                x = torch.clamp(y, -1.0, 1.0)
 
         return x
 

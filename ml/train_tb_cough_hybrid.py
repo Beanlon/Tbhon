@@ -61,6 +61,10 @@ class HybridConfig:
     gbm_n_estimators: int = 600
     val_fraction: float = 0.12
     legacy_arch: bool = True
+    spec_time_masks: int = 2
+    spec_freq_masks: int = 2
+    codec_aug_prob: float = 0.35
+    reverb_aug_prob: float = 0.20
 
 
 def extract_gbm_features(path: Path, cfg: HybridConfig) -> np.ndarray:
@@ -116,6 +120,8 @@ def train_cnn_branch(
     val_items: list[tuple[Path, int]],
     cfg: HybridConfig,
     device: torch.device,
+    *,
+    epoch_log_path: Path | None = None,
 ) -> tuple[torch.nn.Module, CnnConfig]:
     cnn_cfg = CnnConfig(
         fold=cfg.fold,
@@ -128,9 +134,11 @@ def train_cnn_branch(
         lr=cfg.cnn_lr,
         augment=True,
         time_shift_max=0.15,
-        noise_std=0.005,
-        spec_time_masks=0,
-        spec_freq_masks=0,
+        noise_std=0.008,
+        spec_time_masks=cfg.spec_time_masks,
+        spec_freq_masks=cfg.spec_freq_masks,
+        codec_aug_prob=cfg.codec_aug_prob,
+        reverb_aug_prob=cfg.reverb_aug_prob,
         legacy_arch=cfg.legacy_arch,
         val_fraction=0.0,
         early_stop_patience=999,
@@ -160,6 +168,10 @@ def train_cnn_branch(
 
     best_f1 = -1.0
     best_state = None
+    if epoch_log_path is not None:
+        epoch_log_path.parent.mkdir(parents=True, exist_ok=True)
+        epoch_log_path.write_text("", encoding="utf-8")
+
     for epoch in range(1, cnn_cfg.epochs + 1):
         model.train()
         losses: list[float] = []
@@ -172,8 +184,21 @@ def train_cnn_branch(
             losses.append(float(loss.item()))
         scheduler.step()
         metrics = evaluate(model, val_loader, device)
+        mean_loss = float(np.mean(losses)) if losses else 0.0
+        log_row = {
+            "epoch": epoch,
+            "train_loss": mean_loss,
+            "val_accuracy": metrics["accuracy"],
+            "val_f1_macro": metrics["f1_macro"],
+            "val_f1_no_tb": metrics["f1_no_tb"],
+            "val_f1_tb": metrics["f1_tb"],
+            "lr": scheduler.get_last_lr()[0],
+        }
+        if epoch_log_path is not None:
+            with epoch_log_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(log_row) + "\n")
         print(
-            f"  cnn epoch {epoch:02d}/{cnn_cfg.epochs} loss={np.mean(losses):.4f} "
+            f"  cnn epoch {epoch:02d}/{cnn_cfg.epochs} loss={mean_loss:.4f} "
             f"val_acc={metrics['accuracy']:.4f} val_f1={metrics['f1_macro']:.4f}",
             flush=True,
         )
@@ -248,7 +273,9 @@ def fit_hybrid(cfg: HybridConfig) -> Path:
     print(f"Train {len(train_split)} | Val {len(val_split)} | Test {len(test_items)}")
 
     print("Training CNN branch...")
-    cnn_model, cnn_cfg = train_cnn_branch(train_split, val_split, cfg, device)
+    cnn_model, cnn_cfg = train_cnn_branch(
+        train_split, val_split, cfg, device, epoch_log_path=run_dir / "epoch_log.jsonl"
+    )
 
     print("Extracting GBM features...")
     X_train, y_train = build_feature_matrix(train_split, cfg)
@@ -278,14 +305,19 @@ def fit_hybrid(cfg: HybridConfig) -> Path:
     val_gbm_p = gbm.predict_proba(X_val)[:, 1]
 
     best_w = 0.5
+    best_f1 = -1.0
     best_acc = -1.0
     best_t = 0.5
+    y_val_true = [y for _, y in val_split]
     for w in np.linspace(0.0, 1.0, 21):
         blend = w * val_cnn_p + (1.0 - w) * val_gbm_p
         for t in np.linspace(0.2, 0.8, 121):
             pred = (blend >= t).astype(int)
-            acc = accuracy_score([y for _, y in val_split], pred)
-            if acc > best_acc:
+            f1 = float(f1_score(y_val_true, pred, average="macro", zero_division=0))
+            acc = accuracy_score(y_val_true, pred)
+            # Primary objective: macro-F1. Secondary tie-breaker: accuracy.
+            if f1 > best_f1 or (np.isclose(f1, best_f1) and acc > best_acc):
+                best_f1 = f1
                 best_acc = acc
                 best_w = float(w)
                 best_t = float(t)
@@ -309,6 +341,7 @@ def fit_hybrid(cfg: HybridConfig) -> Path:
         "test_accuracy": test_acc,
         "test_f1_macro": test_f1,
         "best_f1_macro": test_f1,
+        "threshold_selection_metric": "val_macro_f1",
     }
     bundle_path = run_dir / "hybrid_bundle.pkl"
     with bundle_path.open("wb") as fh:
@@ -324,6 +357,7 @@ def fit_hybrid(cfg: HybridConfig) -> Path:
             "model_type": "hybrid_cnn",
             "hybrid_bundle": str(bundle_path),
             "blend_cnn_weight": best_w,
+            "threshold_selection_metric": "val_macro_f1",
         },
         run_dir / "model.pt",
     )
@@ -331,8 +365,11 @@ def fit_hybrid(cfg: HybridConfig) -> Path:
     metrics = {
         "test_accuracy": test_acc,
         "best_f1_macro": test_f1,
+        "val_best_f1_macro": best_f1,
+        "val_best_accuracy": float(best_acc),
         "blend_cnn_weight": best_w,
         "decision_threshold": best_t,
+        "threshold_selection_metric": "val_macro_f1",
         "confusion_matrix": cm,
         "classification_report": report,
     }

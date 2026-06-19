@@ -19,6 +19,28 @@ from torchvision import transforms
 from train_phlegm_cnn import BINARY_LABELS, LOAD_BINS, LOAD_LABELS, afb_load_label, make_model
 
 
+def _effective_phlegm_threshold(default: float) -> float:
+    import os
+
+    raw = os.environ.get("TB_PHLEGM_DECISION_THRESHOLD")
+    if raw is not None:
+        try:
+            v = float(raw)
+            return float(min(1.0, max(0.0, v)))
+        except ValueError:
+            pass
+    cal_path = Path(__file__).resolve().parent / "runs" / "phlegm_calibration_latest.json"
+    if cal_path.is_file():
+        try:
+            payload = json.loads(cal_path.read_text(encoding="utf-8"))
+            thr = (payload.get("best") or {}).get("threshold")
+            if isinstance(thr, (int, float)):
+                return float(min(1.0, max(0.0, float(thr))))
+        except Exception:
+            pass
+    return float(default)
+
+
 def load_cnn(path: Path, device: torch.device) -> tuple[nn.Module, dict[str, int], int]:
     ck = torch.load(path, map_location=device, weights_only=False)
     label_map: dict[str, int] = ck["label_map"]
@@ -38,7 +60,8 @@ def predict_cnn(image_path: Path, ckpt: Path) -> dict:
     task = str(ck.get("task", "load4"))
     if "afb_negative" in label_map:
         task = "binary"
-    threshold = float(ck.get("decision_threshold", 0.5))
+    checkpoint_threshold = float(ck.get("decision_threshold", 0.5))
+    threshold = _effective_phlegm_threshold(checkpoint_threshold)
 
     tfm = transforms.Compose(
         [
@@ -71,6 +94,7 @@ def predict_cnn(image_path: Path, ckpt: Path) -> dict:
         "confidence": prob[idx],
         "probabilities": {inv[i]: round(prob[i], 6) for i in range(len(inv))},
         "decision_threshold": threshold,
+        "checkpoint_threshold": checkpoint_threshold,
     }
     if task == "load4":
         out["load_bins"] = [{"name": n, "min": lo, "max": hi} for n, lo, hi in LOAD_BINS]

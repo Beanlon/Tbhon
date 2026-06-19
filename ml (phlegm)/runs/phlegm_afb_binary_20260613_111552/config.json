@@ -1,0 +1,35 @@
+{
+  "seed": 1337,
+  "img_size": 224,
+  "batch_size": 32,
+  "epochs": 30,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "num_workers": 0,
+  "augment": true,
+  "backbone": "resnet18",
+  "class_weight": true,
+  "task": "binary",
+  "dataset": "C:\\Users\\Mika\\Documents\\GitHub\\Tbhon\\ml (phlegm)\\Raw_Sputum_Microscopy_Dataset",
+  "labels": [
+    "afb_negative",
+    "afb_positive"
+  ],
+  "distribution": {
+    "train": {
+      "afb_negative": 29,
+      "afb_positive": 977
+    },
+    "val": {
+      "afb_negative": 6,
+      "afb_positive": 210
+    },
+    "test": {
+      "afb_negative": 6,
+      "afb_positive": 210
+    }
+  },
+  "stratified_resplit": true,
+  "min_sensitivity_constraint": 0.95,
+  "device": "cpu"
+}

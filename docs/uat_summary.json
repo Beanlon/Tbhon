@@ -1,0 +1,122 @@
+{
+  "n": 6,
+  "grand_mean": 4.53,
+  "grand_mean_interp": "SA",
+  "dimensions": {
+    "functional": {
+      "label": "Functional Suitability (Items 1\u20137)",
+      "mean": 4.6,
+      "interpretation": "SA"
+    },
+    "performance": {
+      "label": "Performance Efficiency (Items 8\u201311)",
+      "mean": 4.21,
+      "interpretation": "A"
+    },
+    "usability": {
+      "label": "Usability (Items 12\u201316)",
+      "mean": 4.57,
+      "interpretation": "SA"
+    },
+    "reliability": {
+      "label": "Reliability (Items 17\u201320)",
+      "mean": 4.38,
+      "interpretation": "A"
+    },
+    "security": {
+      "label": "Security (Items 21\u201323)",
+      "mean": 4.94,
+      "interpretation": "SA"
+    },
+    "satisfaction": {
+      "label": "Overall Satisfaction (Item 24)",
+      "mean": 4.67,
+      "interpretation": "SA"
+    }
+  },
+  "evaluation_areas": {
+    "Ease of Use": {
+      "mean": 4.57,
+      "interpretation": "SA"
+    },
+    "Accessibility": {
+      "mean": 4.6,
+      "interpretation": "SA"
+    },
+    "Responsiveness": {
+      "mean": 4.21,
+      "interpretation": "A"
+    },
+    "User Satisfaction": {
+      "mean": 4.67,
+      "interpretation": "SA"
+    }
+  },
+  "overall_ratings": [
+    {
+      "rating": "Excellent",
+      "frequency": 2,
+      "percentage": 33.3
+    },
+    {
+      "rating": "Good",
+      "frequency": 3,
+      "percentage": 50.0
+    },
+    {
+      "rating": "Fair",
+      "frequency": 1,
+      "percentage": 16.7
+    }
+  ],
+  "evaluators": [
+    {
+      "name": "Janichero Peresores",
+      "role": "IT Specialist / BS-IS Student",
+      "organization": "Map\u00faa Malayan Colleges Mindanao",
+      "date": "2026-06-15",
+      "overall_rating": "Excellent",
+      "mean_24": 4.83
+    },
+    {
+      "name": "Basio, Justyne Andrei C.",
+      "role": "Nursing \u2013 RCY Volunteer",
+      "organization": "SPC / MMCM",
+      "date": "2026-06-15",
+      "overall_rating": "Good",
+      "mean_24": 4.54
+    },
+    {
+      "name": "Trina Elizea G. Villiavelez",
+      "role": "Nursing Student",
+      "organization": "San Pedro College",
+      "date": "2026-06-14",
+      "overall_rating": "Excellent",
+      "mean_24": 4.88
+    },
+    {
+      "name": "Lalaine B. Ganas, RN",
+      "role": "Nurse / Clinical Instructor",
+      "organization": "AMSAI-TESDA",
+      "date": "2026-06-17",
+      "overall_rating": "Fair",
+      "mean_24": 4.38
+    },
+    {
+      "name": "Cassandra Sofia M. Escabarte",
+      "role": "Student Nurse",
+      "organization": "San Pedro College",
+      "date": "2026-06-17",
+      "overall_rating": "Good",
+      "mean_24": 4.62
+    },
+    {
+      "name": "Kevyn Kerrine R. Ledesma",
+      "role": "BS Medical Laboratory Science Student",
+      "organization": "San Pedro College",
+      "date": "2026-06-17",
+      "overall_rating": "Good",
+      "mean_24": 3.96
+    }
+  ]
+}
