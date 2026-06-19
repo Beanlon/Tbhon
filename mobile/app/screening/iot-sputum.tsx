@@ -46,6 +46,15 @@ function sputumFingerprint(preview: NonNullable<SputumPreview>): string {
   return `${preview.imageId}|${preview.byteSize}|${preview.capturedAt ?? ""}`;
 }
 
+/** Server row for this session, if any (used to ignore stale uploads on re-entry). */
+async function loadServerSputumFingerprint(sessionId: string): Promise<string | null> {
+  const preview = await fetchSessionSputumPreview(sessionId);
+  if (!preview || preview.byteSize <= 0 || preview.sessionId !== sessionId) {
+    return null;
+  }
+  return sputumFingerprint(preview);
+}
+
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
@@ -338,6 +347,33 @@ export default function IotSputumScreen() {
     };
   }, []);
 
+  /** Partial session re-entry: remember existing server image so a new capture must change it. */
+  useEffect(() => {
+    const sid = screeningSessionId.trim();
+    if (!sid) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const preview = await fetchSessionSputumPreview(sid);
+        if (cancelled || !preview || preview.byteSize <= 0 || preview.sessionId !== sid) {
+          return;
+        }
+        acceptedFingerprintRef.current = sputumFingerprint(preview);
+        if (typeof params.sputumByteSize !== "string" || params.sputumByteSize.length === 0) {
+          setSputumByteSize(String(preview.byteSize ?? ""));
+          setSputumCapturedAt(preview.capturedAt ?? "");
+        }
+      } catch {
+        /* draft session may not exist yet */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [screeningSessionId, params.sputumByteSize]);
+
   const startRetakeCooldown = useCallback(() => {
     setRetakeCooldown(RETAKE_COOLDOWN_SECONDS);
     if (retakeCooldownIntervalRef.current) {
@@ -434,9 +470,13 @@ export default function IotSputumScreen() {
       const started = Date.now();
       while (Date.now() - started < IOT_TIMEOUT_MS) {
         const preview = await fetchSessionSputumPreview(sessionId);
-        if (preview && preview.byteSize > 0) {
+        if (preview && preview.byteSize > 0 && preview.sessionId === sessionId) {
           const fp = sputumFingerprint(preview);
-          if (!baselineFingerprint || fp !== baselineFingerprint) {
+          if (baselineFingerprint) {
+            if (fp !== baselineFingerprint) {
+              return preview;
+            }
+          } else if (!acceptedFingerprintRef.current || fp !== acceptedFingerprintRef.current) {
             return preview;
           }
         }
@@ -456,19 +496,21 @@ export default function IotSputumScreen() {
       setCompletedThrough(-1);
 
       try {
-        if (mode === "retake") {
-          retakeBaselineRef.current = acceptedFingerprintRef.current;
-          setPreviewImageUri("");
-          setSputumByteSize("");
-          setSputumCapturedAt("");
-        } else {
-          retakeBaselineRef.current = null;
-        }
+        setPreviewImageUri("");
+        setSputumByteSize("");
+        setSputumCapturedAt("");
 
         setStatusText("Preparing session…");
         const { user } = await getMe();
         const ensuredSessionId = await ensureScreeningSessionId(screeningSessionId || null);
         setScreeningSessionId(ensuredSessionId);
+
+        const baseline = await loadServerSputumFingerprint(ensuredSessionId);
+        retakeBaselineRef.current = baseline;
+        if (baseline) {
+          acceptedFingerprintRef.current = baseline;
+        }
+
         setCompletedThrough(0);
 
         setActiveIndex(1);
