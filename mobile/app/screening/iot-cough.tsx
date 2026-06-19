@@ -29,6 +29,7 @@ import {
   queueIotDeviceAudioStartCommand,
   waitForIotDeviceIdle,
   waitForIotDeviceReady,
+  type IotDeviceStatus,
   type IotHardwareState,
   type SessionCoughRecordingPreview,
 } from "../../services/backendApi";
@@ -48,6 +49,8 @@ const IOT_UPLOAD_TIMEOUT_LATER_MS = 300_000;
 /** Fallback only when /iot/device-status is unreachable. */
 const IOT_PRESENCE_FALLBACK_MS = 2_000;
 const IOT_DEVICE_STATUS_UI_MS = 2_000;
+/** Consecutive header poll failures before showing offline (avoids Wi‑Fi blips). */
+const DEVICE_STATUS_OFFLINE_AFTER_FAILURES = 3;
 const MIN_RECORD_SECONDS = 3;
 const MAX_RECORD_SECONDS = 10;
 const RETAKE_COOLDOWN_SECONDS = 5;
@@ -402,6 +405,7 @@ export default function IotCoughScreen() {
   const [retakeCooldown, setRetakeCooldown] = useState(0);
   const [recordedDurationMs, setRecordedDurationMs] = useState(0);
   const [uploadSlowPrompt, setUploadSlowPrompt] = useState(false);
+  const [deviceLinkKnown, setDeviceLinkKnown] = useState(false);
   const [iotDeviceState, setIotDeviceState] = useState<IotHardwareState>("offline");
   const [iotDeviceReady, setIotDeviceReady] = useState(false);
 
@@ -437,6 +441,8 @@ export default function IotCoughScreen() {
   const captureFinalizeInFlightRef = useRef(false);
   const recordSyncPollCountRef = useRef(0);
   const finalizeCoughAfterBenchRef = useRef<(() => Promise<void>) | null>(null);
+  const deviceLinkKnownRef = useRef(false);
+  const devicePollFailuresRef = useRef(0);
 
   const completedCoughs = slots.filter(Boolean).length;
   const allDone = completedCoughs >= IOT_COUGH_COUNT;
@@ -444,22 +450,37 @@ export default function IotCoughScreen() {
 
   const stepIndex = (id: string) => IOT_COUGH_STEPS.findIndex((s) => s.id === id);
 
+  const applyDeviceStatus = useCallback((status: IotDeviceStatus) => {
+    deviceLinkKnownRef.current = true;
+    devicePollFailuresRef.current = 0;
+    setDeviceLinkKnown(true);
+    setIotDeviceState(status.state);
+    setIotDeviceReady(status.ready);
+  }, []);
+
   const refreshDeviceLink = useCallback(async () => {
     try {
       const status = await fetchIotDeviceStatus();
-      setIotDeviceState(status.state);
-      setIotDeviceReady(status.ready);
+      applyDeviceStatus(status);
       return status;
     } catch {
-      setIotDeviceState("offline");
-      setIotDeviceReady(false);
+      devicePollFailuresRef.current += 1;
+      if (
+        deviceLinkKnownRef.current &&
+        devicePollFailuresRef.current >= DEVICE_STATUS_OFFLINE_AFTER_FAILURES
+      ) {
+        setIotDeviceState("offline");
+        setIotDeviceReady(false);
+      }
       return null;
     }
-  }, []);
+  }, [applyDeviceStatus]);
 
   useEffect(() => {
     void refreshDeviceLink();
     const id = setInterval(() => {
+      // Recording sync polls every 300ms — skip header poll to reduce Wi‑Fi contention.
+      if (deviceRecordSyncRef.current != null) return;
       void refreshDeviceLink();
     }, IOT_DEVICE_STATUS_UI_MS);
     return () => clearInterval(id);
@@ -775,8 +796,7 @@ export default function IotCoughScreen() {
         if (captureFinalizeInFlightRef.current) return;
         try {
           const status = await fetchIotDeviceStatus();
-          setIotDeviceState(status.state);
-          setIotDeviceReady(status.ready);
+          applyDeviceStatus(status);
 
           if (!iotStartQueuedRef.current) {
             setStatusText("Sending start command to bench…");
@@ -852,7 +872,7 @@ export default function IotCoughScreen() {
         }
       })();
     }, 300);
-  }, [findNewCoughOnServer, stopDeviceRecordSync]);
+  }, [applyDeviceStatus, findNewCoughOnServer, stopDeviceRecordSync]);
 
   const ensureSessionReady = useCallback(async (): Promise<{ userId: string; sessionId: string }> => {
     const cachedUserId = userIdRef.current;
@@ -926,25 +946,20 @@ export default function IotCoughScreen() {
     }
     const run = (async () => {
       await ensureSessionReady();
-      if (coughIndexRef.current > 1 || retakeNeedsSettleRef.current) {
-        try {
-          await waitForIotDeviceReady({
-            timeoutMs: 60_000,
-            onProgress: (_, s) => {
-              setIotDeviceState(s.state);
-              setIotDeviceReady(s.ready);
-            },
-          });
-        } catch {
-          await sleep(IOT_PRESENCE_FALLBACK_MS);
-        }
-      } else {
-        try {
-          await waitForIotDeviceReady({ timeoutMs: 15_000 });
-        } catch {
-          // First cough — device may still be booting; countdown gives more time.
-        }
-      }
+      const followUp = coughIndexRef.current > 1 || retakeNeedsSettleRef.current;
+      await waitForIotDeviceReady({
+        timeoutMs: followUp ? 60_000 : 20_000,
+        onProgress: (_, s) => {
+          applyDeviceStatus(s);
+          if (!s.online) {
+            setStatusText("Waiting for screening device to come online…");
+          } else if (!s.ready || s.state !== "idle") {
+            setStatusText(`Device is ${s.state} — waiting until ready…`);
+          } else {
+            setStatusText("Device ready — starting…");
+          }
+        },
+      });
       await refreshUploadBaseline();
     })();
     prepInFlightRef.current = run;
@@ -955,7 +970,7 @@ export default function IotCoughScreen() {
         prepInFlightRef.current = null;
       }
     }
-  }, [ensureSessionReady, refreshUploadBaseline]);
+  }, [applyDeviceStatus, ensureSessionReady, refreshUploadBaseline]);
 
   const kickOffBackgroundPrep = useCallback(() => {
     const p = prepareRecordingSession();
@@ -1029,24 +1044,27 @@ export default function IotCoughScreen() {
     iotStartQueuedRef.current = false;
     console.log(`[IoT Cough] Go — queue audio immediately (cough ${coughIndexRef.current})`);
 
+    setRunning(true);
+    setStatusText("Sending start command to device…");
+
     void (async () => {
       try {
         await queueIotAudioStartWithRetry(userId, sessionId);
         console.log("[IoT Cough] Audio start command queued on server");
+        enterRecordingUiAtGo();
       } catch (e) {
         recordingGenRef.current += 1;
         stopDeviceRecordSync();
         iotStartQueuedRef.current = false;
         handleIoTError(e, "start");
         setIsRecording(false);
+        setRunning(false);
         setActiveIndex(-1);
         setCompletedThrough(-1);
       } finally {
         startingDeviceRef.current = false;
       }
     })();
-
-    enterRecordingUiAtGo();
   }, [enterRecordingUiAtGo, handleIoTError, queueIotAudioStartWithRetry, stopDeviceRecordSync]);
 
   const startCountdownOverlay = useCallback(() => {
@@ -1090,17 +1108,12 @@ export default function IotCoughScreen() {
       await prepareRecordingSession();
       if (retakeNeedsSettleRef.current) {
         setStatusText("Waiting for device to finish uploading…");
-        try {
-          await waitForIotDeviceIdle({
-            timeoutMs: 120_000,
-            onProgress: (_, s) => {
-              setIotDeviceState(s.state);
-              setIotDeviceReady(s.ready);
-            },
-          });
-        } catch {
-          await sleep(IOT_PRESENCE_FALLBACK_MS * 3);
-        }
+        await waitForIotDeviceIdle({
+          timeoutMs: 120_000,
+          onProgress: (_, s) => {
+            applyDeviceStatus(s);
+          },
+        });
         retakeNeedsSettleRef.current = false;
       }
     } catch (e) {
@@ -1112,7 +1125,7 @@ export default function IotCoughScreen() {
     setRunning(false);
     setStatusText(null);
     startCountdownOverlay();
-  }, [handleIoTError, isRecording, prepareRecordingSession, running, showCountdown, startCountdownOverlay]);
+  }, [applyDeviceStatus, handleIoTError, isRecording, prepareRecordingSession, running, showCountdown, startCountdownOverlay]);
 
   const runUploadPoll = useCallback(async (sessionId: string) => {
     uploadPollAbortRef.current?.abort();
@@ -1648,19 +1661,23 @@ export default function IotCoughScreen() {
                       width: 8,
                       height: 8,
                       borderRadius: 4,
-                      backgroundColor: iotDeviceReady
-                        ? SUCCESS_GREEN
-                        : iotDeviceState === "offline"
-                          ? "#e03131"
-                          : "#fab005",
+                      backgroundColor: !deviceLinkKnown
+                        ? "rgba(255,255,255,0.35)"
+                        : iotDeviceReady
+                          ? SUCCESS_GREEN
+                          : iotDeviceState === "offline"
+                            ? "#e03131"
+                            : "#fab005",
                     }}
                   />
                   <Text style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
-                    {iotDeviceReady
-                      ? "Device ready"
-                      : iotDeviceState === "offline"
-                        ? "Device offline"
-                        : iotDeviceState}
+                    {!deviceLinkKnown
+                      ? "Checking device…"
+                      : iotDeviceReady
+                        ? "Device ready"
+                        : iotDeviceState === "offline"
+                          ? "Device offline"
+                          : iotDeviceState}
                   </Text>
                 </View>
               </View>

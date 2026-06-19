@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { useFocusEffect, useRouter, useSegments } from "expo-router";
+import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { getMe } from "../services/backendApi";
 import { canRunScreenings, isPatientRole, resolveUserRole, type UserRole } from "../constants/userRole";
 import { getAuthToken } from "./authStorage";
 import { peekProfile, setCachedProfile } from "./profileCache";
 import { resetToLanding } from "./authNavigation";
-import { useNavigation } from "@react-navigation/native";
 
 /** Routes under /screening that patients may open (linked result details only). */
 export const PATIENT_ALLOWED_SCREENING_ROUTES = new Set(["details"]);
@@ -32,6 +32,8 @@ export function useRequireBoothOperator(): BoothAccessState {
   const router = useRouter();
   const navigation = useNavigation();
   const segments = useSegments();
+  const isFocused = useIsFocused();
+  const patientRedirectedRef = useRef(false);
   const [state, setState] = useState<BoothAccessState>({
     checked: false,
     allowed: false,
@@ -39,7 +41,10 @@ export function useRequireBoothOperator(): BoothAccessState {
   });
 
   const verifyAccess = useCallback(async () => {
+    if (!isFocused) return;
+
     if (isPatientAllowedScreeningRoute(segments as string[])) {
+      patientRedirectedRef.current = false;
       setState({ checked: true, allowed: true, role: "PATIENT" });
       return;
     }
@@ -70,24 +75,23 @@ export function useRequireBoothOperator(): BoothAccessState {
     }
 
     if (isPatientRole(role)) {
-      Alert.alert(
-        "Staff access required",
-        "This screening workflow is for booth staff. Open your results from the Results tab.",
-        [{ text: "OK", onPress: () => router.replace("/home/HomeScreen" as never) }],
-      );
+      if (!patientRedirectedRef.current) {
+        patientRedirectedRef.current = true;
+        router.replace("/home/HomeScreen" as never);
+      }
       setState({ checked: true, allowed: false, role });
       return;
     }
 
     if (!canRunScreenings(role)) {
-      Alert.alert("Access denied", "This account cannot run booth screenings.");
       router.replace("/home/HomeScreen" as never);
       setState({ checked: true, allowed: false, role });
       return;
     }
 
+    patientRedirectedRef.current = false;
     setState({ checked: true, allowed: true, role });
-  }, [navigation, router, segments]);
+  }, [isFocused, navigation, router, segments]);
 
   useEffect(() => {
     void verifyAccess();

@@ -6,7 +6,8 @@ export type ThemeMode = "light" | "dark" | "system";
 
 /**
  * TBhon Palette:
- * Deep Navy: #0C1E4A - darkest background
+ * Deep Navy: #0C1E4A - primary text / light-mode accents
+ * Dark Background: #081430 - screen backdrop (dark mode only)
  * Navy: #1A3478 - dark backgrounds, primary buttons
  * Indigo: #3D4EA6 - accent, cards in dark mode
  * Violet: #5B4FC4 - hero elements, highlights
@@ -20,6 +21,23 @@ export const tbhonPalette = {
   violet: "#5B4FC4",
   softViolet: "#7B6FD8",
   lavender: "#EAE8FA",
+} as const;
+
+const DARK_BACKGROUND = "#081430";
+
+/**
+ * Dark-mode surfaces — richer purple/indigo/violet, still dimmed for comfort.
+ */
+const darkComponent = {
+  base: "#1B244C",
+  raised: "#252468",
+  elevated: "#2E2A78",
+  border: "#1e2751",
+  accent: "#4E4698",
+  highlight: "#6B5FC4",
+  interactive: "#9588D8",
+  interactivePressed: "#A799E4",
+  onInteractive: "#FFFFFF",
 } as const;
 
 export type ThemeColors = {
@@ -99,41 +117,41 @@ const lightColors: ThemeColors = {
 };
 
 const darkColors: ThemeColors = {
-  background: tbhonPalette.deepNavy,
-  surface: tbhonPalette.navy,
-  surfaceAlt: tbhonPalette.indigo,
-  card: tbhonPalette.navy,
-  cardBorder: tbhonPalette.indigo,
-  text: "#FFFFFF",
-  textSecondary: "#F2EDFF",
-  textMuted: "#D8D0FF",
-  primary: tbhonPalette.softViolet,
-  primaryLight: tbhonPalette.indigo,
-  accent: tbhonPalette.violet,
-  border: tbhonPalette.indigo,
-  borderLight: tbhonPalette.navy,
+  background: DARK_BACKGROUND,
+  surface: darkComponent.base,
+  surfaceAlt: darkComponent.raised,
+  card: darkComponent.base,
+  cardBorder: darkComponent.border,
+  text: "#F2EFFE",
+  textSecondary: "#D6D0F2",
+  textMuted: "#A39ACA",
+  primary: darkComponent.interactive,
+  primaryLight: darkComponent.raised,
+  accent: darkComponent.highlight,
+  border: darkComponent.border,
+  borderLight: darkComponent.base,
   success: "#34D399",
-  successBg: "rgba(52,211,153,0.15)",
+  successBg: "rgba(52,211,153,0.14)",
   warning: "#FBBF24",
-  warningBg: "rgba(251,191,36,0.15)",
+  warningBg: "rgba(251,191,36,0.14)",
   error: "#F87171",
-  errorBg: "rgba(248,113,113,0.15)",
-  inputBg: tbhonPalette.navy,
-  inputBorder: tbhonPalette.indigo,
-  modalOverlay: "rgba(0,0,0,0.6)",
+  errorBg: "rgba(248,113,113,0.14)",
+  inputBg: darkComponent.base,
+  inputBorder: darkComponent.border,
+  modalOverlay: "rgba(0,0,0,0.58)",
   statusBar: "light",
-  heroCard: tbhonPalette.indigo,
-  heroCardAccent: tbhonPalette.softViolet,
-  heroText: "#FFFFFF",
-  heroTextMuted: tbhonPalette.lavender,
-  heroBadgeBg: "rgba(255,255,255,0.12)",
-  heroButtonBg: tbhonPalette.indigo,
-  heroButtonText: "#FFFFFF",
-  serviceTileBg: tbhonPalette.navy,
-  serviceTileBorder: tbhonPalette.indigo,
-  serviceTileIcon: "#D8D0FF",
-  navActive: tbhonPalette.softViolet,
-  navInactive: "#D8D0FF",
+  heroCard: darkComponent.elevated,
+  heroCardAccent: darkComponent.accent,
+  heroText: "#FAF8FF",
+  heroTextMuted: "rgba(214,208,242,0.82)",
+  heroBadgeBg: "rgba(149,136,216,0.18)",
+  heroButtonBg: darkComponent.highlight,
+  heroButtonText: darkComponent.onInteractive,
+  serviceTileBg: darkComponent.base,
+  serviceTileBorder: darkComponent.border,
+  serviceTileIcon: "#C8BEF5",
+  navActive: "#B8AEF0",
+  navInactive: "#8E86B8",
 };
 
 type ThemeContextType = {
@@ -202,4 +220,4 @@ export function useTheme() {
   return context;
 }
 
-export { lightColors, darkColors };
+export { lightColors, darkColors, darkComponent };

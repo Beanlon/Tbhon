@@ -31,16 +31,33 @@ import { resetAfterAuth } from "../../utils/authNavigation";
 import { onUnverifiedAccountSession } from "../../services/unverifiedEngagementNotifications";
 import { getAuthToken, saveAuthSession } from "../../utils/authStorage";
 import { setCachedProfile } from "../../utils/profileCache";
-import { STAFF_EXISTING_DESC, PATIENT_LOGIN_HINT, PATIENT_ACCESS_TITLE } from "../../constants/patientAccess";
+import {
+  STAFF_EXISTING_DESC,
+  PATIENT_LOGIN_HINT,
+  PATIENT_ACCESS_TITLE,
+  type AuthAccountIntent,
+} from "../../constants/patientAccess";
+import { isBoothOperator, isPatientRole, parseUserRole } from "../../constants/userRole";
 import { useIosPasswordSecureMaskSync } from "../../utils/useIosPasswordSecureMaskSync";
 
 const SCROLL_FUDGE = 8;
+
+function accountMatchesLoginIntent(role: unknown, intent: AuthAccountIntent): boolean {
+  const parsedRole = parseUserRole(role);
+  return intent === "patient" ? isPatientRole(parsedRole) : isBoothOperator(parsedRole);
+}
+
+function wrongAccountMessage(intent: AuthAccountIntent): string {
+  return intent === "patient"
+    ? "This sign-in is only for patient result accounts. Use Staff sign in for booth staff accounts."
+    : "This sign-in is only for booth staff accounts. Use View my screening result for patient result accounts.";
+}
 
 export default function Login() {
   const router = useRouter();
   const navigation = useNavigation();
   const { intent } = useLocalSearchParams<{ intent?: string }>();
-  const loginIntent = intent === "patient" ? "patient" : "staff";
+  const loginIntent: AuthAccountIntent = intent === "patient" ? "patient" : "staff";
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [email, setEmail] = useState("");
@@ -102,17 +119,19 @@ export default function Login() {
         if (token && active) {
           try {
             const { user } = await getMe();
-            setCachedProfile(user);
-            resetAfterAuth(navigation);
+            if (accountMatchesLoginIntent(user.role, loginIntent)) {
+              setCachedProfile(user);
+              resetAfterAuth(navigation);
+            }
           } catch {
-            resetAfterAuth(navigation);
+            // Stay on the chosen login page if the existing session cannot be verified.
           }
         }
       })();
       return () => {
         active = false;
       };
-    }, [navigation]),
+    }, [loginIntent, navigation]),
   );
 
   const handleLogIn = async () => {
@@ -124,6 +143,10 @@ export default function Login() {
     setSubmitting(true);
     try {
       const { accessToken, refreshToken, token, user } = await postLogin(trimmedEmail, password);
+      if (!accountMatchesLoginIntent(user.role, loginIntent)) {
+        Alert.alert("Wrong account type", wrongAccountMessage(loginIntent));
+        return;
+      }
       await saveAuthSession(accessToken ?? token, refreshToken);
       setCachedProfile(user);
       void onUnverifiedAccountSession(user);
@@ -199,8 +222,8 @@ export default function Login() {
             ]}
           >
             <Text style={styles.welcomeHeading}>
-              Welcome{" "}
-              <Text style={styles.welcomeHeadingAccent}>back!</Text>
+              {loginIntent === "patient" ? "Patient result" : "Staff"}{" "}
+              <Text style={styles.welcomeHeadingAccent}>sign in</Text>
             </Text>
             <Text style={styles.sectionSubtitle}>
               {loginIntent === "patient"
@@ -216,8 +239,8 @@ export default function Login() {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
+              autoComplete="username"
+              textContentType="username"
               icon={<Ionicons name="mail-outline" size={17} color={tk.icon} />}
             />
 

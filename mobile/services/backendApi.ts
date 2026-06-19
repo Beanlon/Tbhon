@@ -1215,6 +1215,10 @@ export type CompleteScreeningPayload = {
   sputumSkipReason?: string;
   staffNotes?: string;
   staffResultConfirmed?: boolean;
+  /** Two-phase screening: preliminary save (cough + checklist) with the smear to follow. */
+  resultStage?: "preliminary" | "final";
+  awaitingSputum?: boolean;
+  sputumDeferReason?: string;
 };
 
 /** Returned from POST /screenings with the rows the server just created. */
@@ -1496,6 +1500,12 @@ export type ScreeningHistoryRow = {
   finalRiskLevel: string | null;
   averageTbProbability: number | null;
   uploadError: boolean;
+  /** Two-phase screening state. */
+  resultStage?: string | null;
+  awaitingSputum?: boolean;
+  sputumDeferReason?: string | null;
+  preliminaryRiskLevel?: string | null;
+  sputumFinalizedAt?: string | null;
   client: ScreeningClientRecord | null;
   result: {
     riskLevel: string;
@@ -1516,6 +1526,11 @@ export type ScreeningSessionDetail = {
   averageTbProbability: number | null;
   uploadError: boolean;
   sputumSkipReason?: string | null;
+  resultStage?: string | null;
+  awaitingSputum?: boolean;
+  sputumDeferReason?: string | null;
+  preliminaryRiskLevel?: string | null;
+  sputumFinalizedAt?: string | null;
   staffNotes?: string | null;
   staffResultConfirmedAt?: string | null;
   checklistPayload?: unknown | null;
@@ -1627,6 +1642,32 @@ export async function patchScreeningReferral(args: {
         referralStatus: args.referralStatus,
         ...(args.referralNotes !== undefined ? { referralNotes: args.referralNotes } : {}),
       } as JsonBody,
+    },
+  );
+}
+
+/** Two-phase screening: add the smear later to a preliminary session and finalize the result. */
+export type FinalizeSputumPayload = {
+  sessionId: string;
+  riskLevel: "low" | "moderate" | "high";
+  recommendation?: string;
+  averageTbProbability?: number | null;
+  imageUri?: string;
+  phlegmAnalyzed?: boolean;
+  phlegmLoad?: string;
+  phlegmConfidence?: number | null;
+  phlegmProbs?: string;
+  staffNotes?: string;
+  staffResultConfirmed?: boolean;
+};
+
+export async function finalizeScreeningSputum(payload: FinalizeSputumPayload) {
+  const { sessionId, ...body } = payload;
+  return apiRequest<{ ok: boolean; session: unknown }>(
+    `/screenings/${encodeURIComponent(sessionId)}/finalize-sputum`,
+    {
+      method: "PATCH",
+      json: { ...body } as JsonBody,
     },
   );
 }

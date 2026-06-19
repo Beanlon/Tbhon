@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Animated, Easing, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { resetToAuthenticatedHome } from "../../utils/authNavigation";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,12 +14,10 @@ import {
   SPUTUM_DEVICE_RECEIVED,
   SPUTUM_DEVICE_READY_PREVIEW,
   SPUTUM_DEVICE_START_BUTTON,
-  SPUTUM_SKIP_BUTTON_LABEL,
+  SPUTUM_SKIP_CAPTURE_BUTTON_LABEL,
   SPUTUM_STAFF_SMEAR_BANNER,
 } from "../../constants/iotScreening";
-import type { SputumSkipReason } from "../../constants/iotScreening";
 import { SESSION_LINK_SIGN_IN_403 } from "../../constants/screeningBoothCopy";
-import { SputumSkipReasonModal } from "./SputumSkipReasonModal";
 import { palette } from "../../constants/palette";
 import {
   ApiError,
@@ -231,7 +228,6 @@ function StepRow({
 
 export default function IotSputumScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
   const params = useLocalSearchParams<{
     checklist?: string;
     audioDone?: string;
@@ -243,12 +239,33 @@ export default function IotSputumScreen() {
     deviceSputum?: string;
     sputumByteSize?: string;
     sputumCapturedAt?: string;
+    finalizeMode?: string;
+    coughProbTb?: string;
+    returnToSession?: string;
   }>();
   const checklist = typeof params.checklist === "string" ? params.checklist : "";
   const audioDone = params.audioDone === "1" ? "1" : "0";
   const audioUris = typeof params.audioUris === "string" ? params.audioUris : "[]";
   const iotRecordingIds = typeof params.iotRecordingIds === "string" ? params.iotRecordingIds : "[]";
   const iotMode = params.iotMode === "1";
+  const isFinalize = params.finalizeMode === "1";
+  const returnToSession = params.returnToSession === "1";
+  const returnToSessionNavParams = useMemo(
+    () => (returnToSession ? ({ returnToSession: "1" as const } as const) : {}),
+    [returnToSession],
+  );
+  const finalizeNavParams = useMemo(
+    () =>
+      isFinalize
+        ? ({
+            finalizeMode: "1" as const,
+            ...(typeof params.coughProbTb === "string" && params.coughProbTb.length > 0
+              ? { coughProbTb: params.coughProbTb }
+              : {}),
+          } as const)
+        : {},
+    [isFinalize, params.coughProbTb],
+  );
 
   const initialSessionId =
     typeof params.sessionId === "string" && params.sessionId.trim().length > 0
@@ -274,7 +291,6 @@ export default function IotSputumScreen() {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [retakeCooldown, setRetakeCooldown] = useState(0);
-  const [skipModalVisible, setSkipModalVisible] = useState(false);
 
   const retakeCooldownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -342,6 +358,14 @@ export default function IotSputumScreen() {
   }, []);
 
   const handleBackPress = useCallback(() => {
+    if (returnToSession && screeningSessionId.trim().length > 0) {
+      router.replace({
+        pathname: "/screening/details",
+        params: { sessionId: screeningSessionId.trim() },
+      } as any);
+      return;
+    }
+
     Alert.alert(
       "Exit Screening?",
       "Going back will exit the entire screening process. Any recorded data will be lost. Are you sure you want to exit?",
@@ -362,10 +386,10 @@ export default function IotSputumScreen() {
         },
       ],
     );
-  }, [checklist, router, screeningSessionId]);
+  }, [checklist, returnToSession, router, screeningSessionId]);
 
   const goToReview = useCallback(
-    (skipReason?: SputumSkipReason) => {
+    () => {
       const hasImage = Boolean(previewImageUri && previewImageUri.length > 0);
       const deviceSputumNavParams = {
         deviceSputum: "1" as const,
@@ -383,7 +407,9 @@ export default function IotSputumScreen() {
           ...(iotMode ? { iotMode: "1" } : {}),
           ...(screeningSessionId ? { sessionId: screeningSessionId } : {}),
           ...deviceSputumNavParams,
-          ...(skipReason ? { sputumSkipReason: skipReason } : {}),
+          ...finalizeNavParams,
+          ...returnToSessionNavParams,
+          ...(!hasImage ? { sputumSkipRequested: "1" as const } : {}),
         },
       } as any);
     },
@@ -398,15 +424,9 @@ export default function IotSputumScreen() {
       screeningSessionId,
       sputumByteSize,
       sputumCapturedAt,
+      finalizeNavParams,
+      returnToSessionNavParams,
     ],
-  );
-
-  const handleSkipConfirm = useCallback(
-    (reason: SputumSkipReason) => {
-      setSkipModalVisible(false);
-      goToReview(reason);
-    },
-    [goToReview],
   );
 
   const pollForSputumPreview = useCallback(
@@ -771,6 +791,33 @@ export default function IotSputumScreen() {
                 )}
               </Pressable>
             )}
+            {!isFinalize && !returnToSession && !running && !done && (
+              <Pressable
+                onPress={() => goToReview()}
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.06)",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.1)",
+                  borderRadius: 18,
+                  paddingVertical: 14,
+                  paddingHorizontal: 16,
+                  alignItems: "center",
+                }}
+                accessibilityRole="button"
+              >
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: "600",
+                    color: "rgba(255,255,255,0.72)",
+                    textAlign: "center",
+                    lineHeight: 18,
+                  }}
+                >
+                  {SPUTUM_SKIP_CAPTURE_BUTTON_LABEL}
+                </Text>
+              </Pressable>
+            )}
             {running && (
               <View
                 style={{
@@ -848,40 +895,9 @@ export default function IotSputumScreen() {
                 </Pressable>
               </View>
             )}
-            {!running && !done && (
-              <Pressable
-                onPress={() => setSkipModalVisible(true)}
-                style={{
-                  backgroundColor: "rgba(255,255,255,0.06)",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.1)",
-                  borderRadius: 18,
-                  paddingVertical: 14,
-                  paddingHorizontal: 16,
-                  alignItems: "center",
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 13,
-                    fontWeight: "600",
-                    color: "rgba(255,255,255,0.72)",
-                    textAlign: "center",
-                    lineHeight: 18,
-                  }}
-                >
-                  {SPUTUM_SKIP_BUTTON_LABEL}
-                </Text>
-              </Pressable>
-            )}
           </View>
         </SafeAreaView>
       </LinearGradient>
-      <SputumSkipReasonModal
-        visible={skipModalVisible}
-        onCancel={() => setSkipModalVisible(false)}
-        onConfirm={handleSkipConfirm}
-      />
     </>
   );
 }

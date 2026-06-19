@@ -149,3 +149,12 @@ function isValidCalendarDate(year: number, month: number, day: number) {
     dt.getUTCDate() === day
   );
 }
+
+export const BIRTHDATE_MIN = new Date(1900, 0, 1);
+
+/** Latest selectable birthdate — today (end of local day). */
+export function birthdateMaximum(): Date {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d;
+}

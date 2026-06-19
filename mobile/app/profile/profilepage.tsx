@@ -1165,26 +1165,6 @@ export function ProfilePage({ onNotificationChange }: ProfilePageProps = {}) {
                 </TouchableOpacity>
               </ProfileCardHeaderOnly>
 
-              <SectionLabel>TBhon ID</SectionLabel>
-              <ProfileCardHeaderOnly
-                title="My TBhon QR"
-                subtitle="Show this at the booth to link future visits to your account"
-              >
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => router.push("/patient/my-qr" as never)}
-                >
-                  <SettingRow
-                    icon="qr-code-outline"
-                    iconBg="#F3EEFF"
-                    iconColor="#5B5BFF"
-                    title="Show my QR"
-                    subtitle="Tap to view and share your permanent TBhon ID"
-                    isLast
-                    right={<Ionicons name="chevron-forward" size={16} color="#8FA3B1" />}
-                  />
-                </TouchableOpacity>
-              </ProfileCardHeaderOnly>
             </>
           ) : null}
 

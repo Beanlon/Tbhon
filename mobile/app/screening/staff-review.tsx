@@ -18,6 +18,9 @@ const RISK_LABEL: Record<RiskLevel, { label: string; color: string; bg: string }
   high: { label: "High risk", color: "#DC2626", bg: "#FEF2F2" },
 };
 
+/** Pastel risk cards keep light backgrounds in dark mode — use fixed dark body text for contrast. */
+const RISK_CARD_DETAIL_TEXT = "#475569";
+
 function coerceRisk(raw: string | undefined): RiskLevel {
   const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
   if (s === "moderate" || s === "high") return s;
@@ -28,7 +31,38 @@ function coerceRisk(raw: string | undefined): RiskLevel {
 export default function StaffReviewScreen() {
   const router = useRouter();
   const { colors, isDark } = useTheme();
-  const params = useLocalSearchParams<Record<string, string | undefined>>();
+  const params = useLocalSearchParams<{
+    risk?: string;
+    probTb?: string;
+    audioUris?: string;
+    iotRecordingIds?: string;
+    imageUri?: string;
+    checklist?: string;
+    invalidAudio?: string;
+    invalidLabel?: string;
+    invalidReasons?: string;
+    uploadError?: string;
+    apiAttempt?: string;
+    wifiRequired?: string;
+    phlegmAnalyzed?: string;
+    phlegmLoad?: string;
+    phlegmConfidence?: string;
+    phlegmProbs?: string;
+    phlegmError?: string;
+    phlegmErrorDetail?: string;
+    fusionBreakdown?: string;
+    sessionId?: string;
+    deviceSputum?: string;
+    sputumByteSize?: string;
+    sputumCapturedAt?: string;
+    sputumSkipReason?: string;
+    staffNotes?: string;
+    staffResultConfirmed?: string;
+    resultStage?: string;
+    sputumDeferReason?: string;
+    finalizeMode?: string;
+    coughProbTb?: string;
+  }>();
   const [staffNotes, setStaffNotes] = useState("");
 
   const risk = coerceRisk(params.risk);
@@ -64,7 +98,7 @@ export default function StaffReviewScreen() {
         </View>
 
         <Text className="mb-4 text-sm leading-6" style={{ color: colors.textSecondary }}>
-          Confirm the triage output before showing the result screen. {SCREENING_DISCLAIMER_SCOPE}
+          Confirm the screening result before showing the result screen. {SCREENING_DISCLAIMER_SCOPE}
         </Text>
 
         <View
@@ -72,13 +106,13 @@ export default function StaffReviewScreen() {
           style={{ borderColor: cfg.color, backgroundColor: cfg.bg }}
         >
           <Text className="text-xs font-bold uppercase tracking-wide" style={{ color: cfg.color }}>
-            Triage level
+            Risk level
           </Text>
           <Text className="mt-1 text-2xl font-black" style={{ color: cfg.color }}>
             {cfg.label}
           </Text>
           {probTb !== null && Number.isFinite(probTb) ? (
-            <Text className="mt-2 text-sm" style={{ color: colors.textSecondary }}>
+            <Text className="mt-2 text-sm" style={{ color: RISK_CARD_DETAIL_TEXT }}>
               Fused TB probability: {(probTb * 100).toFixed(1)}%
             </Text>
           ) : null}
@@ -88,8 +122,16 @@ export default function StaffReviewScreen() {
             </Text>
           ) : null}
           {typeof params.sputumSkipReason === "string" && params.sputumSkipReason.length > 0 ? (
-            <Text className="mt-2 text-sm leading-5" style={{ color: colors.textSecondary }}>
+            <Text className="mt-2 text-sm leading-5" style={{ color: RISK_CARD_DETAIL_TEXT }}>
               No smear: {params.sputumSkipReason}
+            </Text>
+          ) : null}
+          {params.resultStage === "preliminary" ? (
+            <Text className="mt-2 text-sm font-semibold leading-5" style={{ color: cfg.color }}>
+              Preliminary — sputum smear pending
+              {typeof params.sputumDeferReason === "string" && params.sputumDeferReason.length > 0
+                ? `: ${params.sputumDeferReason}`
+                : ""}
             </Text>
           ) : null}
         </View>
@@ -132,7 +174,7 @@ export default function StaffReviewScreen() {
             } as any)
           }
           className="items-center rounded-2xl py-4 active:opacity-90"
-          style={{ backgroundColor: isDark ? "#2E3A6F" : "#243D82" }}
+          style={{ backgroundColor: isDark ? colors.heroButtonBg : "#243D82" }}
         >
           <Text className="text-base font-bold text-white">Confirm & show result</Text>
         </Pressable>

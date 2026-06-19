@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { clearUnverifiedEngagementState } from "../services/unverifiedEngagementNotifications";
-import { clearNotificationInbox } from "./notificationInbox";
+import { clearProfileCache } from "./profileCache";
 
 const ACCESS_TOKEN_KEY = "tbhon_auth_token";
 const REFRESH_TOKEN_KEY = "tbhon_refresh_token";
@@ -25,10 +25,8 @@ export async function getRefreshToken(): Promise<string | null> {
   return AsyncStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
-export async function clearAuthToken(options?: { clearInbox?: boolean }): Promise<void> {
+export async function clearAuthToken(): Promise<void> {
   await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY]);
-  if (options?.clearInbox === true) {
-    await clearNotificationInbox();
-  }
+  clearProfileCache();
   await clearUnverifiedEngagementState();
 }

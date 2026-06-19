@@ -353,6 +353,11 @@ export default function ProcessingScreen() {
     sputumByteSize?: string;
     sputumCapturedAt?: string;
     sputumSkipReason?: string;
+    resultStage?: string;
+    sputumDeferReason?: string;
+    finalizeMode?: string;
+    coughProbTb?: string;
+    returnToSession?: string;
   }>();
 
   useEffect(() => {
@@ -404,6 +409,35 @@ export default function ProcessingScreen() {
           : "";
       const sputumSkipNavParams =
         sputumSkipReason.length > 0 ? ({ sputumSkipReason } as const) : {};
+      const isPreliminary =
+        typeof params.resultStage === "string" && params.resultStage.trim() === "preliminary";
+      const sputumDeferReason =
+        typeof params.sputumDeferReason === "string" && params.sputumDeferReason.trim().length > 0
+          ? params.sputumDeferReason.trim()
+          : "";
+      const preliminaryNavParams = isPreliminary
+        ? ({
+            resultStage: "preliminary" as const,
+            ...(sputumDeferReason ? { sputumDeferReason } : {}),
+          } as const)
+        : {};
+      // Two-phase finalize: smear added later to a session that already has a
+      // saved cough probability (no audio to re-run). Fuse with the stored prob.
+      const isFinalize = params.finalizeMode === "1";
+      const storedCoughProb =
+        typeof params.coughProbTb === "string" && params.coughProbTb.trim().length > 0
+          ? Number(params.coughProbTb)
+          : null;
+      const finalizeCoughProb =
+        storedCoughProb !== null && Number.isFinite(storedCoughProb) ? storedCoughProb : null;
+      const finalizeNavParams = isFinalize
+        ? ({
+            finalizeMode: "1" as const,
+            ...(params.coughProbTb ? { coughProbTb: params.coughProbTb } : {}),
+          } as const)
+        : {};
+      const returnToSessionNavParams =
+        params.returnToSession === "1" ? ({ returnToSession: "1" as const } as const) : {};
       const uploadExtras = checklistStr.length ? { checklist: checklistStr } : undefined;
       const phlegmOpts = {
         deviceSputum: params.deviceSputum === "1",
@@ -433,6 +467,9 @@ export default function ProcessingScreen() {
             ...iotNavParams,
             ...deviceSputumNavParams,
             ...sputumSkipNavParams,
+            ...preliminaryNavParams,
+            ...finalizeNavParams,
+            ...returnToSessionNavParams,
             ...phlegmNavParams(emptyPhlegm),
           },
         } as any);
@@ -467,6 +504,9 @@ export default function ProcessingScreen() {
             ...iotNavParams,
             ...deviceSputumNavParams,
             ...sputumSkipNavParams,
+            ...preliminaryNavParams,
+            ...finalizeNavParams,
+            ...returnToSessionNavParams,
             ...phlegmNavParams(emptyPhlegm),
           },
         } as any);
@@ -476,7 +516,12 @@ export default function ProcessingScreen() {
       if (uris.length === 0 && imageUriStr.trim()) {
         const phlegm = await tryPredictPhlegm(apiBases, imageUriStr, phlegmOpts);
         if (cancelled) return;
-        const fusionNav = buildFusionNavParams(checklistStr, null, true, phlegm);
+        const fusionNav = buildFusionNavParams(
+          checklistStr,
+          isFinalize ? finalizeCoughProb : null,
+          isFinalize ? finalizeCoughProb === null : true,
+          phlegm,
+        );
         router.replace({
           pathname: "/screening/staff-review",
           params: {
@@ -490,6 +535,9 @@ export default function ProcessingScreen() {
             ...iotNavParams,
             ...deviceSputumNavParams,
             ...sputumSkipNavParams,
+            ...preliminaryNavParams,
+            ...finalizeNavParams,
+            ...returnToSessionNavParams,
             ...phlegmNavParams(phlegm),
           },
         } as any);
@@ -552,7 +600,10 @@ export default function ProcessingScreen() {
                 ...sessionNavParams,
                 ...iotNavParams,
                 ...deviceSputumNavParams,
-            ...sputumSkipNavParams,
+                ...sputumSkipNavParams,
+                ...preliminaryNavParams,
+                ...finalizeNavParams,
+                ...returnToSessionNavParams,
                 ...phlegmNavParams(phlegm),
               },
             } as any);
@@ -575,7 +626,10 @@ export default function ProcessingScreen() {
               ...sessionNavParams,
               ...iotNavParams,
               ...deviceSputumNavParams,
-            ...sputumSkipNavParams,
+              ...sputumSkipNavParams,
+              ...preliminaryNavParams,
+              ...finalizeNavParams,
+              ...returnToSessionNavParams,
               ...phlegmNavParams(phlegm),
             },
           } as any);
@@ -597,7 +651,10 @@ export default function ProcessingScreen() {
               ...sessionNavParams,
               ...iotNavParams,
               ...deviceSputumNavParams,
-            ...sputumSkipNavParams,
+              ...sputumSkipNavParams,
+              ...preliminaryNavParams,
+              ...finalizeNavParams,
+              ...returnToSessionNavParams,
               uploadError: "1",
               apiAttempt: apiBases.join(" | "),
               ...phlegmNavParams(phlegm),

@@ -20,7 +20,7 @@ export const PATIENT_ACCESS_EXPIRED_MESSAGE =
   "This result access code has expired. Ask booth staff for help.";
 
 export const PATIENT_HOME_HERO =
-  "Review your TB triage result and screening history from your visit.";
+  "Review your TB screening result and visit history from your visit.";
 
 export const STAFF_LANDING_SECTION = "Booth staff";
 export const STAFF_EXISTING_DESC = "Sign in to run screenings at your health facility.";

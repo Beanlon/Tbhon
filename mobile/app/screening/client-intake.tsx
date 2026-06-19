@@ -43,6 +43,7 @@ import {
   type ClientIntakeInputKind,
 } from "../../utils/clientIntakeInput";
 import { PROFILE_GENDER_OPTIONS } from "../../constants/profileGender";
+import { BirthdatePickerField } from "../components/BirthdatePickerField";
 
 const GOVERNMENT_ID_OPTIONS = [
   { key: "national_id", label: "National ID" },
@@ -238,7 +239,7 @@ function validateStep(stepId: StepId, form: FormState): string | null {
 
 export default function ClientIntakeScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const params = useLocalSearchParams<{ from?: string; sessionId?: string }>();
   const attachSessionId =
     typeof params.sessionId === "string" && params.sessionId.trim().length > 0
@@ -444,14 +445,12 @@ export default function ClientIntakeScreen() {
                   />
                 </Field>
                 <Field label="Date of birth" colors={colors}>
-                  <IntakeTextInput
-                    kind="birthdate"
+                  <BirthdatePickerField
                     value={form.birthdate}
-                    onChangeValue={(v) => patchForm({ birthdate: v })}
+                    onChange={(v) => patchForm({ birthdate: v })}
                     placeholder="MM / DD / YYYY"
                     colors={colors}
-                    style={inputStyle}
-                    keyboardType="number-pad"
+                    isDark={isDark}
                   />
                 </Field>
                 <Field label="Sex" colors={colors}>

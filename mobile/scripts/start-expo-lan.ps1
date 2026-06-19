@@ -54,9 +54,9 @@ Write-Host ""
 Push-Location $mobileDir
 try {
     if ($Clear) {
-        npx expo start --lan --port $Port --clear
+        npx expo start --go --lan --port $Port --clear
     } else {
-        npx expo start --lan --port $Port
+        npx expo start --go --lan --port $Port
     }
 } finally {
     Pop-Location
