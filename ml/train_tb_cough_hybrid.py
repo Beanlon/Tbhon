@@ -120,6 +120,8 @@ def train_cnn_branch(
     val_items: list[tuple[Path, int]],
     cfg: HybridConfig,
     device: torch.device,
+    *,
+    epoch_log_path: Path | None = None,
 ) -> tuple[torch.nn.Module, CnnConfig]:
     cnn_cfg = CnnConfig(
         fold=cfg.fold,
@@ -166,6 +168,10 @@ def train_cnn_branch(
 
     best_f1 = -1.0
     best_state = None
+    if epoch_log_path is not None:
+        epoch_log_path.parent.mkdir(parents=True, exist_ok=True)
+        epoch_log_path.write_text("", encoding="utf-8")
+
     for epoch in range(1, cnn_cfg.epochs + 1):
         model.train()
         losses: list[float] = []
@@ -178,8 +184,21 @@ def train_cnn_branch(
             losses.append(float(loss.item()))
         scheduler.step()
         metrics = evaluate(model, val_loader, device)
+        mean_loss = float(np.mean(losses)) if losses else 0.0
+        log_row = {
+            "epoch": epoch,
+            "train_loss": mean_loss,
+            "val_accuracy": metrics["accuracy"],
+            "val_f1_macro": metrics["f1_macro"],
+            "val_f1_no_tb": metrics["f1_no_tb"],
+            "val_f1_tb": metrics["f1_tb"],
+            "lr": scheduler.get_last_lr()[0],
+        }
+        if epoch_log_path is not None:
+            with epoch_log_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(log_row) + "\n")
         print(
-            f"  cnn epoch {epoch:02d}/{cnn_cfg.epochs} loss={np.mean(losses):.4f} "
+            f"  cnn epoch {epoch:02d}/{cnn_cfg.epochs} loss={mean_loss:.4f} "
             f"val_acc={metrics['accuracy']:.4f} val_f1={metrics['f1_macro']:.4f}",
             flush=True,
         )
@@ -254,7 +273,9 @@ def fit_hybrid(cfg: HybridConfig) -> Path:
     print(f"Train {len(train_split)} | Val {len(val_split)} | Test {len(test_items)}")
 
     print("Training CNN branch...")
-    cnn_model, cnn_cfg = train_cnn_branch(train_split, val_split, cfg, device)
+    cnn_model, cnn_cfg = train_cnn_branch(
+        train_split, val_split, cfg, device, epoch_log_path=run_dir / "epoch_log.jsonl"
+    )
 
     print("Extracting GBM features...")
     X_train, y_train = build_feature_matrix(train_split, cfg)

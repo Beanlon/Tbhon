@@ -1,0 +1,70 @@
+{
+  "cough": [
+    {
+      "file": "cough_early_burst.wav",
+      "size_kb": 218,
+      "expected": "Valid cough \u2014 TB probability returned",
+      "quality": "ok",
+      "quality_ok": true,
+      "prob_tb": 0.48570695637227446,
+      "result": "quality=ok; prob_tb=48.6%"
+    },
+    {
+      "file": "steady_noise.wav",
+      "size_kb": 187,
+      "expected": "Quality fail \u2014 excluded from fusion",
+      "quality": "noise",
+      "quality_ok": false,
+      "prob_tb": null,
+      "result": "Rejected (noise); excluded from fusion"
+    },
+    {
+      "file": "quiet.wav",
+      "size_kb": 125,
+      "expected": "Quality fail \u2014 excluded from fusion",
+      "quality": "silence",
+      "quality_ok": false,
+      "prob_tb": null,
+      "result": "Rejected (silence); excluded from fusion"
+    },
+    {
+      "file": "speech.wav",
+      "size_kb": 187,
+      "expected": "Quality fail \u2014 excluded from fusion",
+      "quality": "replay",
+      "quality_ok": false,
+      "prob_tb": null,
+      "result": "Rejected (replay); excluded from fusion"
+    }
+  ],
+  "sputum": [
+    {
+      "file": "sputum_test_0001.jpg",
+      "resolution": "1632 \u00d7 1224",
+      "size_kb": 217,
+      "expected": "AFB-positive",
+      "result": "afb_positive, 98.1% confidence"
+    },
+    {
+      "file": "sputum_test_0006.jpg",
+      "resolution": "1632 \u00d7 1224",
+      "size_kb": 228,
+      "expected": "AFB-positive",
+      "result": "afb_positive, 79.5% confidence"
+    },
+    {
+      "file": "sputum_test_0033.jpg",
+      "resolution": "1632 \u00d7 1224",
+      "size_kb": 271,
+      "expected": "AFB-negative",
+      "result": "afb_negative, 50.2% confidence"
+    },
+    {
+      "file": "sputum_test_0100.jpg",
+      "resolution": "1632 \u00d7 1224",
+      "size_kb": 194,
+      "expected": "AFB-positive",
+      "result": "afb_positive, 76.9% confidence"
+    }
+  ]
+}

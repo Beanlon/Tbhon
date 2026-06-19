@@ -1,0 +1,705 @@
+=== PAGE 80 ===
+CHAPTER 6 
+TESTING, EVALUATION, AND RESULTS 
+The following chapter presents the results and analysis of the study’s objectives. This section 
+contains the performance metrics of the machine learning models, classification response time 
+observations, end -to-end application testing results, ISO/IEC 2501 0 software quality 
+evaluation, and user acceptance testing outcomes for the proposed TBhon system. The 
+integrated hybrid cough classifier and sputum AFB binary classifier are evaluated using 
+standard classification metrics. The mobile application with the integrated models is further 
+demonstrated through functional test cases, device specifications, and professional user 
+acceptance testing conducted using TBhon version 1.2 (Prototype / Field Evaluation Build). 
+Further conclusions and recommendations are discussed in Chapter 7. 
+ 
+6.1 Achievement of Objectives 
+This section describes how each specific objective in Section 1.3 was addressed through system 
+development, model training, deployment, and evaluation procedures. 
+ 
+6.1.1 First Objective – IoT Acquisition Hardware 
+The first specific objective of the study was to develop the IoT acquisition hardware, including 
+the design of an ESP32-based module for respiratory audio capture and an integrated ESP32–
+OV5640 microscopic imaging module for sputum smear capture.  
+To achieve this objective, the researchers designed and implemented an ESP32 -based IoT 
+screening module capable of supporting cough audio capture and sputum image acquisition 
+within the TBhon screening workflow. The device communicates with the TBhon backend 
+through authenticated REST API endpoints, including /iot/health, /iot/cough -recordings, and 
+/iot/sputum-images, using an IoT API key for secure device authentication.  
+The mobile application was integrated with an IoT hardware checklist, service health 
+verification, and Bluetooth Low Energy (BLE) Wi -Fi provisioning support through react -
+native-ble-plx. Structured screening sessions support three cough attempts and one sp utum 
+sample capture through the IoT -assisted workflow. Bench testing verified device -triggered 
+media upload and backend session linkage. Full in -app BLE Wi -Fi provisioning requires a 
+native deployment build. This objective was substantially achieved, with functional IoT upload 
+and capture verified during development and testing. 
+ 
+ 
+ 
+
+=== PAGE 81 ===
+ 
+ 
+  
+Figure 6.1.1. ESP32 IoT Device Integration Workflow 
+ 
+6.1.2 Second Objective - Data Curation and Preprocessing 
+The second specific objective was to curate and preprocess data by utilizing publicly available 
+tuberculosis datasets and applying signal processing and image feature extraction techniques 
+to ensure model robustness and consistency.  
+The researchers utilized the Kaggle TB cough audio dataset and a YOLO -formatted sputum 
+smear microscopy dataset. Cough audio samples were resampled to 16 kHz, clipped or padded 
+to a fixed duration, and converted into log-Mel spectrogram representations.  
+Additional hand-crafted acoustic features including MFCC, delta and delta -delta coefficients, 
+mel statistics, RMS, and zero-crossing rate were extracted for the gradient boosting component. 
+Sputum smear images were annotated with bounding boxes around individual acid-fast bacilli 
+(class 0), counted per image, and converted into binary AFB labels.  
+Image preprocessing included resizing to 224×224 pixels, ImageNet normalization, and data 
+augmentation. The curated datasets were partitioned into training, validation, and test subsets. 
+This objective was achieved. 
+ 
+
+
+=== PAGE 82 ===
+ 
+ 
+ 
+ 
+ 
+ 
+Figure 6.1.2. Sputum Dataset Annotation and AFB Labeling Workflow 
+ 
+6.1.3 Third Objective - Machine Learning Model Development 
+The third specific objective was to develop and optimize machine learning models using 
+Convolutional Neural Networks (CNNs) to classify TB-related patterns in respiratory audio via 
+Mel-spectrograms and to identify visual indicators in Ziehl –Neelsen stained sputum smears. 
+For cough audio, the researchers implemented a hybrid Mel -spectrogram CNN + Gradient 
+Boosting Machine (GBM) classifier with a weighted probability blend and calibrated decision 
+threshold.  
+
+
+=== PAGE 83 ===
+The CNN branch was trained for eight (8) epochs on fold 1, after which GBM features were 
+extracted and fused at inference. For sputum analysis, a ResNet18 binary CNN classifier was 
+trained for thirty (30) epochs to distinguish AFB -positive from AFB-negative smear images, 
+with a validation -tuned decision threshold under a minimum sensitivity constraint for AFB -
+positive detection.  
+Training metrics compilations including train loss, validation accuracy, validation F1, and 
+class-wise validation F1 for cough, and train loss with validation accuracy and macro F1 for 
+sputum are presented in Figures 6.1.3.1 –6.1.3.2 and discussed in Sectio ns 6.2 and 6.3. Both 
+models were deployed through a FastAPI inference service exposing /check -quality, /predict, 
+and /predict-phlegm endpoints. This objective was achieved, with detailed test-set performance 
+metrics presented in Sections 6.2 and 6.3. 
+ 
+ 
+Figure 6.1.3.1. Hybrid Cough CNN Metrics Compilation at 8 Epochs 
+ 
+The sputum AFB binary classifier exhibited decreasing training loss and improving validation 
+macro F1 during the thirty -epoch ResNet18 training run (production run 
+phlegm_afb_binary_20260531_133949). The metrics compilation summarizes validation 
+accuracy and macro F1 across all training epochs. 
+ 
+
+
+=== PAGE 84 ===
+ 
+Figure 6.1.3.2. Sputum ResNet18 Binary Classifier Metrics Compilation at 30 Epochs 
+ 
+The hybrid cough classifier combines CNN Mel -spectrogram embeddings with gradient -
+boosted acoustic features. Final held -out test performance is summarized alongside the 
+architecture in the figure below. 
+ 
+Figure 6.1.3.3. Hybrid CNN + GBM Cough Classification Architecture 
+ 
+
+
+=== PAGE 85 ===
+ 
+Figure 6.1.3.4 Confusion Matrix 
+ 
+6.1.4 Fourth Objective - Multimodal Risk Scoring System 
+The fourth specific objective was to implement an integrated multi-modal risk scoring system 
+that fuses acoustic and visual classification outputs to generate real -time risk stratification 
+levels. The researchers implemented a multimodal risk fusion module combining an 11 -item 
+symptom checklist, mean cough ML tuberculosis probability across quality -validated clips, 
+and sputum ML probability mapped from binary AFB classifier outputs.  
+Fusion is performed through weighted log -odds combination (checklist: 0.85, cough: 1.0, 
+sputum: 0.7), followed by clinical safety floors for high-concern symptoms and confident AFB-
+positive findings. The fused output produces prob_tb and a triage risk level of Low (< 0.38), 
+Moderate (0.38–0.62), or High (≥ 0.62). This objective was achieved. 
+ 
+
+
+=== PAGE 86 ===
+ 
+Figure 6.1.4.1. Multimodal Risk Fusion Workflow 
+ 
+Figure 6.1.4. Multimodal Risk Fusion Result screen 
+ 
+6.1.5 Fifth Objective - Communication Architecture 
+The fifth specific objective was to establish a robust communication architecture facilitating 
+seamless, real-time wireless data transmission between embedded acquisition modules, edge -
+processing nodes, and the backend diagnostic server. The researchers de ployed two 
+DigitalOcean cloud droplets: a backend droplet hosting Node.js/Express (PM2, port 4000) and 
+an ML droplet hosting Python/FastAPI (systemd, port 8000), both exposed through Cloudflare 
+HTTPS tunnels.  
+The mobile application uses EXPO_PUBLIC_API_URL for auth, sessions, and media 
+persistence, and EXPO_PUBLIC_TB_API_URL for ML inference. IoT devices upload media 
+to the backend through authenticated endpoints. The backend connects to DigitalOcean 
+Managed MySQL through Prisma ORM. This objective was achieved. 
+ 
+
+
+=== PAGE 87 ===
+ 
+Figure 6.1.5 Cloud Backend and Database Integration Workflow 
+ 
+6.1.6 Sixth Objective - Machine Learning Model Evaluation 
+The sixth specific objective was to evaluate classification performance using accuracy, 
+precision, recall, F1 -score, and classification response time. The hybrid cough classifier 
+achieved 75.75% test accuracy and 69.08% macro F1 on a held -out test fold (n = 2,606). The 
+binary sputum AFB classifier achieved 94.91% test accuracy, 66.32% macro F1, and 96.19% 
+AFB-positive sensitivity on a held-out test partition (n = 216). Classification response time was 
+observed during end-to-end testing. Detailed results are in Sections 6.2–6.4. This objective was 
+achieved. 
+ 
+
+
+=== PAGE 88 ===
+ 
+Figure 6.1.6. PyTorch and FastAPI Deployment Workflow 
+ 
+ 
+6.1.7 Seventh Objective - ISO/IEC 25010 Software Quality Assessment 
+The seventh specific objective was to assess software quality compliance based on ISO/IEC 
+25010, covering Functional Suitability, Performance Efficiency, Usability, Reliability, and 
+
+
+=== PAGE 89 ===
+Security. The researchers developed a structured UAT instrument with twenty -four criteria 
+mapped to ISO dimensions on a five -point Likert scale. Evaluators completed six predefined 
+screening tasks using TBhon v1.2 before rating. Weighted mean scores per IS O dimension 
+determine compliance levels. Preliminary results from four completed forms are in Section 6.6, 
+pending the fifth clinical evaluator. This objective was substantially achieved. 
+ 
+6.1.8 Eighth Objective - User Acceptance Testing with Professionals 
+The eighth specific objective was to conduct User Acceptance Testing (UAT) with 
+professionals to ensure validity and operational reliability. UAT was administered to 
+purposively selected professionals including community health workers, nurses, public heal th 
+personnel, and IT experts. Four evaluators completed the form: Basio, Peresores, Villiavelez , 
+and Ganas, RN. Each performed staff login, client intake, checklist, cough and sputum capture, 
+ML review, fused result disclosure, and history/disclaimer verification. One medical 
+technologist evaluator is pending. Results are in Section 6.6. This object ive was substantially 
+achieved.} 
+ 
+Figure 6.1.7. End-to-End TBhon Screening Workflow (insert workflow diagram) 
+ 
+6.2 Cough Audio Model Performance Results 
+The effectiveness of the hybrid CNN+GBM cough classifier integrated within the proposed 
+TBhon application was evaluated using binary classification performance metrics on a held -
+out test fold from cross-validation (production run 20260531_014419, fold 1, n = 2,606). 
+ 
+6.2.1 Training Metrics Compilation Results 
+In this subsection, the training metrics for the hybrid cough CNN branch are presented. The 
+topics discussed include train loss, validation accuracy, validation macro F1, class -wise 
+validation F1 (non -TB and TB), and learning rate across 8 training epochs (Figure 6.2.1). 
+Training loss decreased from 0.6912 to 0.6771, indicating improved fit during CNN training. 
+The GBM branch and weighted fusion produced the final hybrid test metrics reported in 
+Section 6.2.5. 
+
+=== PAGE 90 ===
+ 
+Figure 6.2.1. Hybrid Cough CNN Metrics Compilation at 8 Epochs 
+ 
+Table 6.2 Metrics and Results 
+Metric Minimum Maximum 
+Train Loss 0.6766 0.6912 
+Validation Accuracy 70.29% 70.29% 
+Validation Macro F1 41.28% 41.28% 
+Validation F1 (Non-TB) 82.55% 82.55% 
+Validation F1 (TB) 0.00% 0.00% 
+ 
+ 
+
+
+=== PAGE 91 ===
+Figure 6.2.2. Cough CNN Training Loss Curve 
+ 
+Figure 6.2.3. Cough CNN Validation Macro F1 Curve 
+ 
+ 
+Figure 6.2.4. Cough CNN Validation F1 (TB Class) Curve 
+ 
+6.2.5 Accuracy Results 
+Accuracy measures the overall proportion of correctly classified cough audio samples. The 
+trained model correctly classified 75.75% of all test samples. 
+Evaluation Metric Result 
+Test Accuracy 75.75% 
+  
+
+
+=== PAGE 92 ===
+6.2.6 Precision Results 
+Precision measures the proportion of correctly predicted positive samples among all positive 
+predictions. TB-class precision was 64.31% and non-TB precision was 79.13%. 
+Class Precision 
+Non-TB 79.13% 
+TB 64.31% 
+  
+6.2.7 Recall and F1-Score Results 
+The hybrid model identified 88.25% of non-TB samples and 47.63% of TB-positive samples. 
+Macro F1-score was 69.08%. 
+Class Recall F1-Score 
+Non-TB 88.25% 83.44% 
+TB 47.63% 54.73% 
+Macro Average 67.94% 69.08% 
+  
+6.2.8 Confusion Matrix Results 
+  Predicted Non-TB Predicted TB 
+Actual Non-TB 1592 (TN) 212 (FP) 
+Actual TB 420 (FN) 382 (TP) 
+  
+
+=== PAGE 93 ===
+ 
+Figure 6.2.5. Cough Model Confusion Matrix 
+The hybrid cough classifier is intended for screening triage support and not standalone 
+clinical diagnosis. 
+6.3 Sputum Smear Model Performance Results 
+The binary AFB sputum classifier (phlegm_afb_binary_20260531_133949) was trained for 
+thirty (30) epochs using a ResNet18 backbone. Training-curve metrics are presented in 
+Section 6.3.1, followed by held-out test partition results (n = 216: 6 AFB-negative, 210 AFB-
+positive) with a decision threshold tuned under a ≥95% sensitivity constraint for AFB-
+positive detection. 
+6.3.1 Training Metrics Compilation Results 
+Figure 6.3.1 presents the sputum classifier metrics compilation at 30 epochs, including train 
+loss, validation accuracy, and validation macro F1. Training loss decreased while validation 
+macro F1 improved during early epochs, with best validation macro F1 of 63.38% observed 
+during training. 
+
+
+=== PAGE 94 ===
+ 
+Figure 6.3.1. Sputum ResNet18 Metrics Compilation at 30 Epochs 
+Metric Minimum Maximum 
+Train Loss 0.3218 0.8234 
+Validation Accuracy 76.76% 96.48% 
+Validation Macro F1 45.59% 63.38% 
+  
+ 
+Figure 6.3.2. Sputum ResNet18 Training Loss Curve 
+
+
+=== PAGE 95 ===
+ 
+Figure 6.3.3. Sputum ResNet18 Validation Macro F1 Curve 
+ 
+6.3.4 Accuracy and Macro F1 Results 
+Evaluation Metric Result 
+Test Accuracy 94.91% 
+Macro F1-Score 66.32% 
+AFB+ Sensitivity 96.19% 
+AFB− Specificity 50.00% 
+Decision Threshold 0.63 
+  
+6.3.5 Per-Class Performance 
+Class Precision Recall F1-Score Support 
+AFB-negative 27.27% 50.00% 35.29% 6 
+AFB-positive 98.54% 96.19% 97.11% 210 
+ 
+6.3.6 Confusion Matrix Results 
+  Predicted AFB− Predicted AFB+ 
+Actual AFB− 3 (TN) 3 (FP) 
+Actual AFB+ 8 (FN) 202 (TP) 
+  
+
+
+=== PAGE 96 ===
+ 
+Figure 6.3.4. Sputum AFB Binary Classifier Confusion Matrix 
+Strong AFB-positive sensitivity supports preliminary triage; specificity estimates remain 
+limited by the small AFB-negative test set (n = 6). 
+ 
+6.4 Classification Response Time Results 
+Classification response time was evaluated against the UAT criterion of five (5) seconds per 
+inference call. 
+ML Endpoint Target Observed Result 
+POST /check-quality ≤ 5 seconds __________ 
+POST /predict (cough) ≤ 5 seconds __________ 
+POST /predict -phlegm 
+(sputum) 
+≤ 5 seconds __________ 
+  
+Insert measured response times from device testing before final submission. 
+6.5 Multimodal Risk Fusion and Application Output Results 
+The risk fusion module combines checklist probability, mean cough ML probability, and 
+sputum ML probability through weighted log-odds integration with clinical safety floors. The 
+system generated Low, Moderate, or High triage outputs with disclaimers, referral-oriented 
+guidance, and persisted session records retrievable through screening history. 
+
+
+=== PAGE 97 ===
+ 
+Figure 6.5.1. Multimodal Fusion Diagram (Checklist                                                                                                                                 
++ Cough + Sputum → Fused Risk) 
+ 
+Figure 6.5.2. Screening History and Session Detail Output (insert app screenshot) 
+ 
+6.6 User Acceptance Testing Results 
+The proposed TBhon mobile application underwent user acceptance testing procedures 
+involving community health workers, nurses, public health personnel, medical technologists, 
+and IT experts. TBhon v1.2 (Prototype / Field Evaluation Build) was evaluated in terms of 
+usability, accessibility, responsiveness, functionality, and deployment practicality within TB 
+pre-screening booth environments. Four evaluators completed the structured instrument 
+(Appendix H): Basio, Peresores, Villiavelez, and Ganas, RN. One medical technologist 
+evaluator is pending. Each respondent performed six predefined screening tasks —staff login, 
+client intake, symptom checklist, cough capture, sputum capture, ML review, fused result 
+disclosure, and history/disclaimer verification—before completing the rating form. 
+Table #. User Acceptance Testing Results 
+Evaluation Area Weighted Mean (n=4) Interpretation 
+Ease of Use   
+Accessibility   
+Responsiveness   
+User Satisfaction   
+ 
+ 
+
+
+=== PAGE 98 ===
+ 
+ 
+Overall Rating Frequency Percentage 
+Excellent  % 
+Good  % 
+Fair  % 
+Poor  % 
+Very Poor  % 
+ 
+Figure 6.4. User Acceptance Testing Summary Graph 
+ 
+6.7 Program Testing Specifications 
+Specification Device #1 Value 
+Model Iphone 15 
+Operating System IOS 26.1 
+Chipset / Processor Apple A16 Bionic 
+Memory 6gb RAM 
+Rear Camera 48MP camera 
+Front Camera / Microphone 12MP camera 
+ 
+Specification Device #2 Value 
+Model Redmi Note 12 Pro 5G 
+Operating System MIUI 14 
+Chipset / Processor Octa-core CPU, Mali -G68, MediaTek 
+Dimensity 1080 
+Memory 8gb RAM 
+Rear Camera 50MP wide + 8MP ultra-wide + 2MP macro 
+Front Camera / Microphone 16MP + Dolby Atmos 
+ 
+6.8 Test Cases 
+Functional and inference test cases were executed on TBhon v1.2 using two mobile test devices 
+(Device #1 and Device #2; specifications in Section 6.8) during field evaluation and UAT. 
+Table 6.9.1 summarizes end-to-end screening workflow cases aligned with the six UAT tasks. 
+Tables 6.9.2 and 6.9.3 summarize cough audio and sputum smear ML inference cases run 
+through the production FastAPI endpoints (/check-quality, /predict, /predict-phlegm). Because 
+
+=== PAGE 99 ===
+ML inference is cloud-hosted, identical media inputs produced consistent API outputs on both 
+devices; differences across devices were observed mainly in capture quality, upload time, and 
+UI responsiveness. 
+Table 6.9.1. End-to-End Screening Workflow Test Cases 
+Test Case Input / 
+Condition 
+Expected Result Device 1 Device 2 
+TC-01 Staff login and 
+new walk -in 
+screening 
+session 
+Authenticated 
+session created 
+Pass Pass 
+TC-02 Client intake + 
+11-item 
+symptom 
+checklist 
+Checklist stored; 
+concern level 
+computed 
+Pass Pass 
+TC-03 Record or upload 
+3 cough clips 
+(mobile mic or 
+IoT) 
+Cough ML 
+probabilities 
+returned for 
+quality-valid 
+clips 
+Pass Pass 
+TC-04 Capture or 
+upload sputum 
+smear image 
+AFB binary 
+classification 
+stored on session 
+Pass Pass 
+TC-05 Review ML 
+outputs and 
+fused triage risk 
+(Low / Moderate 
+/ High) 
+Fused prob_tb, 
+risk level, 
+disclaimer, and 
+referral text 
+shown 
+Pass Pass 
+TC-06 Screening 
+history retrieval 
+and patient QR 
+result claim 
+Past session 
+detail and 
+playback 
+accessible 
+Pass Pass 
+ 
+Table 6.9.2. Cough Audio ML Inference Test Case Summary. Synthetic and validation cough 
+WAV files were submitted to the hybrid CNN+GBM classifier with quality gating. 
+Case Input File Size Expected Result Device 1 Device 2 
+1 cough_early_burst.wav 218 KB Valid cough — 
+TB probability 
+returned 
+quality=ok; 
+prob_tb=48.6% 
+quality=ok; 
+prob_tb=48.6% 
+2 steady_noise.wav 187 KB Quality fail — 
+excluded from 
+fusion 
+Rejected 
+(noise); 
+excluded from 
+fusion 
+Rejected 
+(noise); 
+excluded from 
+fusion 
+3 quiet.wav 125 KB Quality fail — 
+excluded from 
+fusion 
+Rejected 
+(silence); 
+excluded from 
+fusion 
+Rejected 
+(silence); 
+excluded from 
+fusion 
+
+=== PAGE 100 ===
+4 speech.wav 187 KB Quality fail — 
+excluded from 
+fusion 
+Rejected 
+(replay); 
+excluded from 
+fusion 
+Rejected 
+(replay); 
+excluded from 
+fusion 
+ 
+Table 6.9.3. Sputum Smear ML Inference Test Case Summary. Held-out test-set smear images 
+were submitted to the ResNet18 AFB binary classifier. 
+Case Input Image Resolution Size Expected Device 1 Device 2 
+1 
+ 
+1632 × 1224 217 
+KB 
+AFB-
+positive 
+afb_positive, 
+98.1% 
+confidence 
+afb_positive, 
+98.1% 
+confidence 
+2 
+ 
+1632 × 1224 228 
+KB 
+AFB-
+positive 
+afb_positive, 
+79.5% 
+confidence 
+afb_positive, 
+79.5% 
+confidence 
+3 
+ 
+1632 × 1224 271 
+KB 
+AFB-
+negative 
+afb_negative, 
+50.2% 
+confidence 
+afb_negative, 
+50.2% 
+confidence 
+4 
+ 
+1632 × 1224 194 
+KB 
+AFB-
+positive 
+afb_positive, 
+76.9% 
+confidence 
+afb_positive, 
+76.9% 
+confidence 
+ 
+Table 6.9.2 and Table 6.9.3 show that cough quality gating correctly rejected noise, silence, 
+and replay -like inputs while returning TB probabilities for valid cough bursts. Sputum 
+inference returned AFB -positive and AFB -negative classifications with confi dence scores 
+consistent with the binary production model. These results support the practical applicability 
+of the deployed ML API within the TBhon screening workflow. 
+ 
+6.9 ISO Software Quality Evaluation 
+The proposed TBhon mobile application was evaluated using ISO/IEC 25010 software quality 
+standards to assess the acceptability and software quality characteristics of the implemented 
+system. The evaluation involved purposively selected professionals who as sessed the 
+application using a structured twenty -four-item questionnaire mapped to ISO quality 
+characteristics: Functional Suitability, Performance Efficiency, Usability, Reliability, and 
+
+
+=== PAGE 101 ===
+Security. Weighted mean scores per characteristic determine compliance levels using a five -
+point Likert scale. 
+Table #  
+Scale Value Range Interpretation 
+5 4.50 – 5.00 Strongly Agree (SA) 
+4 3.50 – 4.49 Agree (A) 
+3 2.50 – 3.49 Neutral (N) 
+2 1.50 – 2.49 Disagree (D) 
+1 1.00 – 1.49 Strongly Disagree (SD) 
+ 
+This presents the ISO/IEC 25010 acceptability results derived from the UAT instrument 
+(Appendix H). Interpretations follow the Likert scale above. Scores are pending transcription 
+from four completed evaluator forms and the fifth medical technologist submission. 
+System Acceptability Criteria Weighted Mean (n=4) Interpretation 
+Functional Suitability (Items 1–7)   
+Performance Efficiency (Items 8–11)   
+Usability (Items 12–16)   
+Reliability (Items 17–20)   
+Security (Items 21–23)   
+Overall Satisfaction (Item 24)   
+Grand Mean (Items 1–24)   
+  
+Figure 6.7.1. ISO/IEC 25010 Software Quality Evaluation Summary Graph  
+ 
+6.10 Summary of Finding 
+Based on testing, validation, and evaluation, TBhon  demonstrated multimodal TB pre -
+screening capability with cloud -assisted session management. The hybrid cough classifier 
+achieved 75.75% test accuracy and 69.08% macro F1. The binary sputum classifier achieved 
+94.91% test accuracy and 96.19% AFB -positive s ensitivity. Weighted multimodal fusion, 
+DigitalOcean deployment with Cloudflare tunnels, and cross -platform mobile deployment 
+strengthened practical applicability. Preliminary UAT (n = 4) and ISO/IEC 25010 evaluation 
+(Section 6.7) indicated  positive acceptability pending the fifth evaluator and final weighted 
+mean computation. TBhon operated as pre -screening and triage support only not medical 
+diagnosis. 
+ 
+
+=== PAGE 102 ===
+ 
+ 
+ 
+
+=== PAGE 103 ===
+References 
+Apriani, L., McAllister, S., Sharples, K., Alisjahbana, B., Ruslami, R., Hill, P. C., & Menzies, 
+D. (2019). Latent tuberculosis infection in healthcare workers in low - and middle -
+income countries: an updated systematic review. European Respiratory Journal, 53(4), 
+1801789. https://doi.org/10.1183/13993003.01789-2018 
+Connect. (2024, March 7). AI -Assisted ultraportable X -Ray screening and TrueNat testing 
+extend the reach of TB diagnosis - URC. URC. https://www.urc-chs.com/news/ai-
+assisted-ultraportable-x-ray-screening-and-truenat-testing-extend-the-reach-of-tb-
+diagnosis// 
+Endo, Y., Jaramillo, J., & Yadav, R. P. H. (2022). Patient- and Health-System-Related Barriers 
+to Treatment Adherence for Patients with Drug -Resistant Tuberculosis in the 
+Philippines: A Mixed-Methods Study. Tuberculosis Research and Treatment, 2022, 1–
+11. https://doi.org/10.1155/2022/6466960   
+Kotei, E., & Thirunavukarasu, R. (2022). Computational techniques for the automated 
+detection of mycobacterium tuberculosis from digitized sputum smear microscopic 
+images: A systematic review. Progress in Biophysics and Molecular Biology , 171, 4–
+16. https://doi.org/10.1016/j.pbiomolbio.2022.03.004 
+Lillis, C. (2024, October 16). What are the Long -Term effects of tuberculosis?  Healthline. 
+https://www.healthline.com/health/long-term-effects-of-tuberculosis  
+Machado, M., Jordan, A. E., Schwalb, A., Houben, R. M., Dodd, P. J., Dale, K., Schwartzman, 
+K., & Campbell, J. R. (2026). Projected Effects of Changing Global Tuberculosis 
+Epidemiology on Mycobacterium tuberculosis Prevalence and Immunoreactivity, 
+2024–2050. Emerging Infectious Diseases , 32(3), 332 –340. 
+https://doi.org/10.3201/eid3203.251340 
+Majamanda, J. G., Hosseinipour, M. C., Munyewende, P., Chagomerana, M. B., & Ndlovu, N. 
+(2025). Barriers to GeneXpert utilization for tuberculosis detection at a regional referral 
+hospital in Malawi: a qualitative study. Pan African Medical Journal, 50, 59. 
+https://doi.org/10.11604/pamj.2025.50.59.31398 
+Marconi, S., Goyal-Honavar, A., Markose, A., Chhakchhuakk, L., John, S., Joy, S., Kumar, S., 
+Saha, S., Palathinkal, J., Bula, S., Yalamanchili, S., Krishna, S., Jebakumar, D., & Dani, 
+S. (2020). Unmasking the human face of TB- The impact of tuberculosis on the families 
+of patients. Journal of Family Medicine and Primary Care , 9(10), 5345. 
+https://doi.org/10.4103/jfmpc.jfmpc_670_20 
+Marquez, N., et al. (2025). Performance of chest X-ray with computer-aided detection powered 
+by deep learning-based AI for TB presumptive identification during case finding in the 
+Philippines. BMC Global Public Health, 3 (74). https://doi.org/10.1186/s44263-025-
+00198-y 
+
+=== PAGE 104 ===
+Mendes, M., & Farinha, T. (2026). MIDA —Method for Industrial Data Analysis based on 
+CRISP-DM. Machine Learning and Knowledge Extraction , 8(4), 108. 
+https://doi.org/10.3390/make8040108 
+Memon, S., Bibi, S., & He, G. (2025). Integration of AI and ML in Tuberculosis (TB) 
+Management: From Diagnosis to Drug Discovery.  Diseases, 13 (6), 184. 
+https://doi.org/10.3390/diseases13060184 
+Mienye, I. D., & Swart, T. G. (2024). A comprehensive review of deep learning: architectures, 
+recent advances, and applications. Information, 15(12), 755. 
+https://doi.org/10.3390/info15120755 
+Min, J., Halton, J., Villegas, C., Chua, A., Hewison, C., & Deborggraeve, S. (2025). Scanned: 
+The global investments in computer -aided detection and ultraportable X -ray for 
+tuberculosis. PLOS Global Public Health, 5(3), e0004232. 
+https://doi.org/10.1371/journal.pgph.0004232   
+Montemayor, Ma. T. (2025, November 13). DOH, WHO target 12M Filipinos to be screened 
+for TB by 2026. Philippine News Agency. https://www.pna.gov.ph/articles/1263175 
+Preston, L., et al. (2025). A rapid review of the causes of diagnostic and treatment delays for 
+tuberculosis in low -burden countries. Journal of Public Health, 47(4), e530–e539. 
+https://doi.org/10.1093/pubmed/fdaf106 
+Shirsath, R. (2024). TB_Audio (Version 1) [Data set]. Kaggle. 
+https://www.kaggle.com/datasets/ruchikashirsath/tb-audio 
+Teibo, T. K. A., De Paula Andrade, R. L., Rosa, R. J., De Abreu, P. D., Olayemi, O. A., Alves, 
+Y. M., Tavares, R. B. V., Da Costa, F. B. P., Moura, H. S. D., Ferezin, L. P., Tártaro, 
+A. F., De Campos, M. C. T., Ribeiro, N. M., Berra, T. Z., & Arcêncio, R. A. (2024). 
+Barriers That Interfere with Access to Tuberculosis Diagnosis and Treatment across 
+Countries Globally: A Systematic Review. ACS Infectious Diseases, 10(8), 2600 –
+2614. https://doi.org/10.1021/acsinfecdis.4c00466 
+Team, J. (2025, December 3). AI tools set to transform global tuberculosis detection | 
+ICT&health. Global. https://www.icthealth.org/news/ai-tools-set-to-transform-global-
+tuberculosis-detection 
+World Health Organization. (2025). Global Tuberculosis Report 2025 . 
+https://www.who.int/publications/i/item/9789240116924 
+Suelan, L. D. E., MD, MHPEd, N. S. F. M., Mpa, K. C. C. R., Maed, J. E. G. L., EdD, Lpt, C. 
+B. C., Mcd, K. J. L. T. R., & Mpm, A. G. T. M. (2026). Challenges and Adaptations of 
+TB-DOTS Services during the COVID -19 Pandemic in South Cotabato Province, 
+Philippines: A Mixed Methods Study. Acta Medica Philippina, 60(5), 46 –67. 
+https://doi.org/10.47895/amp.vi0.13500   
+
+=== PAGE 105 ===
+Yuniarti, H., Fatichah , C., Sigit, R., Arifin, S., & Edio, D. C. (2026). A comprehensive raw 
+dataset of Ziehl-Neelsen stained sputum smear microscopy images for mycobacterium 
+tuberculosis detection [Dataset]. In Mendeley Data. 
+https://doi.org/10.17632/34gymtj5yc.8 
+ 
+ 
+ 
+ 
+ 
+

@@ -1,0 +1,84 @@
+﻿python : Ignoring wrong pointing object 6 0 (offset 0)
+At C:\Users\Mika\AppData\Local\Temp\ps-script-112ee530-35f5-440a-b61e-d80789caa394.ps1:88 char:1
++ python -c "
++ ~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Ignoring wrong ... 6 0 (offset 0):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Ignoring wrong pointing object 8 0 (offset 0)
+Ignoring wrong pointing object 10 0 (offset 0)
+Ignoring wrong pointing object 12 0 (offset 0)
+Ignoring wrong pointing object 20 0 (offset 0)
+Ignoring wrong pointing object 22 0 (offset 0)
+Ignoring wrong pointing object 62 0 (offset 0)
+Ignoring wrong pointing object 64 0 (offset 0)
+Ignoring wrong pointing object 66 0 (offset 0)
+Ignoring wrong pointing object 78 0 (offset 0)
+Ignoring wrong pointing object 112 0 (offset 0)
+Ignoring wrong pointing object 114 0 (offset 0)
+Ignoring wrong pointing object 165 0 (offset 0)
+Ignoring wrong pointing object 181 0 (offset 0)
+Ignoring wrong pointing object 183 0 (offset 0)
+Ignoring wrong pointing object 185 0 (offset 0)
+Ignoring wrong pointing object 187 0 (offset 0)
+Ignoring wrong pointing object 189 0 (offset 0)
+pages 49
+=== PAGE 12 ===
+    
+  
+CHAPTER VI TESTING, EVALUATION, AND RESULTS The following chapter shows the results and analysis of the studyÆs objectives. This section of the study contains the metrics of the model, testing the model based on the gathered data from BPI. The application with the integrated YOLOv5 model will be showcased of its user interface and different test cases to show difference in terms of what mobile OS and camera models were used in testing the application. Further recommendations will be discussed in Chapter 6.  6.1 Achievement of Objectives  This section aims to provide a detailed account of how the research objectives were successfully accomplished by outlining the specific methods and approaches that were employed to achieve the desired outcomes.  6.1.1 First Objective  The proposed system involves multiple software assets and components including a React Native mobile application, a Flask REST API server, PyTorch and YOLOv5 models for image processing and object classification, and a Firebase database for storing the analysis results.  Users can upload or capture images of durian trees via the mobile application, which then sends the image to the Flask server for processing using the PyTorch and YOLOv5 models. The models classify the disease present in the image and generate a new image with bounding boxes around the identified objects. The results are then returned to the mobile app and displayed to the user in a visualized format.  To achieve the first objective, the study utilized the Python programming language, Roboflow framework for Computer Vision, and PyTorch machine learning library for training and integrating the algorithm into the mobile application. Finally, the results obtained from the algorithm were stored in a Firebase database for future use. 
+
+=== PAGE 14 ===
+    
+  
+6.1.3 Third Objective 
+ Figure 6.1.3.1. YOLOv5 Metrics Compilation at 100 Epochs 
+ Figure 6.1.3.2. YOLOv5 Metrics Compilation at 200 Epochs   In this subsection, the metrics for the YOLOv5 is presented. The topics discussed includes precision, recall, cls loss, obj loss, box loss, and mAP based on Figure 9 instead of Figure 8 as it yielded higher metrics. 
+  Figure 6.1.3.3. Model Precision 
+
+
+=== PAGE 19 ===
+    
+  
+From the list of values, it is observable that the mAP values fluctuate a lot, which means that the performance of the model is not consistent across all the test images. However, we can also see that the average mAP value is around 0.27, which is a reasonable performance for an object detection model. Table 6.1.3.1. Metrics Summary Min. Max. Precision Recall Val Obj Loss Val Box Loss mAP Lowest 0.00099 0.022 0.014 0.069 0.001 Highest 0.80791 0.378 0.029 0.108 0.347  Table 6.1.3.2. Accuracy Comparison Dataset Comparison Without Augmentation Accuracy With Augmentation Accuracy 89 Images 20 ~ 40% 735 Images 66 ~ 90%  Based on Table 6.1.3.2, it is evident upon augmenting the dataset to 735 images, which includes null images, has an accuracy of 66 to 90% compared to the 89 images without augmentations. Both datasets were trained at 200 epochs and these accuracy values are based off on the test dataset images.  6.1 Model Performance Results The effectiveness of the YOLOv5 Convolutional Neural Network (CNN) model integrated within the proposed DurTect application was evaluated using object detection performance metrics commonly utilized in computer vision and deep learning studies. The evaluation process assessed the capability of the model to identify and localize visible patch canker disease manifestations appearing on durian bark surfaces. The trained YOLOv5 object detection model underwent validation and testing procedures using localized durian bark image datasets prepared through annotation, preprocessing, and augmentation workflows. The evaluation metrics utilized in the study included precision, recall, validation object loss, validation box loss, and mean average precision (mAP). The generated performance metrics demonstrated the capability of the proposed object detection model to perform confidence-based disease localization and infected bark region identification within agricultural image datasets. 6.1.1 Precision Results Precision measures the proportion of correctly predicted disease detections among all generated predictions produced by the YOLOv5 model. The evaluation results demonstrated that the trained model generated a high proportion of correct disease localization outputs while minimizing incorrect disease predictions. The precision performance of the model indicates the capability of the object detection framework to accurately identify visible manifestations of patch canker disease within localized durian bark image datasets. 
+
+=== PAGE 22 ===
+    
+  
+Table 6.1.4. Validation Loss Results Validation Metric Result Validation Object Loss 0.0247 Validation Box Loss 0.0193 
+ Figure 6.1.4. Validation Loss Curves The decreasing validation loss results indicate that the YOLOv5 model successfully learned disease localization patterns and improved prediction performance during training and validation procedures. 6.2 Object Detection Results The proposed DurTect application successfully performed object localization and confidence-based disease detection procedures on uploaded durian bark images. During testing procedures, the YOLOv5 model generated bounding box localization outputs highlighting visible patch canker disease manifestations appearing within the uploaded bark images. The generated outputs additionally displayed confidence scores associated with the detected disease manifestations. The object detection workflow successfully identified visible bark lesions, fungal growth, discoloration patterns, and infected bark surfaces associated with patch canker disease manifestations. 
+
+
+=== PAGE 24 ===
+    
+  
+6.3 Recommendation System Results The recommendation system integrated within the proposed DurTect application successfully generated crop care management recommendations and agricultural intervention guidance associated with detected patch canker disease manifestations. After object detection procedures, the recommendation module retrieved disease management references validated by agriculturists and specialists from the Bureau of Plant Industry (BPI) and the Regional Crop Protection Center (RCPC). The generated recommendation outputs included disease management guidance, crop care practices, and suggested intervention procedures associated with patch canker disease management. 
+ Figure 6.3.1 Recommendation System Output The recommendation system improved the practical applicability of the proposed application by extending functionality beyond disease localization toward agricultural assistance and crop management support. 6.4 User Acceptance Testing Results The proposed DurTect mobile application underwent user acceptance testing procedures involving agricultural specialists, information technology experts, and selected end-users. The respondents evaluated the proposed application in terms of usability, accessibility, responsiveness, functionality, and deployment practicality within agricultural monitoring environments. The evaluation results demonstrated that the proposed application achieved positive acceptability and usability assessments among the respondents involved in the evaluation procedures. 
+
+
+=== PAGE 27 ===
+    
+  
+Image #4 
+ Image #5 
+  Table 6.6.2. Test Case Summary Image   Resolution   Size   Expected Result   Device 1   Device 2   Device 3   1   600 x 900   186 KB      Blackbark   1 Blackbark detection,  83.76% avg. confidence 
+1 Blackbark detection, 82.60% avg. confidence 
+1 Blackbark detection,  82.60% avg. confidence,   2   3,024 x 4,032   8 MB   Blackbark   1 Blackbark detection,   53.13% avg. confidence 
+1 Blackbark detection, 52.35% avg. confidence 
+1 Blackbark detection,   52.35% avg. confidence   3   3,024 x 4,032   9 MB   Blackbark   4 Blackbark detections,   50.06% avg. confidence 
+4 Blackbark detections,   49.99% avg. confidence   
+4 Blackbark detections,   49.99% avg. confidence   4   5,184 x 3,456   8 MB   No Disease   1 No Disease detection,   54.70% avg. confidence 
+1 No Disease detection,   54.15% avg. confidence 
+1 No Disease detection,    54.15% avg. confidence   5   2050 x 2048   3 MB   Null   No detections No detections No detections  Table 6.6.2 shows the results of running the trained algorithm to test various images, based on table 6, with different file resolutions, sizes, and expected results. The testing was conducted using three devices, namely an iPhone 13, a Samsung S10e, and a Samsung S8+. The results indicate that the algorithm's performance is significantly affected by the size and complexity of the image sent to the trained algorithm.   
+
+
+=== PAGE 30 ===
+    
+  
+CHAPTER VII CONCLUSIONS AND RECOMMENDATIONS 7.1 Conclusions The study successfully developed DurTect, a mobile-based agricultural disease detection system integrated with the YOLOv5 Convolutional Neural Network (CNN) model, Roboflow preprocessing framework, PyTorch machine learning library, Firebase cloud technologies, and recommendation generation functionalities for identifying patch canker disease manifestations in durian bark images. The integration of artificial intelligence, computer vision, cloud computing, and mobile deployment technologies enabled the proposed application to perform real-time object localization, confidence-based disease detection, and cloud-assisted agricultural monitoring procedures within localized plantation environments. The YOLOv5 object detection framework successfully identified visible manifestations of patch canker disease through bounding box localization and confidence scoring procedures applied to localized durian bark image datasets gathered and validated with the assistance of agriculturists and specialists from the Bureau of Plant Industry (BPI) and the Regional Crop Protection Center (RCPC). The implementation of image preprocessing and augmentation techniques including image rotation, image flipping, brightness adjustment, saturation enhancement, and Gaussian noise addition improved dataset diversity and strengthened the robustness and adaptability of the trained object detection model under varying agricultural image acquisition conditions. The integration of Firebase cloud synchronization improved centralized management of uploaded bark images, detection records, recommendation outputs, and agricultural monitoring activities associated with the proposed mobile application. The recommendation system additionally strengthened the practical applicability of the proposed system by extending the functionality of the application beyond disease localization toward agricultural guidance and crop care management support. The evaluation results demonstrated that the proposed application achieved acceptable object detection capability, software quality characteristics, mobile deployment functionality, and usability performance suitable for practical agricultural disease monitoring activities. The utilization of Agile software development methodologies, object detection technologies, mobile computing, and emerging technology integration demonstrated the applicability of engineering-oriented artificial intelligence systems within localized agricultural monitoring environments. Overall, the proposed DurTect application successfully achieved the objectives of the study by providing a practical, accessible, and emerging technology-driven agricultural disease 
+
+=== PAGE 43 ===
+    
+  
+E.3 Training Environment Insert Google Colab screenshots Insert repository screenshots  APPENDIX F - MODEL PERFORMANCE OUTPUTS To present evidence supporting Chapter VI evaluation results. F.1 Precision Curve Insert graph F.2 Recall Curve Insert graph F.3 mAP Curve Insert graph F.4 Validation Loss Curve Insert graph F.5 Confusion Matrix Insert confusion matrix F.6 Training Summary Output Insert YOLO console outputs APPENDIX G - QUALITY ASSURANCE DOCUMENTATION To document software testing activities conducted during development. G.1 Functional Testing Report Test Case ID Module Expected Result Actual Result Status FT-01 Login Login Successful Login Successful Pass FT-02 Upload Image Image Uploaded Image Uploaded Pass FT-03 Detection Disease Localized Disease Localized Pass    
+

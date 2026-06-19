@@ -1,0 +1,77 @@
+=== PAGE 35 ===
+    
+  
+APPENDICES APPENDIX A - ISO SOFTWARE QUALITY EVALUATION QUESTIONNAIRE This appendix contains the evaluation instrument utilized to assess the software quality characteristics of the proposed DurTect mobile application based on ISO/IEC 25010 Software Quality Standards. Contents A.1 Respondent Profile • Name (Optional) • Profession • Organization • Years of Experience A.2 User Acceptance Test  5 = Strongly Agree 4 = Agree 3 = Neutral 2 = Disagree 1 = Strongly Disagree System Acceptability Criteria 5 4 3 2 1 A. Functionality Suitability ● The system can detect traces of Black bark on durian tree images. ● The system presents visualized data and analytics on each classified detection. ● The system allows users to manage their previous detection activity entries (viewing and deleting). 
+                              
+B. Performance Efficiency ● The system is fast in terms of performing actions. ● The system behaves and responds accordingly to user input. ● The system scales well.  
+                              C. Usability ● The system is user-friendly. ● The system demonstrates responsive design. ● The system’s User Interface and User Experience (UI/UX) is clear and intuitive. 
+                              B. Reliability ● The system is always stable and operational. ● The system can easily retrieve and enable users to manage their data. ● The system has no bugs or glitches.  
+                              E. Security ● The system does not allow users to access data from other users. ● The system utilizes the HTTPs data transmission protocol.                     F. Portability ● The system can be installed on different devices with different mobile operating systems. ● The system can easily adapt to different devices with varying screen sizes. ● The system supports image uploads from different devices. 
+                             
+       
+
+=== PAGE 36 ===
+    
+  
+APPENDIX B - DATASET SAMPLES To present representative images utilized throughout the training and evaluation of the YOLOv5 object detection model. B.1 Healthy Bark Samples  Representative healthy durian bark samples collected from field environments and utilized during model training and validation activities. 
+ B.2 Patch Canker Bark Samples Representative patch canker bark samples exhibiting disease manifestations used for annotation, augmentation, and object detection training. 
+ 
+
+
+=== PAGE 38 ===
+    
+  
+APPENDIX C - DATASET ANNOTATION DOCUMENTATION To present evidence of object annotation and labeling procedures performed using Roboflow. C.1 Annotation Workflow  Screenshots showing the annotation procedures conducted in Roboflow for identifying patch canker disease regions within collected durian bark images. 
+ C.2 Bounding Box Samples  Representative augmentation outputs generated to improve dataset diversity and model generalization capabilities. 
+ 
+
+
+=== PAGE 41 ===
+    
+  
+Appendix C.7 Confusion Matrix and Evaluation Metrics Model evaluation results illustrating classification performance and prediction reliability. 
+ C.8 Model Export and Deployment Preparation Evidence showing model conversion and preparation for mobile deployment. 
+    
+
+
+=== PAGE 42 ===
+    
+  
+APPENDIX D - DATA AUGMENTATION DOCUMENTATION To demonstrate preprocessing and augmentation procedures applied to the dataset. Contents D.1 Rotation Samples D.2 Flipping Samples D.3 Brightness Adjustment Samples D.4 Saturation Adjustment Samples D.5 Gaussian Noise Samples D.6 Augmentation Workflow Insert Figure 5.2 APPENDIX E - MODEL TRAINING REPOSITORY To present the development repository utilized for YOLOv5 training. E.1 Repository Structure DurTect/ │ ├── datasets/ ├── train/ ├── valid/ ├── test/ ├── runs/ ├── weights/ ├── exports/ ├── notebooks/ └── models/  E.2 Training Configuration Parameter Value Framework YOLOv5 Language Python Image Size 640×640 Epochs ___ Batch Size ___ Optimizer ___ Device GPU    
+
+=== PAGE 43 ===
+    
+  
+E.3 Training Environment Insert Google Colab screenshots Insert repository screenshots  APPENDIX F - MODEL PERFORMANCE OUTPUTS To present evidence supporting Chapter VI evaluation results. F.1 Precision Curve Insert graph F.2 Recall Curve Insert graph F.3 mAP Curve Insert graph F.4 Validation Loss Curve Insert graph F.5 Confusion Matrix Insert confusion matrix F.6 Training Summary Output Insert YOLO console outputs APPENDIX G - QUALITY ASSURANCE DOCUMENTATION To document software testing activities conducted during development. G.1 Functional Testing Report Test Case ID Module Expected Result Actual Result Status FT-01 Login Login Successful Login Successful Pass FT-02 Upload Image Image Uploaded Image Uploaded Pass FT-03 Detection Disease Localized Disease Localized Pass    
+
+=== PAGE 44 ===
+    
+  
+G.2 Integration Testing Report Components Expected Result Actual Result Status Upload → YOLOv5 Detection Triggered Successful Pass YOLOv5 → Firebase Data Saved Successful Pass Firebase → History Data Retrieved Successful Pass  G.3 Regression Testing Version Change Result v1.0 Initial Release Stable v1.1 Firebase Fix Stable  G.4 Defect Log Bug ID Description Severity Resolution BUG-01 Upload Failure Medium Fixed BUG-02 Sync Delay Low Fixed  APPENDIX H - USER ACCEPTANCE TESTING DOCUMENTATION Purpose To provide evidence of UAT activities. H.1 UAT Forms H.2 Signed Evaluation Sheets H.3 Evaluator Feedback H.4 Evaluation Summary H.5 UAT Photographs  APPENDIX I - SPRINT DOCUMENTATION Sprint 1 Project Planning Artifacts: • Product Backlog • User Stories • Requirements List 
+
+=== PAGE 46 ===
+    
+  
+APPENDIX J - DEPLOYMENT DOCUMENTATION To provide evidence of actual system deployment. J.1 Deployment Architecture J.2 Firebase Configuration J.3 APK Build Documentation J.4 Installation Procedures J.5 Device Testing Evidence J.6 Deployment Screenshots  APPENDIX K - SOURCE CODE SNIPPETS Include only major modules. K.1 Image Upload Module K.2 YOLOv5 Inference Module K.3 Recommendation Module K.4 Firebase Synchronization Module K.5 Detection History Module  APPENDIX L - WORK BREAKDOWN STRUCTURE (WBS) Include: • Complete WBS • Resource Allocation • Cost Allocation • Effort Distribution APPENDIX M - PROJECT TIMELINE AND GANTT CHART Include: • Full Gantt Chart • Sprint Mapping • Milestones • Deliverables    
+
+=== PAGE 47 ===
+    
+  
+APPENDIX N - VALIDATION AND SUPPORTING DOCUMENTS Include: • BPI Validation • RCPC Validation • Consultation Records • Expert Feedback • Approval Documents Appendix M: Gantt Chart 
+                    
+
+
+=== PAGE 48 ===
+    
+  
+Appendix O: YOLOv5s Model Architecture Sample Data Augmentation (Gaussian Noise) 
+ YOLOv5 Summary and Hyperparameters 
+             
+
+
+=== PAGE 49 ===
+    
+  
+Appendix P: Request Letter 
+  
+
