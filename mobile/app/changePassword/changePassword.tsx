@@ -53,7 +53,7 @@ export default function ChangePasswordScreen() {
     void (async () => {
       clearProfileCache();
       clearScreeningCache();
-      await clearAuthToken({ clearInbox: false });
+      await clearAuthToken();
       resetToLanding(navigation);
     })();
   }, [navigation]);

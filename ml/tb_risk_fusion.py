@@ -1,7 +1,7 @@
 """Multimodal TB screening risk fusion (Python mirror of mobile/utils/tbRiskFusion.ts).
 
 Combines checklist symptoms, cough ML probability, and sputum ML probability
-via weighted log-odds fusion for screening triage.
+via weighted log-odds fusion for screening risk scoring.
 """
 from __future__ import annotations
 
@@ -201,7 +201,7 @@ class FusionResult:
     modalities: list[dict[str, Any]] = field(default_factory=list)
     method: str = (
         "Weighted log-odds fusion of checklist, cough ML, and sputum ML "
-        "(screening triage — not a diagnosis)."
+        "(screening risk score — not a diagnosis)."
     )
 
     def to_dict(self) -> dict[str, Any]:

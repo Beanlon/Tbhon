@@ -71,7 +71,7 @@ function PasswordRequirements({
   colors,
 }: {
   password: string;
-  colors: { card: string; primary: string; textMuted: string };
+  colors: { card: string; success: string; textMuted: string };
 }) {
   return (
     <View style={[styles.passwordHintsContainer, { backgroundColor: colors.card }]}>
@@ -85,7 +85,7 @@ function PasswordRequirements({
             <Text
               style={[
                 styles.passwordHintIcon,
-                { color: met ? colors.primary : colors.textMuted },
+                { color: met ? colors.success : colors.textMuted },
               ]}
             >
               ✓
@@ -93,7 +93,7 @@ function PasswordRequirements({
             <Text
               style={[
                 styles.passwordHintText,
-                { color: met ? colors.primary : colors.textMuted },
+                { color: met ? colors.success : colors.textMuted },
               ]}
             >
               {req.label}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -7,8 +7,98 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Audio } from "expo-av";
 import { useTheme } from "../../contexts/ThemeContext";
-import { IOT_COUGH_COUNT, formatSputumMissingDetail, SPUTUM_NO_SAMPLE_PILL, SPUTUM_SMEAR_REVIEW_LABEL, SPUTUM_SMEAR_REVIEW_LABEL_IOT } from "../../constants/iotScreening";
+import {
+  IOT_COUGH_COUNT,
+  formatSputumMissingDetail,
+  SPUTUM_CAPTURE_NOW_LABEL,
+  SPUTUM_SKIP_REASON_MAX_LENGTH,
+  SPUTUM_SKIP_REASON_PLACEHOLDER,
+  SPUTUM_SKIP_REASON_SUGGESTIONS,
+  SPUTUM_SMEAR_REVIEW_LABEL,
+  SPUTUM_SMEAR_REVIEW_LABEL_IOT,
+} from "../../constants/iotScreening";
 import { REVIEW_COUGH_FROM_DEVICE } from "../../constants/screeningBoothCopy";
+
+type ReviewAccordionColors = {
+  text: string;
+  textMuted: string;
+  borderLight: string;
+};
+
+function StatusPill({
+  done,
+  pendingLabel,
+  pendingIcon = "alert",
+  colors,
+  isDark,
+}: {
+  done: boolean;
+  pendingLabel?: string;
+  pendingIcon?: "alert" | "empty-circle";
+  colors: Pick<ReviewAccordionColors, "textMuted">;
+  isDark: boolean;
+}) {
+  if (!done && pendingLabel) {
+    return (
+      <Text className="text-xs font-bold sm:text-sm" style={{ color: colors.textMuted }}>
+        {pendingLabel}
+      </Text>
+    );
+  }
+  if (done) {
+    return <Ionicons name="checkmark-circle" size={20} color="#10B981" />;
+  }
+  if (pendingIcon === "empty-circle") {
+    return <Ionicons name="ellipse-outline" size={20} color={colors.textMuted} />;
+  }
+  return <Ionicons name="alert-circle" size={20} color={isDark ? "#FBBF24" : "#F59E0B"} />;
+}
+
+function AccordionRow({
+  label,
+  done,
+  pendingLabel,
+  pendingIcon,
+  open,
+  onToggle,
+  children,
+  colors,
+  isDark,
+}: {
+  label: string;
+  done: boolean;
+  pendingLabel?: string;
+  pendingIcon?: "alert" | "empty-circle";
+  open: boolean;
+  onToggle: () => void;
+  children?: ReactNode;
+  colors: ReviewAccordionColors;
+  isDark: boolean;
+}) {
+  return (
+    <View className="border-b last:border-b-0" style={{ borderColor: colors.borderLight }}>
+      <Pressable
+        onPress={onToggle}
+        className="flex-row items-center justify-between py-3.5 active:opacity-90 sm:py-4"
+        accessibilityRole="button"
+      >
+        <View className="flex-row items-center gap-2.5">
+          <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={18} color={colors.text} />
+          <Text className="text-sm font-bold sm:text-base" style={{ color: colors.text }}>{label}</Text>
+        </View>
+        <StatusPill
+          done={done}
+          pendingLabel={pendingLabel}
+          pendingIcon={pendingIcon}
+          colors={colors}
+          isDark={isDark}
+        />
+      </Pressable>
+
+      {open ? <View className="pb-3.5 pt-0 sm:pb-4">{children}</View> : null}
+    </View>
+  );
+}
 
 export default function ReviewInputsScreen() {
   const router = useRouter();
@@ -25,7 +115,23 @@ export default function ReviewInputsScreen() {
     sputumCapturedAt?: string;
     sputumSkipReason?: string;
     iotMode?: string;
+    finalizeMode?: string;
+    coughProbTb?: string;
+    returnToSession?: string;
+    sputumSkipRequested?: string;
   }>();
+
+  const finalizeNavParams =
+    params.finalizeMode === "1"
+      ? ({
+          finalizeMode: "1" as const,
+          ...(typeof params.coughProbTb === "string" && params.coughProbTb.length > 0
+            ? { coughProbTb: params.coughProbTb }
+            : {}),
+        } as const)
+      : {};
+  const returnToSessionNavParams =
+    params.returnToSession === "1" ? ({ returnToSession: "1" as const } as const) : {};
 
   const iotMode = params.iotMode === "1";
   const audioDone = params.audioDone === "1";
@@ -40,11 +146,11 @@ export default function ReviewInputsScreen() {
       : "";
   const sessionNavParams = sessionId.length > 0 ? ({ sessionId } as const) : {};
   const deviceSputumFlow = params.deviceSputum === "1";
-  const sputumSkipReason =
+  const sputumSkipRequested = params.sputumSkipRequested === "1";
+  const initialSputumSkipReason =
     typeof params.sputumSkipReason === "string" && params.sputumSkipReason.trim().length > 0
       ? params.sputumSkipReason.trim()
       : "";
-  const sputumSkipNavParams = sputumSkipReason.length > 0 ? ({ sputumSkipReason } as const) : {};
   const deviceSputumNavParams =
     params.deviceSputum === "1"
       ? {
@@ -66,11 +172,18 @@ export default function ReviewInputsScreen() {
 
   const [audioOpen, setAudioOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
+  const [sputumSkipReason, setSputumSkipReason] = useState(initialSputumSkipReason);
   const [audioHint, setAudioHint] = useState<string | null>(null);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
 
   const canAnalyze = audioDone;
+  const sputumSkipNavParams = sputumSkipReason.length > 0 ? ({ sputumSkipReason } as const) : {};
+  const canAnalyzeSkippedSmear = canAnalyze && sputumSkipReason.trim().length > 0;
+
+  useEffect(() => {
+    setSputumSkipReason(initialSputumSkipReason);
+  }, [initialSputumSkipReason]);
 
   useEffect(() => {
     return () => {
@@ -136,51 +249,14 @@ export default function ReviewInputsScreen() {
     }
   };
 
-  const StatusPill = ({ done, pendingLabel }: { done: boolean; pendingLabel?: string }) => {
-    if (!done && pendingLabel) {
-      return <Text className="text-xs font-bold sm:text-sm" style={{ color: colors.textMuted }}>{pendingLabel}</Text>;
-    }
-    if (done) {
-      return <Ionicons name="checkmark-circle" size={20} color="#10B981" />;
-    }
-    return <Ionicons name="alert-circle" size={20} color={isDark ? "#FBBF24" : "#F59E0B"} />;
-  };
-
-  const AccordionRow = ({
-    label,
-    done,
-    pendingLabel,
-    open,
-    onToggle,
-    children,
-  }: {
-    label: string;
-    done: boolean;
-    pendingLabel?: string;
-    open: boolean;
-    onToggle: () => void;
-    children?: ReactNode;
-  }) => (
-    <View className="border-b last:border-b-0" style={{ borderColor: colors.borderLight }}>
-      <Pressable
-        onPress={onToggle}
-        className="flex-row items-center justify-between py-3.5 active:opacity-90 sm:py-4"
-        accessibilityRole="button"
-      >
-        <View className="flex-row items-center gap-2.5">
-          <Ionicons name={open ? "chevron-down" : "chevron-forward"} size={18} color={colors.text} />
-          <Text className="text-sm font-bold sm:text-base" style={{ color: colors.text }}>{label}</Text>
-        </View>
-        <StatusPill done={done} pendingLabel={pendingLabel} />
-      </Pressable>
-
-      {open ? <View className="pb-3.5 pt-0 sm:pb-4">{children}</View> : null}
-    </View>
-  );
-
   return (
     <>
       <StatusBar style={colors.statusBar} translucent backgroundColor="transparent" />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        className="flex-1"
+        style={{ backgroundColor: colors.background }}
+      >
       <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["top", "right", "bottom", "left"]}>
       <View className="flex-row items-center justify-between border-b px-4 pb-3.5 pt-2 sm:px-5 md:px-6" style={{ borderColor: colors.borderLight }}>
         <View className="size-11" />
@@ -217,6 +293,8 @@ export default function ReviewInputsScreen() {
               done={audioDone}
               open={audioOpen}
               onToggle={() => setAudioOpen((v) => !v)}
+              colors={colors}
+              isDark={isDark}
             >
               <Text className="text-xs leading-5 sm:text-sm" style={{ color: colors.textSecondary }}>
                 {audioDone
@@ -276,9 +354,11 @@ export default function ReviewInputsScreen() {
             <AccordionRow
               label={iotMode ? SPUTUM_SMEAR_REVIEW_LABEL_IOT : SPUTUM_SMEAR_REVIEW_LABEL}
               done={imageDone}
-              pendingLabel={imageDone ? undefined : sputumSkipReason || SPUTUM_NO_SAMPLE_PILL}
+              pendingIcon={imageDone ? undefined : "empty-circle"}
               open={imageOpen}
               onToggle={() => setImageOpen((v) => !v)}
+              colors={colors}
+              isDark={isDark}
             >
               {imageUri ? (
                 <View
@@ -288,9 +368,59 @@ export default function ReviewInputsScreen() {
                   <Image source={{ uri: imageUri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
                 </View>
               ) : (
-                <Text className="text-xs leading-5 sm:text-sm" style={{ color: colors.textSecondary }}>
-                  {formatSputumMissingDetail(sputumSkipReason)}
-                </Text>
+                <View className="gap-3">
+                  <Text className="text-xs leading-5 sm:text-sm" style={{ color: colors.textSecondary }}>
+                    {formatSputumMissingDetail(sputumSkipReason)}
+                  </Text>
+                  {sputumSkipRequested ? (
+                    <View className="gap-2">
+                      <Text className="text-xs font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
+                        Document reason
+                      </Text>
+                      <TextInput
+                        value={sputumSkipReason}
+                        onChangeText={(value) =>
+                          setSputumSkipReason(value.slice(0, SPUTUM_SKIP_REASON_MAX_LENGTH))
+                        }
+                        placeholder={SPUTUM_SKIP_REASON_PLACEHOLDER}
+                        placeholderTextColor={colors.textMuted}
+                        multiline
+                        numberOfLines={3}
+                        maxLength={SPUTUM_SKIP_REASON_MAX_LENGTH}
+                        className="min-h-[88px] rounded-xl border px-3.5 py-3 text-sm leading-5"
+                        style={{
+                          borderColor: colors.inputBorder,
+                          backgroundColor: colors.inputBg,
+                          color: colors.text,
+                          textAlignVertical: "top",
+                        }}
+                        accessibilityLabel="Reason for skipped sputum smear"
+                      />
+                      <Text className="text-right text-xs" style={{ color: colors.textMuted }}>
+                        {sputumSkipReason.length}/{SPUTUM_SKIP_REASON_MAX_LENGTH}
+                      </Text>
+                      <Text className="text-xs font-bold uppercase tracking-wide" style={{ color: colors.textMuted }}>
+                        Optional reasons
+                      </Text>
+                      <View className="flex-row flex-wrap gap-2">
+                        {SPUTUM_SKIP_REASON_SUGGESTIONS.map((suggestion) => (
+                          <Pressable
+                            key={suggestion}
+                            onPress={() => setSputumSkipReason(suggestion)}
+                            className="rounded-full border px-3 py-2 active:opacity-85"
+                            style={{ borderColor: colors.borderLight, backgroundColor: colors.surfaceAlt }}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Use reason: ${suggestion}`}
+                          >
+                            <Text className="text-xs font-semibold" style={{ color: colors.textSecondary }}>
+                              {suggestion}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
               )}
             </AccordionRow>
           </View>
@@ -323,6 +453,9 @@ export default function ReviewInputsScreen() {
                     ...(iotMode ? { iotMode: "1" } : {}),
                     ...sessionNavParams,
                     ...(deviceSputumFlow ? { deviceSputum: "1" } : {}),
+                    ...sputumSkipNavParams,
+                    ...finalizeNavParams,
+                    ...returnToSessionNavParams,
                   },
                 } as any)
               }
@@ -338,54 +471,135 @@ export default function ReviewInputsScreen() {
         </View>
       </ScrollView>
 
-      <View className="px-4 pb-6 pt-3 sm:px-5 sm:pb-8 md:px-6">
-        <Pressable
-          onPress={() => {
-            router.push({
-              pathname: "/screening/processing",
-              params: {
-                audioDone: audioDone ? "1" : "0",
-                audioUris,
-                iotRecordingIds,
-                imageUri: imageUri ?? "",
-                checklist,
-                ...(iotMode ? { iotMode: "1" } : {}),
-                ...sessionNavParams,
-                ...deviceSputumNavParams,
-                ...sputumSkipNavParams,
-              },
-            } as any);
-          }}
-          disabled={!canAnalyze}
-          className="w-full rounded-2xl"
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !canAnalyze }}
-        >
-          {({ pressed }) => (
-            <View
-              className="items-center justify-center rounded-2xl py-3.5 sm:py-4"
-              style={{
-                backgroundColor: canAnalyze
-                  ? pressed
-                    ? isDark
-                      ? "#3A4A8A"
-                      : "#1A3478"
-                    : isDark
-                      ? "#4458A6"
-                      : colors.primary
-                  : colors.surfaceAlt,
-                borderWidth: 1,
-                borderColor: canAnalyze ? (isDark ? "rgba(183,198,255,0.5)" : "rgba(61,78,166,0.28)") : colors.borderLight,
-              }}
-            >
-              <Text className="text-sm font-bold sm:text-base" style={{ color: canAnalyze ? "#fff" : colors.textMuted }}>
-                {canAnalyze ? "Analyze" : "Record coughs to analyze"}
-              </Text>
-            </View>
-          )}
-        </Pressable>
+      <View className="gap-2.5 px-4 pb-6 pt-3 sm:px-5 sm:pb-8 md:px-6">
+        {imageDone ? (
+          <Pressable
+            onPress={() => {
+              router.push({
+                pathname: "/screening/processing",
+                params: {
+                  audioDone: audioDone ? "1" : "0",
+                  audioUris,
+                  iotRecordingIds,
+                  imageUri: imageUri ?? "",
+                  checklist,
+                  ...(iotMode ? { iotMode: "1" } : {}),
+                  ...sessionNavParams,
+                  ...deviceSputumNavParams,
+                  ...sputumSkipNavParams,
+                  ...finalizeNavParams,
+                  ...returnToSessionNavParams,
+                },
+              } as any);
+            }}
+            disabled={!canAnalyze}
+            className="w-full rounded-2xl"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !canAnalyze }}
+          >
+            {({ pressed }) => (
+              <View
+                className="items-center justify-center rounded-2xl py-3.5 sm:py-4"
+                style={{
+                  backgroundColor: canAnalyze
+                    ? pressed
+                      ? isDark
+                        ? "#3A4A8A"
+                        : "#1A3478"
+                      : isDark
+                        ? "#4458A6"
+                        : colors.primary
+                    : colors.surfaceAlt,
+                  borderWidth: 1,
+                  borderColor: canAnalyze ? (isDark ? "rgba(183,198,255,0.5)" : "rgba(61,78,166,0.28)") : colors.borderLight,
+                }}
+              >
+                <Text className="text-sm font-bold sm:text-base" style={{ color: canAnalyze ? "#fff" : colors.textMuted }}>
+                  {canAnalyze ? "Analyze" : "Record coughs to analyze"}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        ) : sputumSkipRequested ? (
+          <Pressable
+            onPress={() => {
+              const reason = sputumSkipReason.trim();
+              router.push({
+                pathname: "/screening/processing",
+                params: {
+                  audioDone: audioDone ? "1" : "0",
+                  audioUris,
+                  iotRecordingIds,
+                  imageUri: "",
+                  checklist,
+                  ...(iotMode ? { iotMode: "1" } : {}),
+                  ...sessionNavParams,
+                  resultStage: "preliminary",
+                  ...(reason.length > 0 ? { sputumDeferReason: reason } : {}),
+                },
+              } as any);
+            }}
+            disabled={!canAnalyzeSkippedSmear}
+            className="w-full rounded-2xl"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !canAnalyzeSkippedSmear }}
+          >
+            {({ pressed }) => (
+              <View
+                className="items-center justify-center rounded-2xl py-3.5 sm:py-4"
+                style={{
+                  backgroundColor: canAnalyzeSkippedSmear
+                    ? pressed
+                      ? isDark
+                        ? "#3A4A8A"
+                        : "#1A3478"
+                      : isDark
+                        ? "#4458A6"
+                        : colors.primary
+                    : colors.surfaceAlt,
+                  borderWidth: 1,
+                  borderColor: canAnalyzeSkippedSmear ? (isDark ? "rgba(183,198,255,0.5)" : "rgba(61,78,166,0.28)") : colors.borderLight,
+                }}
+              >
+                <Text className="text-sm font-bold sm:text-base" style={{ color: canAnalyzeSkippedSmear ? "#fff" : colors.textMuted }}>
+                  {canAnalyze ? "Analyze" : "Record coughs to analyze"}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={() =>
+              router.replace({
+                pathname: deviceSputumFlow || iotMode ? "/screening/iot-sputum" : "/screening/phlegm",
+                params: {
+                  audioDone: audioDone ? "1" : "0",
+                  audioUris,
+                  iotRecordingIds,
+                  checklist,
+                  ...(iotMode ? { iotMode: "1" } : {}),
+                  ...sessionNavParams,
+                  ...(deviceSputumFlow ? { deviceSputum: "1" } : {}),
+                  ...sputumSkipNavParams,
+                  ...finalizeNavParams,
+                  ...returnToSessionNavParams,
+                },
+              } as any)
+            }
+            disabled={!canAnalyze}
+            className="w-full items-center justify-center rounded-2xl border py-3.5 active:opacity-90 sm:py-4"
+            style={{ borderColor: colors.borderLight, backgroundColor: colors.surfaceAlt, opacity: canAnalyze ? 1 : 0.6 }}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !canAnalyze }}
+          >
+            <Text className="text-sm font-bold sm:text-base" style={{ color: colors.text }}>
+              {SPUTUM_CAPTURE_NOW_LABEL}
+            </Text>
+          </Pressable>
+        )}
       </View>
     </SafeAreaView>
+    </KeyboardAvoidingView>
     </>
   );
 }

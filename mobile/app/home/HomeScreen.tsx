@@ -1,5 +1,6 @@
 import {
   Alert,
+  AppState,
   View,
   Text,
   ScrollView,
@@ -13,16 +14,18 @@ import {
   useWindowDimensions,
   type NativeEventSubscription,
 } from "react-native";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as NavigationBar from "expo-navigation-bar";
 import { LearnContent } from "../learn/LearnContent";
 import HistoryScreen from "../history/HistoryScreen";
 import { ProfilePage } from "../profile/profilepage";
+import { MyQrContent } from "../patient/MyQrContent";
 import BottomNav, { BottomNavTab } from "../components/BottomNav";
 import { QuickResultPreviewCard } from "./quickResultPreview";
 import { IotHardwareContent } from "../screening/iot-hardware";
@@ -30,7 +33,12 @@ import { getMe } from "../../services/backendApi";
 import { resetToLanding } from "../../utils/authNavigation";
 import { getAuthToken } from "../../utils/authStorage";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
-import { canRunScreenings, isBoothOperator, isPatientRole, parseUserRole } from "../../constants/userRole";
+import { consumePendingAppRoute } from "../../utils/pendingAppRoute";
+import {
+  canRunScreenings,
+  resolveUserRole,
+  type UserRole,
+} from "../../constants/userRole";
 import {
   PATIENT_HISTORY_TITLE,
   PATIENT_QUICK_PREVIEW_EMPTY,
@@ -52,22 +60,26 @@ import { PATIENT_HOME_HERO, PATIENT_NOTIFICATION_EMPTY, STAFF_NOTIFICATION_EMPTY
 import { profileFirstName } from "../../utils/profileDisplay";
 import {
   clearNotificationInbox,
+  countUnreadInboxItems,
   loadNotificationInbox,
   markAllInboxRead,
   markInboxNotificationRead,
+  ensureNotificationInboxUser,
+  setNotificationInboxUser,
   subscribeNotificationInbox,
-  unreadInboxCount,
   type InboxNotification,
 } from "../../utils/notificationInbox";
 import { consumePendingHomeTab } from "../../utils/pendingHomeTab";
 import {
   onUserBecameVerified,
+  syncEngagementNotificationsOnAppActive,
   syncUnverifiedEngagementNotifications,
 } from "../../services/unverifiedEngagementNotifications";
 import { setNativeAppBadgeCount } from "../../utils/nativeNotifications";
 import { palette } from "../../constants/palette";
-import { useTheme } from "../../contexts/ThemeContext";
-import { syncPatientScreeningNotificationsFromServer } from "../../utils/screeningNotificationSync";
+import { useTheme, darkComponent } from "../../contexts/ThemeContext";
+import { syncScreeningNotificationsFromServer } from "../../utils/screeningNotificationSync";
+import AudioWaveIcon from "../components/AudioWaveIcon";
 
 const NAVY = "#0B1530";
 const PURPLE = palette.violet;
@@ -75,7 +87,8 @@ const TEXT_NAVY = palette.deepNavy;
 const MUTED = "#6B7280";
 /** Body height of bottom nav row (excluding safe-area inset). */
 const BOTTOM_NAV_HEIGHT = 84;
-const PATIENT_SCREENING_NOTIFICATION_POLL_MS = 30_000;
+const SCREENING_NOTIFICATION_POLL_MS = 30_000;
+const MAIN_MENU_TOUR_STORAGE_PREFIX = "tbhon.mainMenuTour.seen.v1";
 
 const cardShadow = {
   shadowColor: "#000",
@@ -108,21 +121,125 @@ type ServiceTile = {
   onPress: () => void;
 };
 
+type MainMenuTourTarget = "home" | "history" | "screening" | "qr" | "learn" | "profile";
+
+type MainMenuTourStep = {
+  target: MainMenuTourTarget;
+  icon: string;
+  iconFamily?: "ionicons" | "material" | "audioWave";
+  label: string;
+  title: string;
+  body: string;
+};
+
+function mainMenuTourStorageKey(userId: string): string {
+  return `${MAIN_MENU_TOUR_STORAGE_PREFIX}.${userId}`;
+}
+
+function mainMenuTourStepsForRole(role: UserRole): MainMenuTourStep[] {
+  if (role === "PATIENT") {
+    return [
+      {
+        target: "home",
+        icon: "home-outline",
+        label: "Home",
+        title: "Start from Home",
+        body: "Home gives you a quick summary and shortcuts to the parts of your result account.",
+      },
+      {
+        target: "history",
+        icon: "time-outline",
+        label: "Results",
+        title: "View your results",
+        body: "Results shows screening reports shared with your account.",
+      },
+      {
+        target: "qr",
+        icon: "qrcode-scan",
+        iconFamily: "material",
+        label: "QR",
+        title: "Show your TBhon QR",
+        body: "Use QR when staff need to link a future booth visit to your patient account.",
+      },
+      {
+        target: "learn",
+        icon: "document-text-outline",
+        label: "Learn",
+        title: "Read TB guidance",
+        body: "Learn contains short educational content available from the main menu.",
+      },
+      {
+        target: "profile",
+        icon: "person-outline",
+        label: "Profile",
+        title: "Manage your account",
+        body: "Open Profile for your account details and settings.",
+      },
+    ];
+  }
+
+  if (role === "STAFF" || role === "ADMIN") {
+    return [
+      {
+        target: "home",
+        icon: "home-outline",
+        label: "Home",
+        title: "Start from Home",
+        body: "Home shows the main shortcuts for booth work and quick access to your latest activity.",
+      },
+      {
+        target: "history",
+        icon: "time-outline",
+        label: "Sessions",
+        title: "Review sessions",
+        body: "Sessions keeps previous screenings and result records easy to find from the main menu.",
+      },
+      {
+        target: "screening",
+        icon: "audio-wave",
+        iconFamily: "audioWave",
+        label: "Screening",
+        title: "Start a screening here",
+        body: "Use Screening when you are ready to record cough audio and begin a new patient session.",
+      },
+      {
+        target: "learn",
+        icon: "document-text-outline",
+        label: "Learn",
+        title: "Read TB guidance",
+        body: "Learn contains counseling and TB education content available from the main menu.",
+      },
+      {
+        target: "profile",
+        icon: "person-outline",
+        label: "Profile",
+        title: "Manage your account",
+        body: "Open Profile for facility details, account settings, and your signed-in staff information.",
+      },
+    ];
+  }
+
+  return [];
+}
+
 export default function HomeScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { height: screenHeight } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { isDark, colors } = useTheme();
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationModalMounted, setNotificationModalMounted] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState<BottomNavTab>("home");
   const [firstName, setFirstName] = useState<string | null>(() => profileFirstName(peekProfile()));
-  const [userRole, setUserRole] = useState(() => parseUserRole(peekProfile()?.role));
-  const isPatientPortal = isPatientRole(userRole);
-  const isOperator = isBoothOperator(userRole);
+  const [userRole, setUserRole] = useState<UserRole | null>(() => resolveUserRole(peekProfile()?.role));
+  const isPatientPortal = userRole === "PATIENT";
+  const isOperator = userRole === "STAFF" || userRole === "ADMIN";
+  const [signedInUserId, setSignedInUserId] = useState<string | null>(() => peekProfile()?.userId ?? null);
+  const [tourRole, setTourRole] = useState<UserRole | null>(() => resolveUserRole(peekProfile()?.role));
+  const [mainMenuTourVisible, setMainMenuTourVisible] = useState(false);
+  const [mainMenuTourStepIndex, setMainMenuTourStepIndex] = useState(0);
 
   // Screening modal state (slide-up like Edit Profile)
   const [screeningModalVisible, setScreeningModalVisible] = useState(false);
@@ -132,8 +249,12 @@ export default function HomeScreen() {
 
   const openScreening = useCallback(() => {
     const profile = peekProfile();
-    const role = parseUserRole(profile?.role);
-    if (profile && !canRunScreenings(role)) {
+    const role = resolveUserRole(profile?.role);
+    if (role === "PATIENT") {
+      setActiveTab("qr");
+      return;
+    }
+    if (profile && role && !canRunScreenings(role)) {
       Alert.alert(
         "Staff access required",
         "This account cannot start screenings. Sign in with a facility staff account.",
@@ -149,12 +270,17 @@ export default function HomeScreen() {
   }, []);
 
   const continueScreening = useCallback(() => {
-    // Close overlay first, then navigate after animation completes (220ms + buffer)
+    const role = resolveUserRole(peekProfile()?.role);
+    if (role === "PATIENT") {
+      closeScreening();
+      setActiveTab("qr");
+      return;
+    }
     setScreeningModalVisible(false);
     setTimeout(() => {
       router.push("/screening/iot-instructions" as any);
     }, 260);
-  }, [router]);
+  }, [closeScreening, router]);
 
   // Animate screening modal slide
   useEffect(() => {
@@ -193,8 +319,16 @@ export default function HomeScreen() {
     if (cachedFirst) {
       setFirstName(cachedFirst);
     }
+    if (cached?.userId) {
+      setSignedInUserId(cached.userId);
+      setNotificationInboxUser(cached.userId);
+    }
     if (cached?.role) {
-      setUserRole(parseUserRole(cached.role));
+      const cachedRole = resolveUserRole(cached.role);
+      if (cachedRole) {
+        setUserRole(cachedRole);
+        setTourRole(cachedRole);
+      }
     }
 
     const token = await getAuthToken();
@@ -206,8 +340,13 @@ export default function HomeScreen() {
     try {
       const { user } = await getMe();
       setCachedProfile(user);
+      setSignedInUserId(user.userId);
       setFirstName(profileFirstName(user));
-      setUserRole(parseUserRole(user.role));
+      const resolvedRole = resolveUserRole(user.role);
+      if (resolvedRole) {
+        setUserRole(resolvedRole);
+        setTourRole(resolvedRole);
+      }
       if (user.emailVerified) void onUserBecameVerified();
       else void syncUnverifiedEngagementNotifications(user);
     } catch {
@@ -225,22 +364,44 @@ export default function HomeScreen() {
   }, [activeTab, refreshProfileHeader, applyHomeSystemChrome]);
 
   const refreshInbox = useCallback(async () => {
+    ensureNotificationInboxUser(peekProfile()?.userId);
     const items = await loadNotificationInbox();
     setInboxItems(items);
-    const unread = await unreadInboxCount();
-    setUnreadCount(unread);
+    const unread = countUnreadInboxItems(items);
     await setNativeAppBadgeCount(unread);
   }, []);
 
-  const syncPatientScreeningNotifications = useCallback(async () => {
-    if (!isPatientPortal) return;
+  /** Bell badge — all unread inbox items (including screening results). */
+  const bellUnreadCount = useMemo(() => countUnreadInboxItems(inboxItems), [inboxItems]);
+
+  /** Bottom nav — never badge screening results (those live on the bell only). */
+  const navBadgeCounts = useMemo((): Partial<Record<BottomNavTab, number>> => {
+    const navUnread = countUnreadInboxItems(inboxItems, { excludeScreening: true });
+    if (navUnread === 0) return {};
+    return { home: navUnread };
+  }, [inboxItems]);
+
+  const syncAllNotifications = useCallback(async () => {
     try {
-      await syncPatientScreeningNotificationsFromServer();
+      const profile = peekProfile();
+      ensureNotificationInboxUser(profile?.userId);
+      await syncEngagementNotificationsOnAppActive(profile);
+      await syncScreeningNotificationsFromServer();
       await refreshInbox();
     } catch {
-      // Best effort: patient history still loads normally if this background sync fails.
+      await refreshInbox();
     }
-  }, [isPatientPortal, refreshInbox]);
+  }, [refreshInbox]);
+
+  const syncScreeningNotifications = useCallback(async () => {
+    try {
+      ensureNotificationInboxUser(peekProfile()?.userId);
+      await syncScreeningNotificationsFromServer();
+      await refreshInbox();
+    } catch {
+      await refreshInbox();
+    }
+  }, [refreshInbox]);
 
   useEffect(() => {
     const sub = subscribeNotificationInbox(() => {
@@ -250,32 +411,95 @@ export default function HomeScreen() {
   }, [refreshInbox]);
 
   useEffect(() => {
-    if (activeTab === "home") {
-      void refreshInbox();
-      void syncPatientScreeningNotifications();
-    }
-  }, [activeTab, refreshInbox, syncPatientScreeningNotifications]);
+    void refreshInbox();
+  }, [refreshInbox]);
 
   useEffect(() => {
-    if (!isPatientPortal || activeTab !== "home") return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void syncAllNotifications();
+      }
+    });
+    return () => sub.remove();
+  }, [syncAllNotifications]);
+
+  useEffect(() => {
+    if (activeTab === "home") {
+      void syncAllNotifications();
+    }
+  }, [activeTab, syncAllNotifications]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
-      void syncPatientScreeningNotifications();
-    }, PATIENT_SCREENING_NOTIFICATION_POLL_MS);
+      void syncScreeningNotifications();
+    }, SCREENING_NOTIFICATION_POLL_MS);
     return () => clearInterval(interval);
-  }, [activeTab, isPatientPortal, syncPatientScreeningNotifications]);
+  }, [syncScreeningNotifications]);
 
   const openNotifications = useCallback(() => {
     setNotificationModalMounted(true);
     setShowNotifications(true);
-    setUnreadCount(0);
-    setInboxItems((items) => items.map((item) => ({ ...item, read: true })));
-    void setNativeAppBadgeCount(0);
     void markAllInboxRead().then(() => refreshInbox());
   }, [refreshInbox]);
 
   const closeNotifications = useCallback(() => {
     setShowNotifications(false);
   }, []);
+
+  const mainMenuTourSteps = useMemo(
+    () => (tourRole ? mainMenuTourStepsForRole(tourRole) : []),
+    [tourRole],
+  );
+
+  const currentMainMenuTourStep =
+    mainMenuTourSteps[mainMenuTourStepIndex] ?? mainMenuTourSteps[0] ?? null;
+
+  const completeMainMenuTour = useCallback(() => {
+    setMainMenuTourVisible(false);
+    if (!signedInUserId) return;
+    void AsyncStorage.setItem(mainMenuTourStorageKey(signedInUserId), "1").catch(() => {});
+  }, [signedInUserId]);
+
+  const advanceMainMenuTour = useCallback(() => {
+    if (mainMenuTourStepIndex < mainMenuTourSteps.length - 1) {
+      setMainMenuTourStepIndex((index) => index + 1);
+      return;
+    }
+    completeMainMenuTour();
+  }, [completeMainMenuTour, mainMenuTourStepIndex, mainMenuTourSteps.length]);
+
+  useEffect(() => {
+    setMainMenuTourStepIndex((index) => Math.min(index, Math.max(0, mainMenuTourSteps.length - 1)));
+  }, [mainMenuTourSteps]);
+
+  useEffect(() => {
+    if (!signedInUserId || !tourRole || mainMenuTourSteps.length === 0) return;
+    if (activeTab !== "home" || showNotifications || screeningModalMounted || mainMenuTourVisible) return;
+
+    let active = true;
+    const timer = setTimeout(() => {
+      void AsyncStorage.getItem(mainMenuTourStorageKey(signedInUserId))
+        .then((seen) => {
+          if (!active || seen === "1") return;
+          setMainMenuTourStepIndex(0);
+          setMainMenuTourVisible(true);
+        })
+        .catch(() => {});
+    }, 600);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [
+    activeTab,
+    tourRole,
+    mainMenuTourSteps.length,
+    signedInUserId,
+    mainMenuTourVisible,
+    screeningModalMounted,
+    showNotifications,
+  ]);
 
   useEffect(() => {
     if (showNotifications) {
@@ -310,7 +534,9 @@ export default function HomeScreen() {
           text: "Clear all",
           style: "destructive",
           onPress: () => {
-            void clearNotificationInbox().then(() => refreshInbox());
+            void clearNotificationInbox()
+              .then(() => setNativeAppBadgeCount(0))
+              .then(() => refreshInbox());
           },
         },
       ],
@@ -320,8 +546,9 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       applyHomeSystemChrome();
+      ensureNotificationInboxUser(peekProfile()?.userId);
       void refreshInbox();
-      void syncPatientScreeningNotifications();
+      void syncAllNotifications();
       let active = true;
       void (async () => {
         const token = await getAuthToken();
@@ -333,15 +560,23 @@ export default function HomeScreen() {
         if (pendingTab && active) {
           setActiveTab(pendingTab);
         }
+        const pendingRoute = await consumePendingAppRoute();
+        if (pendingRoute === "verifyEmail" && active) {
+          router.push("/verifyEmail/verifyEmail" as never);
+        }
       })();
       return () => {
         active = false;
       };
-    }, [navigation, applyHomeSystemChrome, refreshInbox, syncPatientScreeningNotifications]),
+    }, [navigation, router, applyHomeSystemChrome, refreshInbox, syncAllNotifications]),
   );
 
   useEffect(() => {
     const sub: NativeEventSubscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (mainMenuTourVisible) {
+        completeMainMenuTour();
+        return true;
+      }
       // Close screening overlay first if open
       if (screeningModalVisible) {
         closeScreening();
@@ -354,7 +589,7 @@ export default function HomeScreen() {
       return true;
     });
     return () => sub.remove();
-  }, [activeTab, screeningModalVisible, closeScreening]);
+  }, [activeTab, mainMenuTourVisible, completeMainMenuTour, screeningModalVisible, closeScreening]);
 
   const handleTabPress = (tab: BottomNavTab) => {
     const transitionTo = (next: BottomNavTab) => {
@@ -367,7 +602,15 @@ export default function HomeScreen() {
       return;
     }
     if (tab === "screening") {
+      if (isPatientPortal) {
+        transitionTo("qr");
+        return;
+      }
       openScreening();
+      return;
+    }
+    if (tab === "qr") {
+      transitionTo("qr");
       return;
     }
     if (tab === "learn") {
@@ -483,10 +726,10 @@ export default function HomeScreen() {
                 accessibilityLabel="Notifications"
               >
                 <Ionicons name="notifications-outline" size={22} color={colors.text} />
-                {unreadCount > 0 ? (
-                  <View style={styles.notifyBadge}>
+                {bellUnreadCount > 0 ? (
+                  <View style={[styles.notifyBadge, { borderColor: colors.background }]}>
                     <Text style={styles.notifyBadgeText}>
-                      {unreadCount > 9 ? "9+" : String(unreadCount)}
+                      {bellUnreadCount > 9 ? "9+" : String(bellUnreadCount)}
                     </Text>
                   </View>
                 ) : null}
@@ -521,16 +764,16 @@ export default function HomeScreen() {
                           {
                             backgroundColor: pressed
                               ? isDark
-                                ? "#DBD8F8"
+                                ? darkComponent.interactivePressed
                                 : "#4E43B7"
                               : isDark
-                                ? palette.lavender
+                                ? colors.primary
                                 : palette.violet,
-                            borderColor: isDark ? "rgba(12,30,74,0.18)" : "rgba(255,255,255,0.35)",
+                            borderColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.35)",
                           },
                         ]}
                       >
-                        <Text style={[styles.heroCtaText, { color: isDark ? palette.deepNavy : "#FFFFFF" }]}>
+                        <Text style={[styles.heroCtaText, { color: isDark ? colors.heroButtonText : "#FFFFFF" }]}>
                           {STAFF_HOME_CTA}
                         </Text>
                       </View>
@@ -549,16 +792,16 @@ export default function HomeScreen() {
                           {
                             backgroundColor: pressed
                               ? isDark
-                                ? "#DBD8F8"
+                                ? darkComponent.interactivePressed
                                 : "#4E43B7"
                               : isDark
-                                ? palette.lavender
+                                ? colors.primary
                                 : palette.violet,
-                            borderColor: isDark ? "rgba(12,30,74,0.18)" : "rgba(255,255,255,0.35)",
+                            borderColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.35)",
                           },
                         ]}
                       >
-                        <Text style={[styles.heroCtaText, { color: isDark ? palette.deepNavy : "#FFFFFF" }]}>
+                        <Text style={[styles.heroCtaText, { color: isDark ? colors.heroButtonText : "#FFFFFF" }]}>
                           View my results
                         </Text>
                       </View>
@@ -629,8 +872,35 @@ export default function HomeScreen() {
       return <ProfilePage onNotificationChange={refreshInbox} />;
     }
 
+    if (tab === "qr") {
+      return <MyQrContent embedded isActive={activeTab === "qr"} />;
+    }
+
     return null;
   };
+
+  const tourNavTabCount = 5;
+  const tourTarget = currentMainMenuTourStep?.target;
+  const tourTargetIndex =
+    tourTarget === "home"
+      ? 0
+      : tourTarget === "history"
+      ? 1
+      : tourTarget === "screening" || tourTarget === "qr"
+        ? 2
+        : tourTarget === "learn"
+          ? 3
+          : tourNavTabCount - 1;
+  const tourTabWidth = screenWidth / tourNavTabCount;
+  const tourIsCenterFabTarget = tourTarget === "screening" || tourTarget === "qr";
+  const tourSpotlightWidth = Math.min(tourIsCenterFabTarget ? 98 : 88, Math.max(66, tourTabWidth + 4));
+  const tourSpotlightStyle = {
+    left: Math.max(8, tourTargetIndex * tourTabWidth + (tourTabWidth - tourSpotlightWidth) / 2),
+    top: screenHeight - BOTTOM_NAV_HEIGHT - insets.bottom + (tourIsCenterFabTarget ? -4 : 8),
+    width: tourSpotlightWidth,
+    height: tourIsCenterFabTarget ? 78 : 66,
+  };
+  const tourCardBottom = BOTTOM_NAV_HEIGHT + insets.bottom + 28;
 
   return (
     <>
@@ -657,10 +927,107 @@ export default function HomeScreen() {
           <BottomNav
             activeTab={activeTab}
             onTabPress={handleTabPress}
+            badgeCounts={navBadgeCounts}
             mode={isPatientPortal ? "patient" : "operator"}
           />
         </View>
       </View>
+
+      <Modal
+        visible={mainMenuTourVisible && currentMainMenuTourStep != null}
+        animationType="fade"
+        transparent
+        onRequestClose={completeMainMenuTour}
+      >
+        {currentMainMenuTourStep ? (
+        <View style={styles.tourRoot}>
+          <View style={[styles.tourScrim, { backgroundColor: colors.modalOverlay }]} />
+          <View
+            pointerEvents="none"
+            style={[
+              styles.tourSpotlight,
+              tourSpotlightStyle,
+              {
+                backgroundColor: isDark ? colors.primary : NAVY,
+                borderColor: isDark ? "rgba(255,255,255,0.28)" : "#FFFFFF",
+              },
+            ]}
+          >
+            {currentMainMenuTourStep.iconFamily === "audioWave" ? (
+              <AudioWaveIcon size={tourIsCenterFabTarget ? 28 : 24} color="#FFFFFF" />
+            ) : currentMainMenuTourStep.iconFamily === "material" ? (
+              <MaterialCommunityIcons
+                name={currentMainMenuTourStep.icon as any}
+                size={tourIsCenterFabTarget ? 28 : 24}
+                color="#FFFFFF"
+              />
+            ) : (
+              <Ionicons
+                name={currentMainMenuTourStep.icon as any}
+                size={tourIsCenterFabTarget ? 28 : 24}
+                color="#FFFFFF"
+              />
+            )}
+            <Text style={styles.tourSpotlightLabel}>{currentMainMenuTourStep.label}</Text>
+          </View>
+          <View
+            style={[
+              styles.tourCard,
+              {
+                bottom: tourCardBottom,
+                backgroundColor: colors.card,
+                borderColor: colors.cardBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.tourEyebrow, { color: colors.textMuted }]}>Main menu guide</Text>
+            <Text style={[styles.tourTitle, { color: colors.text }]}>{currentMainMenuTourStep.title}</Text>
+            <Text style={[styles.tourBody, { color: colors.textSecondary }]}>{currentMainMenuTourStep.body}</Text>
+
+            <View style={styles.tourFooter}>
+              <View style={styles.tourDots}>
+                {mainMenuTourSteps.map((step, index) => (
+                  <View
+                    key={step.target}
+                    style={[
+                      styles.tourDot,
+                      {
+                        backgroundColor:
+                          index === mainMenuTourStepIndex ? colors.primary : isDark ? colors.border : "#D6DAE8",
+                      },
+                    ]}
+                  />
+                ))}
+              </View>
+              <View style={styles.tourActions}>
+                <Pressable
+                  onPress={completeMainMenuTour}
+                  style={styles.tourSkipButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Skip main menu guide"
+                >
+                  <Text style={[styles.tourSkipText, { color: colors.textMuted }]}>Skip</Text>
+                </Pressable>
+                <Pressable
+                  onPress={advanceMainMenuTour}
+                  style={[styles.tourNextButton, { backgroundColor: colors.primary }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    mainMenuTourStepIndex === mainMenuTourSteps.length - 1
+                      ? "Finish main menu guide"
+                      : "Next main menu guide step"
+                  }
+                >
+                  <Text style={[styles.tourNextText, { color: colors.heroButtonText }]}>
+                    {mainMenuTourStepIndex === mainMenuTourSteps.length - 1 ? "Got it" : "Next"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+        ) : null}
+      </Modal>
 
       <Modal
         visible={notificationModalMounted}
@@ -901,12 +1268,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 10,
+    position: "relative",
+    overflow: "visible",
     ...cardShadow,
   },
   notifyBadge: {
     position: "absolute",
-    top: 4,
-    right: 4,
+    top: -4,
+    right: -4,
     minWidth: 18,
     height: 18,
     borderRadius: 9,
@@ -914,6 +1283,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
+    zIndex: 2,
+    borderWidth: 2,
   },
   notifyBadgeText: {
     color: "#FFFFFF",
@@ -1189,5 +1560,99 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: MUTED,
     textAlign: "center",
+  },
+  tourRoot: {
+    flex: 1,
+  },
+  tourScrim: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  tourSpotlight: {
+    position: "absolute",
+    borderRadius: 26,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  tourSpotlightLabel: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+  tourCard: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 20,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  tourEyebrow: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  tourTitle: {
+    fontSize: 21,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+    marginBottom: 8,
+  },
+  tourBody: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  tourFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 20,
+  },
+  tourDots: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  tourDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  tourActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  tourSkipButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
+  },
+  tourSkipText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  tourNextButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 18,
+  },
+  tourNextText: {
+    fontSize: 14,
+    fontWeight: "800",
   },
 });

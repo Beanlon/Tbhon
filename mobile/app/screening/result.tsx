@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   ActivityIndicator,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -19,6 +18,7 @@ import {
   getMe,
   fetchSessionSputumPreview,
   postCompleteScreening,
+  finalizeScreeningSputum,
   sessionHasStoredSputumBytes,
   uploadCoughRecordingRaw,
   uploadSputumImageRaw,
@@ -32,7 +32,8 @@ import { useTheme } from "../../contexts/ThemeContext";
 import type { FusionModalityBreakdown } from "../../utils/tbRiskFusion";
 import { peekProfile, setCachedProfile } from "../../utils/profileCache";
 import { canRunScreenings, resolveUserRole } from "../../constants/userRole";
-import { onScreeningCompleted } from "../../services/unverifiedEngagementNotifications";
+import { onScreeningCompleted, onScreeningUpdated } from "../../services/unverifiedEngagementNotifications";
+import { ensureNotificationInboxUser, markSessionScreeningNotificationsRead } from "../../utils/notificationInbox";
 import {
   isEmailVerified,
   promptEmailVerification,
@@ -45,6 +46,11 @@ import {
   SCREENING_FUSION_METHOD_NOTE,
   SCREENING_STAFF_REFERRAL_LINE,
 } from "../../constants/screeningDisclaimer";
+import {
+  SPUTUM_PRELIMINARY_BANNER,
+  SPUTUM_PRELIMINARY_LABEL,
+  formatSputumDeferDetail,
+} from "../../constants/iotScreening";
 
 type RiskLevel = "low" | "moderate" | "high";
 type PhlegmTone = { color: string; bg: string; border: string; label: string };
@@ -185,6 +191,10 @@ export default function ResultScreen() {
     sputumSkipReason?: string;
     staffNotes?: string;
     staffResultConfirmed?: string;
+    resultStage?: string;
+    sputumDeferReason?: string;
+    finalizeMode?: string;
+    coughProbTb?: string;
   }>();
 
   const forwardParams = useMemo(() => {
@@ -194,6 +204,11 @@ export default function ResultScreen() {
     }
     return out;
   }, [params]);
+
+  const handleGoHome = useCallback(() => {
+    ensureNotificationInboxUser(peekProfile()?.userId);
+    router.replace("/home/HomeScreen" as any);
+  }, [router]);
 
   const enforceStaffReview = useCallback(async () => {
     if (params.staffResultConfirmed === "1") {
@@ -291,6 +306,13 @@ export default function ResultScreen() {
   const imageProvided =
     imageUriParam.length > 0 || params.deviceSputum === "1" || phlegmAnalyzed;
 
+  const isPreliminary = params.resultStage === "preliminary";
+  const sputumDeferReason =
+    typeof params.sputumDeferReason === "string" && params.sputumDeferReason.trim().length > 0
+      ? params.sputumDeferReason.trim()
+      : "";
+  const isFinalize = params.finalizeMode === "1";
+
   const [savedSessionId, setSavedSessionId] = useState<string | null>(() => {
     const id = typeof params.sessionId === "string" ? params.sessionId.trim() : "";
     return id.length > 0 ? id : null;
@@ -330,6 +352,31 @@ export default function ResultScreen() {
       cancelled = true;
     };
   }, [refreshServerSputumImage, reviewGateReady, savedSessionId]);
+
+  const resolveResultSessionId = useCallback((): string | null => {
+    if (savedSessionId) return savedSessionId;
+    const fromParams = typeof params.sessionId === "string" ? params.sessionId.trim() : "";
+    return fromParams.length > 0 ? fromParams : null;
+  }, [savedSessionId, params.sessionId]);
+
+  /** Viewing the result screen counts as reading screening inbox notifications. */
+  const markResultScreeningNotificationsRead = useCallback(() => {
+    if (!reviewGateReady) return;
+    const sessionId = resolveResultSessionId();
+    if (!sessionId) return;
+    ensureNotificationInboxUser(peekProfile()?.userId);
+    void markSessionScreeningNotificationsRead(sessionId);
+  }, [reviewGateReady, resolveResultSessionId]);
+
+  useEffect(() => {
+    markResultScreeningNotificationsRead();
+  }, [markResultScreeningNotificationsRead, savedSessionId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      markResultScreeningNotificationsRead();
+    }, [markResultScreeningNotificationsRead]),
+  );
 
   const handleDownloadPdf = useCallback(async () => {
     let profile = peekProfile();
@@ -475,6 +522,58 @@ export default function ResultScreen() {
         const includeLocalImageUriInComplete =
           imageUriParam.length > 0 && (!isLocalImage || !serverHasSputumBefore);
 
+        // Two-phase finalize: the session already exists with a preliminary
+        // result; add the smear and re-fuse into a final result instead of
+        // creating a new screening.
+        if (isFinalize && draftSessionId) {
+          await finalizeScreeningSputum({
+            sessionId: draftSessionId,
+            riskLevel: risk,
+            recommendation: cfg.recommendation,
+            averageTbProbability: avgProb,
+            ...(includeLocalImageUriInComplete ? { imageUri: imageUriParam } : {}),
+            ...(phlegmAnalyzed ? { phlegmAnalyzed: true } : {}),
+            ...(phlegmLoad.length > 0 ? { phlegmLoad } : {}),
+            ...(phlegmConfidence !== null && Number.isFinite(phlegmConfidence)
+              ? { phlegmConfidence }
+              : {}),
+            ...(typeof params.phlegmProbs === "string" && params.phlegmProbs.length > 0
+              ? { phlegmProbs: params.phlegmProbs }
+              : {}),
+            ...(typeof params.staffNotes === "string" && params.staffNotes.trim().length > 0
+              ? { staffNotes: params.staffNotes.trim() }
+              : {}),
+            ...(params.staffResultConfirmed === "1" ? { staffResultConfirmed: true } : {}),
+          });
+          clearScreeningCache();
+          setSavedSessionId(draftSessionId);
+
+          if (imageUriParam.length > 0 && isLocalImage && !serverHasSputumBefore) {
+            try {
+              await uploadSputumImageRaw({ sessionId: draftSessionId, localUri: imageUriParam });
+            } catch (e) {
+              if (__DEV__) {
+                const msg =
+                  e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+                console.warn("[Screening] finalize sputum raw upload failed:", msg);
+              }
+            }
+          }
+          try {
+            await refreshServerSputumImage(draftSessionId);
+          } catch {
+            /* details screen refetches from API */
+          }
+
+          await onScreeningUpdated({
+            sessionId: draftSessionId,
+            riskLabel: cfg.label,
+            user: peekProfile(),
+          });
+          clearScreeningCache();
+          return;
+        }
+
         // In the IoT flow the ESP32 already uploaded the audio bytes directly
         // to the server. Sending local file paths as audioUris confuses the
         // backend into creating new empty rows instead of linking the existing
@@ -511,6 +610,13 @@ export default function ResultScreen() {
             ? { staffNotes: params.staffNotes.trim() }
             : {}),
           ...(params.staffResultConfirmed === "1" ? { staffResultConfirmed: true } : {}),
+          ...(isPreliminary
+            ? {
+                resultStage: "preliminary" as const,
+                awaitingSputum: true,
+                ...(sputumDeferReason ? { sputumDeferReason } : {}),
+              }
+            : {}),
         });
         clearScreeningCache();
 
@@ -519,6 +625,7 @@ export default function ResultScreen() {
           sessionId: response?.session?.sessionId,
           riskLabel: cfg.label,
           user: profile,
+          ...(isPreliminary ? { stage: "preliminary" as const } : {}),
         });
 
         // Upload the raw audio + image bytes so any device on this account
@@ -643,7 +750,7 @@ export default function ResultScreen() {
           </Text>
         </View>
         <Pressable
-          onPress={() => router.dismissAll()}
+          onPress={handleGoHome}
           className="size-11 items-center justify-center rounded-full active:opacity-90"
           style={{ backgroundColor: colors.surfaceAlt }}
           accessibilityRole="button"
@@ -755,6 +862,28 @@ export default function ResultScreen() {
               {SCREENING_DISCLAIMER_TITLE}
             </Text>
           </View>
+
+          {isPreliminary ? (
+            <View
+              className="mb-6 rounded-2xl border px-4 py-3.5"
+              style={{ borderColor: "#D97706", backgroundColor: isDark ? "rgba(217,119,6,0.12)" : "#FFFBEB" }}
+            >
+              <View className="mb-1 flex-row items-center gap-2">
+                <Ionicons name="hourglass-outline" size={16} color="#D97706" />
+                <Text className="text-xs font-extrabold uppercase tracking-wide" style={{ color: "#D97706" }}>
+                  {SPUTUM_PRELIMINARY_LABEL}
+                </Text>
+              </View>
+              <Text className="text-sm leading-5" style={{ color: colors.textSecondary }}>
+                {SPUTUM_PRELIMINARY_BANNER}
+              </Text>
+              {sputumDeferReason.length > 0 ? (
+                <Text className="mt-2 text-xs leading-5" style={{ color: colors.textMuted }}>
+                  {formatSputumDeferDetail(sputumDeferReason)}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
 
           <View className="mb-6">
             <SputumSamplePhoto
@@ -924,7 +1053,7 @@ export default function ResultScreen() {
             <View className="mb-2.5 flex-row items-center gap-2">
               <Ionicons name="information-circle" size={20} color={cfg.color} />
               <Text className="text-sm font-bold" style={{ color: cfg.color }}>
-                {risk === "low" ? "Recommendation" : "Staff triage action"}
+                {risk === "low" ? "Recommendation" : "Referral guidance"}
               </Text>
             </View>
             {risk !== "low" ? (
@@ -998,7 +1127,7 @@ export default function ResultScreen() {
               } as any)
             }
             className="mb-3 items-center justify-center rounded-2xl py-4 active:opacity-90"
-            style={{ backgroundColor: isDark ? "#4458A6" : "#1A3478" }}
+            style={{ backgroundColor: isDark ? colors.primary : "#1A3478" }}
             accessibilityRole="button"
           >
             <Text className="text-base font-bold text-white">View Details</Text>
@@ -1015,7 +1144,7 @@ export default function ResultScreen() {
           </Pressable>
 
           <Pressable
-            onPress={() => router.dismissAll()}
+            onPress={handleGoHome}
             className="items-center justify-center rounded-2xl border py-4 active:opacity-90"
             style={{ borderColor: colors.borderLight, backgroundColor: colors.surfaceAlt }}
             accessibilityRole="button"

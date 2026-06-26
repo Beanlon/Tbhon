@@ -6,7 +6,10 @@ type NotificationsModule = typeof import("expo-notifications");
 export type NotificationResponsePayload = {
   notification: {
     request: {
+      identifier?: string;
       content: {
+        title?: string;
+        body?: string;
         data?: Record<string, unknown>;
       };
     };
@@ -132,6 +135,62 @@ export async function incrementNativeAppBadge(): Promise<void> {
   if (!Notifications) return;
   const count = await Notifications.getBadgeCountAsync();
   await Notifications.setBadgeCountAsync(count + 1).catch(() => {});
+}
+
+export type NativeNotificationContent = {
+  identifier: string;
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+};
+
+export async function getPresentedNativeNotifications(): Promise<NativeNotificationContent[]> {
+  const Notifications = await loadNotifications();
+  if (!Notifications) return [];
+
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    return presented.map((entry) => ({
+      identifier: entry.request.identifier,
+      title: entry.request.content.title ?? "",
+      body: entry.request.content.body ?? "",
+      data: entry.request.content.data as Record<string, unknown> | undefined,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function subscribeToNativeNotificationsReceived(
+  handler: (notification: NativeNotificationContent) => void,
+): { remove: () => void } {
+  if (!isNativeNotificationsAvailable()) {
+    return { remove: () => {} };
+  }
+
+  let subscription: { remove: () => void } | null = null;
+  let cancelled = false;
+
+  void (async () => {
+    const Notifications = await loadNotifications();
+    if (!Notifications || cancelled) return;
+
+    subscription = Notifications.addNotificationReceivedListener((notification) => {
+      handler({
+        identifier: notification.request.identifier,
+        title: notification.request.content.title ?? "",
+        body: notification.request.content.body ?? "",
+        data: notification.request.content.data as Record<string, unknown> | undefined,
+      });
+    });
+  })();
+
+  return {
+    remove: () => {
+      cancelled = true;
+      subscription?.remove();
+    },
+  };
 }
 
 export function subscribeToNotificationResponses(

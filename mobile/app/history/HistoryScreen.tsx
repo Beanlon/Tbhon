@@ -45,6 +45,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { isPatientRole, parseUserRole } from "../../constants/userRole";
 import { peekProfile } from "../../utils/profileCache";
 import { reconcileScreeningHistoryNotifications } from "../../utils/screeningNotificationSync";
+import { ensureNotificationInboxUser, markSessionScreeningNotificationsRead } from "../../utils/notificationInbox";
 
 const SCREENING_LIST_LIMIT = 100;
 
@@ -59,6 +60,7 @@ interface ScreeningRecord {
   tagline: string;
   clientName: string;
   clientMeta: ReturnType<typeof formatClientHistoryMeta>;
+  awaitingSputum: boolean;
 }
 
 const RISK_META: Record<RiskLevel, { label: string; color: string; bg: string; icon: string }> = {
@@ -98,6 +100,7 @@ function rowToRecord(row: ScreeningHistoryRow): ScreeningRecord {
     tagline: TAGLINE[risk],
     clientName: formatClientFullName(row.client),
     clientMeta: formatClientHistoryMeta(row.client),
+    awaitingSputum: row.awaitingSputum === true,
   };
 }
 
@@ -188,7 +191,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
         setRows(fresh);
         void reconcileScreeningHistoryNotifications(fresh, {
           isPatientPortal,
-          markPatientScreeningsRead: true,
+          markScreeningsRead: false,
         });
         setLoading(false);
         setRefreshing(false);
@@ -207,7 +210,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
           setCachedScreenings(screenings);
           void reconcileScreeningHistoryNotifications(screenings, {
             isPatientPortal,
-            markPatientScreeningsRead: true,
+            markScreeningsRead: false,
           });
         } catch (e) {
           const message =
@@ -230,7 +233,7 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
       setCachedScreenings(screenings);
       void reconcileScreeningHistoryNotifications(screenings, {
         isPatientPortal,
-        markPatientScreeningsRead: true,
+        markScreeningsRead: false,
       });
     } catch (e) {
       const message =
@@ -317,6 +320,8 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
   const filterSheetPadBottom = Math.max(insets.bottom, 10) + 10;
 
   const openDetails = (sessionId: string) => {
+    ensureNotificationInboxUser(peekProfile()?.userId);
+    void markSessionScreeningNotificationsRead(sessionId);
     router.push({
       pathname: "/screening/details",
       params: { sessionId },
@@ -462,14 +467,27 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
               >
                 <View className="flex-row items-center justify-between">
                   <View className="mr-3 flex-1">
-                    <View
-                      className="mb-2 flex-row items-center gap-1.5 self-start rounded-full px-2.5 py-1"
-                      style={{ backgroundColor: meta.bg }}
-                    >
-                      <Ionicons name={meta.icon as any} size={14} color={meta.color} />
-                      <Text className="text-base font-extrabold" style={{ color: meta.color }}>
-                        {meta.label}
-                      </Text>
+                    <View className="mb-2 flex-row flex-wrap items-center gap-1.5">
+                      <View
+                        className="flex-row items-center gap-1.5 self-start rounded-full px-2.5 py-1"
+                        style={{ backgroundColor: meta.bg }}
+                      >
+                        <Ionicons name={meta.icon as any} size={14} color={meta.color} />
+                        <Text className="text-base font-extrabold" style={{ color: meta.color }}>
+                          {meta.label}
+                        </Text>
+                      </View>
+                      {record.awaitingSputum ? (
+                        <View
+                          className="flex-row items-center gap-1.5 self-start rounded-full px-2.5 py-1"
+                          style={{ backgroundColor: "#FFFBEB" }}
+                        >
+                          <Ionicons name="hourglass-outline" size={13} color="#D97706" />
+                          <Text className="text-sm font-extrabold" style={{ color: "#D97706" }}>
+                            Smear pending
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
                     {!isPatientPortal ? (
                       <>
@@ -583,17 +601,17 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
                 style={({ pressed }) => ({
                   backgroundColor: pressed
                     ? isDark
-                      ? "rgba(156,163,255,0.20)"
+                      ? "rgba(255,255,255,0.08)"
                       : "rgba(123,111,216,0.14)"
                     : isDark
-                      ? "rgba(15,23,42,0.50)"
+                      ? colors.surfaceAlt
                       : colors.surfaceAlt,
-                  borderColor: isDark ? "rgba(196,181,253,0.72)" : "rgba(123,111,216,0.45)",
+                  borderColor: isDark ? colors.border : "rgba(123,111,216,0.45)",
                 })}
               >
                 <Text
                   className="text-base font-extrabold"
-                  style={{ color: isDark ? "#DDD6FE" : "#8B7CF6" }}
+                  style={{ color: isDark ? colors.textSecondary : "#8B7CF6" }}
                 >
                   Reset
                 </Text>
@@ -673,10 +691,10 @@ export default function HistoryScreen({ onTabChange: _onTabChange }: { onTabChan
                 <View
                   className="flex-row items-center justify-center rounded-2xl py-3.5"
                   style={{
-                    backgroundColor: pressed ? "#243A85" : "#1A3478",
+                    backgroundColor: pressed ? colors.accent : colors.primary,
                     borderWidth: 1,
-                    borderColor: "rgba(176,196,255,0.42)",
-                    shadowColor: "#0B1530",
+                    borderColor: isDark ? colors.border : "rgba(176,196,255,0.42)",
+                    shadowColor: colors.background,
                     shadowOffset: { width: 0, height: 6 },
                     shadowOpacity: 0.2,
                     shadowRadius: 10,
