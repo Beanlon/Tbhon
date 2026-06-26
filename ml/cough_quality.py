@@ -18,7 +18,9 @@ QUALITY_THRESHOLDS = {
     "speech_periodicity": 0.42,
     # speech_flatness: widened slightly (0.28 → 0.32) to catch speech mixed with noise.
     "speech_flatness": 0.32,
-    "speech_burst_ratio": 1.25,
+    # Conversational speech is usually less bursty than real coughs.
+    # Used as a guard for voiced-frame speech detection.
+    "speech_burst_ratio": 1.35,
     # speech_max_crest: raised 2.55 → 5.0. Coughs are sharp transients (crest >> 5).
     # Normal speech (including energetic speech) stays below 5. Catches more voice.
     "speech_max_crest": 5.0,
@@ -37,7 +39,7 @@ QUALITY_THRESHOLDS = {
     # Catches conversational speech even when the aggregate median periodicity is
     # brought down by consonants / pauses.
     "voiced_frame_period_min": 0.28,
-    "voiced_frac_threshold": 0.45,
+    "voiced_frac_threshold": 0.52,
 }
 
 
@@ -154,8 +156,12 @@ def cough_authenticity_metrics(
     speech_like = flatness < th["speech_flatness"] and (
         # Branch 1: sustained voiced sound (e.g. "ahhh", humming)
         (periodicity > th["speech_periodicity"] and crest < th["speech_max_crest"])
-        # Branch 2: talking / speech-with-pauses — most loud frames are periodic
-        or voiced_frac >= th["voiced_frac_threshold"]
+        # Branch 2: talking / speech-with-pauses — most loud frames are periodic.
+        # Guard with burst_ratio so transient cough bursts are not over-blocked.
+        or (
+            voiced_frac >= th["voiced_frac_threshold"]
+            and burst_ratio < th["speech_burst_ratio"]
+        )
     )
 
     replay_like = tonal > th["replay_tonalness"] and (steady_noise or speech_like)

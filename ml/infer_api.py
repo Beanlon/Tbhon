@@ -165,6 +165,7 @@ def _quality_threshold_overrides_from_env() -> dict[str, float]:
     "TB_Q_VOICED_FRAC_THRESHOLD": "voiced_frac_threshold",
     "TB_Q_MIN_DYNAMIC_RANGE": "min_dynamic_range",
     "TB_Q_SPEECH_PERIODICITY": "speech_periodicity",
+    "TB_Q_SPEECH_BURST_RATIO": "speech_burst_ratio",
     "TB_Q_STEADY_BURST_RATIO": "steady_burst_ratio",
   }
   for env_name, key in mapping.items():
