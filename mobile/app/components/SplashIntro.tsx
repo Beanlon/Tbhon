@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import {
   Animated,
   Easing,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -14,6 +15,7 @@ import { APP_SCREEN_BACKGROUND } from "../../constants/palette";
 import CachedImage from "./CachedImage";
 
 /** Sequence timings for team logo -> app logo -> app screen. */
+const USE_NATIVE_DRIVER = Platform.OS !== "web";
 const TEAM_HOLD_MS = 2300;
 const TEAM_FADE_OUT_MS = 320;
 const APP_FADE_IN_MS = 320;
@@ -62,7 +64,7 @@ export default function SplashIntro({ onComplete }: Props) {
           toValue: 0,
           duration: TEAM_FADE_OUT_MS,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }).start(() => resolve());
       });
       if (cancelled) return;
@@ -78,13 +80,13 @@ export default function SplashIntro({ onComplete }: Props) {
             toValue: 1,
             duration: APP_FADE_IN_MS,
             easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
+            useNativeDriver: USE_NATIVE_DRIVER,
           }),
           Animated.timing(logoScale, {
             toValue: 1,
             duration: APP_FADE_IN_MS,
             easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
+            useNativeDriver: USE_NATIVE_DRIVER,
           }),
         ]).start(() => resolve());
       });
@@ -100,16 +102,16 @@ export default function SplashIntro({ onComplete }: Props) {
           toValue: 0,
           duration: OUTRO_MS,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }),
         Animated.timing(logoScale, {
           toValue: 0.94,
           duration: OUTRO_MS,
           easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }),
       ]).start(({ finished }) => {
-        if (finished && !completedRef.current) {
+        if ((finished || Platform.OS === "web") && !cancelled && !completedRef.current) {
           completedRef.current = true;
           onCompleteRef.current();
         }

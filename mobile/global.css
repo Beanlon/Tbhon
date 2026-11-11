@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Tailwind preflight leaves the document at height 0, so RN Web flex:1 collapses off-screen. */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
+
+#root,
+body > div:first-child {
+  display: flex;
+  flex: 1;
+  height: 100%;
+  min-height: 100%;
+}
+
 /*
  * Expo / RN Web: autofill paints yellow/cream. Only style auth password `<input>`
  * (marked with `.tbhon-auth-password`) — never all inputs across the app.
