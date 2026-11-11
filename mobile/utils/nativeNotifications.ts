@@ -18,8 +18,9 @@ export type NotificationResponsePayload = {
 
 let notificationsModule: Promise<NotificationsModule | null> | null = null;
 
-/** Local/scheduled notifications are unavailable in Expo Go (SDK 53+). In-app inbox still works. */
+/** Local/scheduled notifications are unavailable in Expo Go (SDK 53+) and on web. In-app inbox still works. */
 export function isNativeNotificationsAvailable(): boolean {
+  if (Platform.OS === "web") return false;
   return Constants.appOwnership !== "expo";
 }
 
@@ -204,16 +205,21 @@ export function subscribeToNotificationResponses(
   let cancelled = false;
 
   void (async () => {
-    const Notifications = await loadNotifications();
-    if (!Notifications || cancelled) return;
+    try {
+      const Notifications = await loadNotifications();
+      if (!Notifications || cancelled) return;
 
-    subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      handler(response as NotificationResponsePayload);
-    });
+      subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+        handler(response as NotificationResponsePayload);
+      });
 
-    const last = await Notifications.getLastNotificationResponseAsync();
-    if (last && !cancelled) {
-      handler(last as NotificationResponsePayload);
+      // This native method throws on web even when the JS module loads.
+      const last = await Notifications.getLastNotificationResponseAsync();
+      if (last && !cancelled) {
+        handler(last as NotificationResponsePayload);
+      }
+    } catch {
+      // Expo Go and web do not implement notification responses.
     }
   })();
 
